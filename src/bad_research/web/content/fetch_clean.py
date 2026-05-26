@@ -208,15 +208,17 @@ def postclean(md: str) -> str:
     return md.strip()
 
 
-def extract_metadata(stripped_html: str, url: str) -> dict[str, Any]:
+def extract_metadata(html: str, url: str) -> dict[str, Any]:
     """Verbatim extractMetadata.ts port (dossier 12 §8.2). KNOWN.
 
+    Takes the FULL html (the pipeline passes pre-strip html): strip_boilerplate drops
+    <head>/<meta> via STRIP_ALWAYS, so the <title>/og/dc tags only survive pre-strip.
     title/description/keywords/robots/language + the full og:* and dc/dcterms maps +
     every <meta name|property|itemprop> with content, merged. Favicon absolutified.
     """
     from urllib.parse import urljoin, urlparse
 
-    soup = BeautifulSoup(stripped_html, "lxml")
+    soup = BeautifulSoup(html, "lxml")
     meta: dict[str, Any] = {}
 
     if soup.title and soup.title.string:
@@ -284,15 +286,17 @@ _PUBLISHED_META_CHAIN = (
 )
 
 
-def extract_published_date(stripped_html: str) -> str | None:
+def extract_published_date(html: str) -> str | None:
     """Published-date extraction (dossier 12 §8.1). KNOWN chain + DESIGNED fallbacks.
 
-    Order: structured meta chain > <time datetime> > visible-text regex over the first
-    500 chars; normalized to ISO-8601 via dateparser. None if nothing parses.
+    Takes the FULL html (pre-strip): the article:published_time / dc.date meta tags live
+    in <head>, which strip_boilerplate removes. Order: structured meta chain >
+    <time datetime> > visible-text regex over the first 500 chars; normalized to
+    ISO-8601 via dateparser. None if nothing parses.
     """
     import dateparser  # type: ignore[import-untyped]
 
-    soup = BeautifulSoup(stripped_html, "lxml")
+    soup = BeautifulSoup(html, "lxml")
 
     def _norm(raw: str | None) -> str | None:
         if not raw:

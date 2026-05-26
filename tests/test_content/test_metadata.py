@@ -37,3 +37,12 @@ def test_published_date_visible_text_fallback() -> None:
 def test_published_date_none_when_absent() -> None:
     html = "<html><body><p>No date here at all, just prose.</p></body></html>"
     assert extract_published_date(html) is None
+
+
+def test_param_renamed_to_html(sample_html: str) -> None:
+    # FIX 4: the param is `html` (the pipeline passes FULL html, not stripped — see
+    # the fetch_clean call site), so the keyword call must work.
+    meta = extract_metadata(html=sample_html, url="https://ex.com/post")
+    assert meta["title"] == "How Retrieval-Augmented Generation Works"
+    d = extract_published_date(html=sample_html)
+    assert d is not None and d.startswith("2024-03-15")
