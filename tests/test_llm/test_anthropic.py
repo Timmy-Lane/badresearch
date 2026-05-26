@@ -112,6 +112,48 @@ def test_complete_returns_llmresponse(monkeypatch: pytest.MonkeyPatch) -> None:
     assert resp.tool_calls == []
 
 
+def test_temperature_omitted_for_opus_heavy(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Default config (cheap=False) so heavy -> claude-opus-4-7, which rejects
+    # sampling params with a 400. temperature must NOT be forwarded.
+    client = MagicMock()
+    client.messages.create.return_value = _make_message_response(model="claude-opus-4-7")
+    prov = _provider(monkeypatch, client)
+
+    prov.complete([LLMMessage(role="user", content="q")], tier="heavy")
+    assert prov._resolve_model("heavy") == "claude-opus-4-7"
+    assert "temperature" not in client.messages.create.call_args.kwargs
+
+
+def test_temperature_included_for_sonnet_work(monkeypatch: pytest.MonkeyPatch) -> None:
+    # work -> claude-sonnet-4-6 accepts sampling params; temperature forwarded.
+    client = MagicMock()
+    client.messages.create.return_value = _make_message_response(model="claude-sonnet-4-6")
+    prov = _provider(monkeypatch, client)
+
+    prov.complete([LLMMessage(role="user", content="q")], tier="work")
+    assert prov._resolve_model("work") == "claude-sonnet-4-6"
+    assert client.messages.create.call_args.kwargs["temperature"] == 0.1
+
+
+def test_temperature_included_for_cheap_heavy_demoted_to_sonnet(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # --cheap demotes heavy -> work (claude-sonnet-4-6), which accepts sampling
+    # params, so temperature IS forwarded even though the requested tier is heavy.
+    from bad_research.config import BadResearchConfig
+    from bad_research.llm.anthropic import AnthropicProvider
+
+    client = MagicMock()
+    client.messages.create.return_value = _make_message_response(model="claude-sonnet-4-6")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    _patch_sdk(monkeypatch, client)
+    prov = AnthropicProvider(config=BadResearchConfig(cheap=True))
+
+    prov.complete([LLMMessage(role="user", content="q")], tier="heavy")
+    assert prov._resolve_model("heavy") == "claude-sonnet-4-6"  # demoted
+    assert client.messages.create.call_args.kwargs["temperature"] == 0.1
+
+
 def test_system_messages_routed_to_system_param(monkeypatch: pytest.MonkeyPatch) -> None:
     client = MagicMock()
     client.messages.create.return_value = _make_message_response()

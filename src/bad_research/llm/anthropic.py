@@ -10,6 +10,13 @@ Anthropic allows <=4 cache_control breakpoints per request; we use 2 (last syste
 block + last tool). The CALLER is responsible for keeping the system+tools prefix
 byte-identical across spawns so the cache actually hits; this provider only stamps
 the markers.
+
+Sampling params (temperature/top_p/top_k) are model-conditional: Opus-4.7-class
+models (claude-opus-4-7*) unconditionally REJECT them with a 400 — those knobs
+were removed on Opus 4.7 (not gated by extended thinking; it's by model). So we
+only forward `temperature` when the RESOLVED model is not Opus-4.7-class. The
+public complete() signature still accepts temperature=0.1; it just isn't sent to
+Opus 4.7.
 """
 
 from __future__ import annotations
@@ -102,13 +109,16 @@ class AnthropicProvider:
         kwargs: dict[str, Any] = {
             "model": model,
             "max_tokens": max_tokens,
-            "temperature": temperature,
             "messages": convo,
         }
         if system_blocks:
             kwargs["system"] = system_blocks
         if tools:
             kwargs["tools"] = tools
+        # Opus-4.7-class models reject sampling params (temperature/top_p/top_k)
+        # with a 400; only forward temperature to non-Opus-4.7 models.
+        if not model.startswith("claude-opus-4-7"):
+            kwargs["temperature"] = temperature
 
         resp = self._client.messages.create(**kwargs)
         return self._to_llmresponse(resp)
