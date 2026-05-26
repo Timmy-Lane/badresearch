@@ -5,52 +5,69 @@ build-backend = "hatchling.build"
 [project]
 name = "bad-research"
 version = "0.1.0"
-description = "michael jackson bad — a deep-research agent that's bad (i.e. the best). A fork-and-enhance of hyperresearch."
+description = "michael jackson bad — a deep-research agent that filters garbage, grounds every claim, and runs as a Claude Code skill. A fork-and-enhance of hyperresearch."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11,<3.14"
 authors = [{name = "Bad Research"}]
-keywords = ["research", "deep-research", "llm", "agent", "claude", "retrieval", "rag"]
+keywords = ["research", "deep-research", "llm", "agent", "rag", "retrieval", "claude", "cli"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
 ]
+# Lean, zero-key base: the deterministic pipeline (router, funnel, hybrid
+# retrieval over LanceDB, BM25, garbage filters, grounding gate) + the LLM seam.
+# Heavy/optional stacks (web-search SDKs, browser drivers, neural rerankers/NLI)
+# live behind named extras below — the base stays small enough for `pipx install`.
 dependencies = [
+    "anthropic>=0.40",
+    "lancedb>=0.13",
+    "pyarrow>=15.0",
+    "numpy>=1.26",
     "typer>=0.9.0",
     "rich>=13.0",
     "pyyaml>=6.0",
     "pydantic>=2.0",
     "jinja2>=3.1",
     "platformdirs>=4.0",
-    "Crawl4AI>=0.4",
     "pymupdf>=1.24",
     "httpx>=0.27",
-    "anthropic>=0.40",
-    "lancedb>=0.13",
-    "pyarrow>=15.0",
-    "numpy>=1.26",
     "tree-sitter>=0.23",
     "tree-sitter-language-pack>=0.7",
     "rapidfuzz>=3.0",
+    "langdetect>=1.0.9",
 ]
 
 [project.optional-dependencies]
-cohere = ["cohere>=5.0"]
-exa = ["exa-py>=2.0.0"]
+# Web search + neural retrieval providers (Plans 02/03). Key-gated at runtime.
+# (Tavily/Sonar/SearXNG/Firecrawl HTTP APIs need only httpx, a base dep; these
+#  are the vendor SDKs + the Cohere embed/rerank client.)
+search = [
+    "tavily-python>=0.5",
+    "exa-py>=2.0.0",
+    "cohere>=5.0",            # embed-v3 + rerank-v3.5
+    "firecrawl-py>=1.0",
+]
+# Browse/extract escalation ladder (Plan 04). Pulls Playwright/Chromium — heavy.
+browse = [
+    "crawl4ai>=0.4",
+    "browser-use>=0.1",
+    "agentql>=1.0",
+]
+# Offline grounding: NLI entailment verifier + local BGE reranker (Plan 06).
+grounding = [
+    "sentence-transformers>=3.0",   # nli-deberta-v3-base + bge-reranker-v2-m3
+]
+# MCP face (hyperresearch base).
 mcp = ["mcp>=1.6"]
-rerank = ["cohere>=5.13"]
-rerank-local = ["FlagEmbedding>=1.3"]
-web = ["exa-py>=2.0.0"]            # tavily/sonar/searxng/firecrawl need only httpx (core dep)
-crawl4ai = ["crawl4ai>=0.4"]                       # Tier 1 (JS render)
-browser-use = ["browser-use>=0.1"]                 # Tier 3 self-host agentic browse
-browserbase = ["stagehand>=0.1"]                   # Tier 3b anti-bot (paid; key-gated)
-browse = ["crawl4ai>=0.4", "browser-use>=0.1"]     # the self-host ladder, no paid keys
-quality = ["langdetect>=1.0.9"]                    # Stage-2 language gate (graceful when absent)
-all = ["bad-research[cohere,exa,mcp,web,browse,quality]"]
+# Everything — references the package's own extras so versions stay single-sourced.
+all = ["bad-research[search,browse,grounding,mcp]"]
+# Test + lint toolchain.
 dev = [
     "pytest>=7.4",
     "pytest-cov>=4.1",
@@ -65,6 +82,10 @@ dev = [
 bad = "bad_research.cli:app"
 badr = "bad_research.cli:app"
 
+[project.urls]
+Homepage = "https://github.com/bad-research/bad-research"
+Repository = "https://github.com/bad-research/bad-research"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/bad_research"]
 
@@ -77,11 +98,29 @@ src = ["src"]
 select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "RUF"]
 ignore = ["E501", "B008", "B904", "E402", "N817", "N818", "SIM105", "RUF012"]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra -q --strict-markers --cov=bad_research --cov-report=term-missing --cov-fail-under=80"
+asyncio_mode = "auto"
+markers = [
+    "unit: fast, isolated, no network, no disk beyond tmp_path (default).",
+    "integration: touches multiple modules / real SQLite / LanceDB on tmp dirs; still offline.",
+    "live: hits a real provider API; auto-skipped unless a key is set AND BAD_RUN_LIVE=1.",
+]
+
+[tool.coverage.run]
+source = ["bad_research"]
+branch = true
+omit = ["*/tests/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+    "\\.\\.\\.",
+]
+
 [tool.mypy]
 python_version = "3.11"
 strict = true
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = "-ra -q --strict-markers"
-asyncio_mode = "auto"
