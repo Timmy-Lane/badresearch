@@ -160,6 +160,43 @@ def main_content(stripped_html: str, query: str | None = None) -> str:
     return md or html or stripped_html
 
 
+def html_to_markdown(content_html: str, base_url: str) -> str:
+    """HTML -> markdown via crawl4ai DefaultMarkdownGenerator (dossier 12 §4). KNOWN.
+
+    Uses citations=True so inline links become a clean ⟨n⟩ + References index. Falls
+    back to .raw_markdown if the citation variant is empty. No content_filter here —
+    main_content() already pruned (§3).
+    """
+    from crawl4ai import DefaultMarkdownGenerator  # type: ignore[import-untyped]
+
+    gen = DefaultMarkdownGenerator(content_filter=None)
+    md: str | None
+    try:
+        res = gen.generate_markdown(content_html, base_url=base_url, citations=True)
+        md = getattr(res, "markdown_with_citations", None) or getattr(res, "raw_markdown", None)
+    except Exception:
+        md = None
+    if md:
+        return str(md)
+    # last-resort: strip tags to text so we never return raw HTML
+    return BeautifulSoup(content_html, "lxml").get_text("\n", strip=True)
+
+
+def postclean(md: str) -> str:
+    """Deterministic markdown cleanup (dossier 12 §7-postclean / §9 step 16). DESIGNED.
+
+    Strips base64 data: images, collapses >2 blank lines, un-indents code fences that
+    html2text indented (the `    ```` -> ` ``` ` fix from §4.1).
+    """
+    # base64 data: images (§9 step 16)
+    md = re.sub(r"!\[[^\]]*\]\(data:image/[^)]+\)", "", md)
+    # un-indent fences (§4.1 post-fix)
+    md = md.replace("    ```", "```")
+    # collapse >2 consecutive blank lines
+    md = re.sub(r"\n{3,}", "\n\n", md)
+    return md.strip()
+
+
 def extract_metadata(stripped_html: str, url: str) -> dict[str, Any]:
     raise NotImplementedError  # Task 9
 
