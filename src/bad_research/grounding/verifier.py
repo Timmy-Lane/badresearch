@@ -115,10 +115,15 @@ class VerifyResult:
     findings: list[CitationFinding]
 
 
+# A piece made up only of citation tokens -- it trails a sentence, not its own.
+_CITES_ONLY = re.compile(r"^\s*(?:\[\[[^\]]+\]\]|\[\d+\])(?:\s*(?:\[\[[^\]]+\]\]|\[\d+\]))*\s*[.;,]?\s*$")
+
+
 def _split_sentences(text: str) -> list[str]:
-    # Shared with the gate; kept simple + deterministic. Split on terminal
-    # punctuation followed by whitespace/newline. Newline-delimited report lines
-    # are each at least one sentence.
+    # Shared shape with the gate; deterministic. Split on terminal punctuation
+    # followed by whitespace; a trailing citation-only fragment (`. [[note-id]]`)
+    # is re-attached to the sentence it trails so the verdict keeps its sentence
+    # text. Newline-delimited report lines are each at least one sentence.
     parts: list[str] = []
     for line in text.splitlines():
         line = line.strip()
@@ -126,7 +131,11 @@ def _split_sentences(text: str) -> list[str]:
             continue
         for piece in re.split(r"(?<=[.!?])\s+", line):
             piece = piece.strip()
-            if piece:
+            if not piece:
+                continue
+            if parts and _CITES_ONLY.match(piece):
+                parts[-1] = f"{parts[-1]} {piece}"
+            else:
                 parts.append(piece)
     return parts
 
