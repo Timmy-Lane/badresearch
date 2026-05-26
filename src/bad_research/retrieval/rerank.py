@@ -25,6 +25,7 @@ NO Cohere. NO mandatory local model.
 """
 from __future__ import annotations
 
+import logging
 import math
 from collections.abc import Callable
 from typing import Any
@@ -77,6 +78,9 @@ class ClaudeCodeReranker:
     the injection preamble, so no extra preamble plumbing is needed."""
 
     name = "claude-code"
+    # Process-global: a broken host LLM degrades rerank silently to BM25 order, so
+    # we surface it ONCE (per process) rather than repeatedly or never. [§5.3]
+    _host_failure_warned = False
 
     def __init__(self, *, llm: Any = None, tier: str = "work"):
         # llm may be None at construction: the host provider is resolved LAZILY on
@@ -108,7 +112,15 @@ class ClaudeCodeReranker:
             # The shared KR-2 parser returns a list[float] (0-based, all-0.0 on a
             # fully-unparseable reply, per-item 0.0 on a missing/malformed item).
             scores = _parse_scores(resp.text, n=len(docs))
-        except Exception:  # a failed host call must not crash retrieval (§5.3)
+        except Exception as e:  # a failed host call must not crash retrieval (§5.3)
+            # Degrade to BM25/initial order (no candidate dropped) — but a broken host
+            # LLM silently lowering rerank quality should be observable, so warn ONCE.
+            if not ClaudeCodeReranker._host_failure_warned:
+                ClaudeCodeReranker._host_failure_warned = True
+                logging.getLogger("bad_research.rerank").warning(
+                    "host-model rerank failed (%s); degrading to BM25/initial order "
+                    "until the host LLM is reachable.", e,
+                )
             scores = [0.0] * len(docs)
         # Clamp to [0,1] (defensive; the parser already keeps the model's raw float).
         scored = [(i, max(0.0, min(1.0, float(s)))) for i, s in enumerate(scores)]

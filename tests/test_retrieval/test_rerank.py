@@ -64,7 +64,8 @@ def test_scores_parsed_and_returned_descending():
 
 
 def test_chunks_truncated_to_trunc_chars_in_prompt():
-    from bad_research.retrieval.constants import LLM_RERANK_TRUNC_CHARS
+    # single source for the truncation constant is the frozen prompt module (KR-2)
+    from bad_research.web.search.rerank import LLM_RERANK_TRUNC_CHARS
     llm = FakeLLMProvider(reply_text='[{"i":0,"s":0.5}]')
     rr = ClaudeCodeReranker(llm=llm)
     long_doc = "x" * (LLM_RERANK_TRUNC_CHARS + 500)
@@ -141,3 +142,25 @@ def test_llm_call_exception_degrades_to_all_zero():
     rr = ClaudeCodeReranker(llm=_BoomLLM())
     out = dict(rr.rerank("q", ["a", "b"]))
     assert out == {0: 0.0, 1: 0.0}
+
+
+def test_host_failure_warns_once_then_degrades_silently(caplog):
+    # A broken host LLM should be OBSERVABLE (warn once), not silently lower quality
+    # forever — but it must not spam a warning per query (§5.3 / INFO-3).
+    import logging
+
+    class _BoomLLM:
+        name = "boom"
+
+        def complete(self, *a, **k):
+            raise RuntimeError("host model unavailable")
+
+    ClaudeCodeReranker._host_failure_warned = False  # reset process-global for the test
+    rr = ClaudeCodeReranker(llm=_BoomLLM())
+    with caplog.at_level(logging.WARNING, logger="bad_research.rerank"):
+        rr.rerank("q", ["a", "b"])   # first failure → warns
+        rr.rerank("q", ["c", "d"])   # second failure → silent (no second warn)
+    warnings = [r for r in caplog.records if r.name == "bad_research.rerank"]
+    assert len(warnings) == 1
+    assert "host-model rerank failed" in warnings[0].message
+    ClaudeCodeReranker._host_failure_warned = False  # don't leak state to other tests

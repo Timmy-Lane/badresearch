@@ -28,9 +28,14 @@ def test_kr5_keyless_constants_present_and_exact():
     assert C.SEMANTIC_CACHE_THRESHOLD_LEXICAL == 0.85
     # dossier 15 §4.3 — auto-enable the [local] dense lane above this chunk count.
     assert C.NEURAL_RECALL_VAULT_THRESHOLD == 25_000
-    # dossier 15 §5.3 — per-chunk truncation for the rerank prompt + the full top-30 batch.
-    assert C.LLM_RERANK_TRUNC_CHARS == 800
-    assert C.LLM_RERANK_BATCH == 30
+    # dossier 15 §5.3 — the rerank truncation (800) + batch (30) live at their single
+    # source (web/search/rerank.py, KR-2's frozen prompt module); assert them there,
+    # not as a dormant duplicate here.
+    from bad_research.web.search import rerank as _w
+
+    assert _w.LLM_RERANK_TRUNC_CHARS == 800
+    assert _w.LLM_RERANK_BATCH == 30
+    assert not hasattr(C, "LLM_RERANK_TRUNC_CHARS")  # no dormant duplicate in constants.py
     # The kept cosine threshold must still be 0.92 (used only under [local]).
     assert C.SEMANTIC_CACHE_THRESHOLD == 0.92
     # Stopwords for lexical-cache token normalization (dossier 15 §6.2).

@@ -30,8 +30,11 @@ NEGATION_PATTERN = r"\b(not|without|except|unlike|no_std|never|cannot|isn't|aren
 # ── KR-5 keyless retrieval (INTERFACES_KEYLESS §5.6, dossier 15) ─────────────
 SEMANTIC_CACHE_THRESHOLD_LEXICAL = 0.85   # token-set overlap HIT (no embedder)  [15 §6.2]
 NEURAL_RECALL_VAULT_THRESHOLD = 25_000    # auto-enable the [local] dense lane    [15 §4.3]
-LLM_RERANK_TRUNC_CHARS = 800              # truncate each chunk for the rerank prompt  [15 §5.3]
-LLM_RERANK_BATCH = 30                     # rerank the full top-30 (top-12 cascade = budget knob)  [15 §5.3, §7.4]
+# The rerank truncation (800) + batch (30) [15 §5.3, §7.4] live with the frozen
+# rerank prompt they govern, in web/search/rerank.py (KR-2) — the single source
+# production reads. NOT duplicated here: a second literal could desync, and the
+# reverse import (retrieval.constants → web/search) would cycle (web/search/rank
+# already imports RRF_K from here). Tests assert the values at that source.
 # Tiny stopword set for the lexical-cache token normalizer (dossier 15 §6.2).
 LLM_RERANK_STOPWORDS = frozenset(
     {"how", "does", "the", "a", "in", "of", "to", "is", "what", "why"}
