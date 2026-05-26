@@ -19,7 +19,7 @@ def test_route_command_classifies(tmp_path):
 
 def test_route_apply_writes_field(tmp_path):
     d = tmp_path / "decomp.json"
-    d.write_text(json.dumps({"sub_questions": ["q%d" % i for i in range(8)],
+    d.write_text(json.dumps({"sub_questions": [f"q{i}" for i in range(8)],
                              "entities": [], "response_format": "argumentative",
                              "time_periods": [], "contradiction_terms": ["vs"],
                              "domains": ["a"]}))

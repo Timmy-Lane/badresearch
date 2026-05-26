@@ -1,4 +1,4 @@
-from bad_research.skills import routing_constants as R
+from bad_research.skills import routing_constants as R  # noqa: N812
 from bad_research.skills.router import classify_route, route_reason
 
 
@@ -41,7 +41,7 @@ def test_time_periods_force_full():
 
 
 def test_contested_argumentative_routes_full():
-    d = _decomp(sub_questions=["q%d" % i for i in range(8)],
+    d = _decomp(sub_questions=[f"q{i}" for i in range(8)],
                 response_format="argumentative", contradiction_terms=["versus"])
     assert classify_route(d) == "full"
 
