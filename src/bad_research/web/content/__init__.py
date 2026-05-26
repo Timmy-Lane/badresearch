@@ -7,11 +7,15 @@ Zero third-party API key; the only model touch is the optional host-model `llm_c
 
 from __future__ import annotations
 
+# NOTE: the bare `fetch_clean` FUNCTION is deliberately NOT re-exported here — doing so
+# shadows the `content.fetch_clean` SUBMODULE attribute, so
+# `from bad_research.web.content import fetch_clean; fetch_clean.cache_get(...)` would
+# silently grab the function and AttributeError. Callers reach the function via the
+# bridge's `importlib.import_module("...fetch_clean").fetch_clean` path (unaffected).
 from bad_research.web.content.fetch_clean import (
     FIRECRAWL_CLEAN_PROMPT,
     extract_metadata,
     extract_published_date,
-    fetch_clean,
     highlights,
     llm_clean,
     main_content,
@@ -38,7 +42,6 @@ __all__ = [
     "extract_metadata",
     "extract_published_date",
     "feed_notes",
-    "fetch_clean",
     "github_clone_notes",
     "github_file",
     "highlights",
