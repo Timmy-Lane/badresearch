@@ -24,14 +24,14 @@ async def test_fan_out_merges_provider_lists():
     providers = [FakeProvider("sonar"), FakeProvider("exa"), FakeProvider("searxng")]
     queries = plan_queries("topic", m_queries=2, k_per_query=4)
     hits = await fan_out(queries, providers)
-    # 2 queries × 3 providers × 4 results = 24 raw hits (distinct URLs per provider)
+    # 2 queries x 3 providers x 4 results = 24 raw hits (distinct URLs per provider)
     assert len(hits) == 24
     domains = {h.serp_provider for h in hits}
     assert domains == {"sonar", "exa", "searxng"}
 
 
 async def test_fan_out_runs_providers_in_parallel():
-    # Each provider sleeps 0.2s. Serial would be 2 queries × 3 providers × 0.2 = 1.2s.
+    # Each provider sleeps 0.2s. Serial would be 2 queries x 3 providers x 0.2 = 1.2s.
     # Parallel must be ~0.2s (one round). Assert well under the serial floor.
     providers = [FakeProvider(n, latency=0.2) for n in ("sonar", "exa", "searxng")]
     queries = plan_queries("topic", m_queries=2, k_per_query=2)

@@ -63,9 +63,9 @@ async def test_chained_crawl_follows_top_hub_links_bounded():
                         result=FakeWebResult(url=hub, content="hub"),
                         provider_ranks={"sonar": 1})]
     fetcher = FakeFetcher(hub_links={hub: extra})
-    results = await read_top_k(ranked, fetcher=fetcher, read_top_k=80, concurrency=12,
-                               max_chain_depth=2, max_links_per_hub=5,
-                               query="topic")
+    await read_top_k(ranked, fetcher=fetcher, read_top_k=80, concurrency=12,
+                     max_chain_depth=2, max_links_per_hub=5,
+                     query="topic")
     read = set(fetcher.read_urls)
     assert hub in read
     followed = [c for c in extra if c in read]

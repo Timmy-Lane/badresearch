@@ -5,7 +5,7 @@ Public API:
     FunnelConfig                              # tiered constants
 
 Invariant: callers receive reranked Chunk[] + [[note-id]] pointers,
-never raw page bodies. Stages A–E run at $0 model cost.
+never raw page bodies. Stages A-E run at $0 model cost.
 """
 
 from __future__ import annotations

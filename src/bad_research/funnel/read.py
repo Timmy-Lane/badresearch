@@ -21,11 +21,11 @@ import asyncio
 import math
 import re
 from collections import Counter
+from typing import Any
 
 from bad_research.funnel._async import acall
 
 _DEFAULT_CEILING = 80
-_HUB_LINK_FLOOR = 10   # a page with >=10 outbound links is treated as a hub
 
 
 def _js_cosine(query: str, text: str) -> float:
@@ -43,9 +43,9 @@ def _js_cosine(query: str, text: str) -> float:
     return dot / (qmag * dmag) if qmag and dmag else 0.0
 
 
-def _rank_hub_links(query: str, links: list[dict], limit: int) -> list[str]:
+def _rank_hub_links(query: str, links: list[dict[str, Any]], limit: int) -> list[str]:
     """Rank a hub's outbound links by JS-cosine of (anchor text) vs query, keep top `limit`."""
-    scored = []
+    scored: list[tuple[float, str]] = []
     for ln in links:
         href = ln.get("href") or ""
         if not href.startswith("http"):
@@ -57,16 +57,16 @@ def _rank_hub_links(query: str, links: list[dict], limit: int) -> list[str]:
 
 
 async def read_top_k(
-    ranked: list,
+    ranked: list[Any],
     *,
-    fetcher,
+    fetcher: Any,
     read_top_k: int,
     concurrency: int,
     max_chain_depth: int,
     max_links_per_hub: int,
     query: str = "",
     ceiling: int = _DEFAULT_CEILING,
-) -> list:
+) -> list[Any]:
     """Read the top candidates via fetch_tiered, batched + chained.
 
     Returns the list of read WebResults (junk not yet filtered — Stage E does
@@ -76,15 +76,15 @@ async def read_top_k(
     budget = min(read_top_k, ceiling)
     sem = asyncio.Semaphore(max(1, concurrency))
     seen: set[str] = set()
-    results: list = []
+    results: list[Any] = []
     reads_done = 0
     lock = asyncio.Lock()
 
-    async def _fetch(url: str):
+    async def _fetch(url: str) -> Any:
         async with sem:
             return await acall(fetcher.fetch_tiered, url, tier_max=1)
 
-    async def _try_read(url: str):
+    async def _try_read(url: str) -> Any:
         nonlocal reads_done
         async with lock:
             if url in seen or reads_done >= budget:
@@ -103,14 +103,16 @@ async def read_top_k(
         frontier = list(results)
         depth = 1
         while frontier and depth <= max_chain_depth:
-            next_frontier: list = []
+            next_frontier: list[Any] = []
             queued: list[str] = []
             for page in frontier:
                 links = getattr(page, "links", []) or []
-                if len(links) < _HUB_LINK_FLOOR and len(links) < max_links_per_hub * 2:
-                    # not hub-like enough; still allow following if it has links
-                    if not links:
-                        continue
+                # A page with no outbound links is a leaf, not a hub: skip it.
+                # Pages with links (hub-like or merely linky) get their top
+                # max_links_per_hub followed (the per-hub fan-out cap is the
+                # binding bound on the chained crawl, not a link-count floor).
+                if not links:
+                    continue
                 for href in _rank_hub_links(query, links, max_links_per_hub):
                     if href not in seen:
                         queued.append(href)

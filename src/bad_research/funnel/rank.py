@@ -12,6 +12,7 @@ ranking is free and happens before any expensive read.
 
 from __future__ import annotations
 
+from typing import Any
 from urllib.parse import urlsplit
 
 # Authority by domain class (dossier 10 §3.2 dim 1; quality DOMAIN_TIER spirit).
@@ -44,7 +45,7 @@ def _authority(domain: str) -> int:
     return 1  # default: quality journalism / unknown
 
 
-def utility_score(candidate, query: str) -> int:
+def utility_score(candidate: Any, query: str) -> int:
     """6-dim utility, 0-3 each, max 18 (dossier 10 §3.2). Operates only on
     un-read SERP signals (domain, title/snippet, provider spread, recency)."""
     r = candidate.result
@@ -86,14 +87,14 @@ def utility_score(candidate, query: str) -> int:
     return authority + novelty + stance + coverage + redundancy + freshness
 
 
-def rank_candidates(candidates: list, query: str, *, rrf_k: int = 60) -> list:
+def rank_candidates(candidates: list[Any], query: str, *, rrf_k: int = 60) -> list[Any]:
     """Order candidates descending by (RRF + normalized utility). Pure: no read.
 
     Composite = rrf_fuse(...) + utility/18 * (1/k-scale) so utility breaks RRF
     ties without dominating the parameter-free fusion. We weight RRF as primary
     (it is the multi-provider recall signal) and utility as the quality tiebreak.
     """
-    def composite(c) -> float:
+    def composite(c: Any) -> float:
         rrf = rrf_fuse(c.provider_ranks, k=rrf_k)
         util = utility_score(c, query) / 18.0
         # RRF dominates; utility scaled into RRF's magnitude (~1/61) as tiebreak.

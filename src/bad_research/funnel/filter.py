@@ -14,14 +14,16 @@ Returns list[(note_id, body)] for Stage F to index.
 
 from __future__ import annotations
 
+from typing import Any
+
 from bad_research.core.similarity import jaccard, shingle
 
 
 def filter_and_store(
-    pages: list,
+    pages: list[Any],
     *,
-    vault,
-    postfetch_filter,
+    vault: Any,
+    postfetch_filter: Any,
     redundancy_overlap: float,
     shingle_n: int,
 ) -> list[tuple[str, str]]:
@@ -29,8 +31,8 @@ def filter_and_store(
     clean = [p for p in pages if postfetch_filter(p) is None]
 
     # 2. Redundancy clustering (brute Jaccard over shingles, n=3).
-    kept: list = []
-    kept_shingles: list[set] = []
+    kept: list[Any] = []
+    kept_shingles: list[set[str]] = []
     for p in clean:
         body = getattr(p, "content", "") or ""
         sh = shingle(body, n=shingle_n)

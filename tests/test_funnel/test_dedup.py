@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from bad_research.funnel.dedup import Candidate, dedup
+from bad_research.funnel.dedup import dedup
 from tests.test_funnel.conftest import FakeWebResult
 
 

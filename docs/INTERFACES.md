@@ -167,6 +167,12 @@ async def gather(query: str, *, mode: Literal["light","full"],
 # batched, chained-crawl depth 2/5-links) → E FILTER (postfetch junk + >60% redundancy) + STORE to
 # vault → F RERANK via RetrievalEngine. Returns reranked top Chunk[] + [[note-id]] pointers —
 # NEVER raw page bodies. Stages A–E are $0 model cost. Funnel constants → funnel/config.FunnelConfig.
+# Sync/async seam: every SYNCHRONOUS provider/fetcher call is routed through
+# funnel/_async.py::acall(fn, *args) = `await fn(...)` if iscoroutinefunction else
+# `await asyncio.to_thread(fn, ...)`. gather() stays async; providers/fetch_tiered stay sync.
+# Vault adapter: funnel/store.py::VaultStore wraps core.note.write_note + the `sources` row to
+# present the exact store_note(*, title, body, url, provider) -> note_id contract gather expects.
+# Redundancy filter reuses core.similarity (shingle n=3 / jaccard) verbatim — no re-implementation.
 
 # calibrate/cost.py  (Plan 09 — the 5-component cost meter; SPEC §10/§14, dossier 09 §A4.2)
 # OFFLINE/reporting only — NOT a per-run gate. Plan 08's pipeline POPULATES it via .record(...)

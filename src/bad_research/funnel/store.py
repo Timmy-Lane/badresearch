@@ -15,6 +15,7 @@ assembles the real FunnelDeps.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
 
 class VaultStore:
@@ -24,7 +25,7 @@ class VaultStore:
     bookkeeping (the `sources` row). Returns the note_id (the note file stem).
     """
 
-    def __init__(self, vault, *, fetch_tier: int = 1):
+    def __init__(self, vault: Any, *, fetch_tier: int = 1):
         self._vault = vault
         self._fetch_tier = fetch_tier
 
@@ -68,7 +69,7 @@ class VaultStore:
         return note_id
 
 
-def build_source_row_from_url(url: str, provider: str, fetch_tier: int) -> dict | None:
+def build_source_row_from_url(url: str, provider: str, fetch_tier: int) -> dict[str, Any] | None:
     """Build a `sources` row from just a URL (the funnel stores bodies, not full
     WebResults, by the time it reaches the vault). Returns None if the quality
     helpers are unavailable."""

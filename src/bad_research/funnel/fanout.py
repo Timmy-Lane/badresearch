@@ -1,7 +1,7 @@
 """Stage A — fan-out. Many queries per step (Perplexity queries: List[str]),
 fired across P providers in parallel (asyncio.gather), then flattened.
 
-Breadth = M_QUERIES × P_PROVIDERS × K_PER_QUERY, gathered concurrently so
+Breadth = M_QUERIES x P_PROVIDERS x K_PER_QUERY, gathered concurrently so
 latency ≈ max single search, not the sum (dossier 10 §1.3, §5.1).
 
 A dead provider degrades to the survivors (SPEC §13 provider failover) — one
@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 from bad_research.funnel._async import acall
 
@@ -63,8 +63,8 @@ def plan_queries(query: str, *, m_queries: int, k_per_query: int) -> list[Search
     return out[:m_queries]
 
 
-async def fan_out(queries: list, providers: list) -> list:
-    """Fire every (query × provider) concurrently; flatten survivors.
+async def fan_out(queries: list[Any], providers: list[Any]) -> list[Any]:
+    """Fire every (query x provider) concurrently; flatten survivors.
 
     Returns the raw hit pool (with duplicates — Stage B dedups). Stamps the
     representative WebResults with serp_rank/serp_provider if the provider
@@ -73,7 +73,7 @@ async def fan_out(queries: list, providers: list) -> list:
     if not providers or not queries:
         return []
 
-    async def _one(provider, q) -> list:
+    async def _one(provider: Any, q: Any) -> list[Any]:
         try:
             results = await acall(provider.search_ex, q)
         except Exception:
@@ -83,11 +83,11 @@ async def fan_out(queries: list, providers: list) -> list:
                 r.serp_provider = provider.name
             if not getattr(r, "serp_rank", 0):
                 r.serp_rank = i + 1
-        return results
+        return list(results)
 
     tasks = [_one(p, q) for q in queries for p in providers]
     batches = await asyncio.gather(*tasks)
-    hits: list = []
+    hits: list[Any] = []
     for b in batches:
         hits.extend(b)
     return hits

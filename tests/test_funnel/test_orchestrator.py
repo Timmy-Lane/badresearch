@@ -93,15 +93,15 @@ async def test_light_mode_smaller_pool_and_no_chain():
 
 
 async def test_dedup_collapses_duplicate_providers_end_to_end():
-    # All three providers return the SAME url template → heavy URL overlap →
-    # candidate pool collapses; far fewer reads than M×P×K raw hits.
+    # All three providers return the SAME url template -> heavy URL overlap ->
+    # candidate pool collapses; far fewer reads than M*P*K raw hits.
     same_tpl = "https://shared.example/{q}/{i}"
     providers = [FakeProvider(n, url_template=same_tpl) for n in ("a", "b", "c")]
     fetcher = FakeFetcher()
     deps = _deps(providers=providers, fetcher=fetcher)
     await gather("topic", mode="full", deps=deps)
-    # 3 providers returned identical URLs per query → dedup to 1 per (q,i) slot.
-    # raw = M×P×K; deduped reads must be roughly M×K (a third), well under raw.
+    # 3 providers returned identical URLs per query -> dedup to 1 per (q,i) slot.
+    # raw = M*P*K; deduped reads must be roughly M*K (a third), well under raw.
     assert len(fetcher.read_urls) <= 80
 
 

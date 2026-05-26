@@ -11,12 +11,11 @@ def _page(url, content, title=""):
 def test_drops_junk_via_postfetch_filter():
     pages = [
         _page("https://good.com/a", "real substantive content " * 40),
-        _page("https://junk.com/b", "tiny"),          # < 300 chars → junk
+        _page("https://junk.com/b", "tiny"),          # < 300 chars -> junk
     ]
     vault = FakeVault()
     stored = filter_and_store(pages, vault=vault, postfetch_filter=fake_postfetch_filter,
                               redundancy_overlap=0.60, shingle_n=3)
-    urls = [vault.notes[nid] for nid, _ in stored]
     assert len(stored) == 1                            # junk dropped
 
 

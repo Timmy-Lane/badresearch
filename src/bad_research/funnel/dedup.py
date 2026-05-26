@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
+from typing import Any
 
 from bad_research.funnel.canonical import canonicalize_url
 
@@ -21,7 +22,7 @@ class Candidate:
     """An un-read search hit. The funnel ranks these BEFORE fetching (Stage C)."""
 
     canonical_url: str
-    result: object                       # the representative WebResult (un-read SERP shape)
+    result: Any                          # the representative WebResult (un-read SERP shape)
     provider_ranks: dict[str, int] = field(default_factory=dict)  # provider -> 1-based rank
 
     @property
@@ -33,7 +34,7 @@ def _content_hash(content: str) -> str:
     return hashlib.sha256((content or "").encode("utf-8")).hexdigest()[:16]
 
 
-def dedup(hits: list) -> list[Candidate]:
+def dedup(hits: list[Any]) -> list[Candidate]:
     """Collapse raw fan-out hits into the candidate pool.
 
     Stage 1: URL-canonical dedup (cosmetic variants → one).

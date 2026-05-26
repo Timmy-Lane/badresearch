@@ -14,7 +14,7 @@ funnel._async.acall inside fan_out / read_top_k.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 from bad_research.funnel.config import FunnelConfig
 from bad_research.funnel.dedup import dedup
@@ -32,14 +32,14 @@ class FunnelDeps:
     fetcher:          obj with async fetch_tiered(url, *, tier_max, ...) (Plan 04)
     postfetch_filter: callable(WebResult) -> str | None  (Plan 05)
     vault:            obj with store_note(*, title, body, url, provider) -> note_id
-    retrieval:        RetrievalEngine (Plan 02) — .index(notes), .search(q, mode, top_k)
+    retrieval:        RetrievalEngine (Plan 02) - .index(notes), .search(q, mode, top_k)
     """
 
-    providers: list
-    fetcher: object
-    postfetch_filter: object
-    vault: object
-    retrieval: object
+    providers: list[Any]      # list[WebSearchProvider]
+    fetcher: object           # has: async fetch_tiered(url, *, tier_max, ...)
+    postfetch_filter: object  # callable(WebResult) -> str | None
+    vault: object             # has: store_note(*, title, body, url, provider) -> note_id
+    retrieval: object         # RetrievalEngine: .index(notes), .search(q, *, mode, top_k)
 
 
 async def gather(
@@ -47,8 +47,8 @@ async def gather(
     *,
     mode: Literal["light", "full"],
     deps: FunnelDeps,
-    queries: list | None = None,
-) -> list:
+    queries: list[Any] | None = None,
+) -> list[Any]:
     """Run the six-stage funnel and return reranked Chunk[] (never raw pages).
 
     `queries` (optional): a caller-supplied lens-driven SearchQuery plan
@@ -93,9 +93,12 @@ async def gather(
     if not stored:
         return []   # honest gap, never hallucinate (SPEC §13)
 
-    # ── Stage F — RERANK chunks via RetrievalEngine → top set ──────────────
+    # ── Stage F — RERANK chunks via RetrievalEngine -> top set ─────────────
     # The vault holds the breadth (raw bodies on disk); the engine indexes them
     # and returns only the reranked top chunks the model will see.
-    deps.retrieval.index(stored)
-    chunks = deps.retrieval.search(query, mode=mode, top_k=cfg.top_chunks)
+    # deps.retrieval is a duck-typed Protocol (RetrievalEngine) resolved at
+    # wiring time (Plan 08); typed `object` here for isolation -> ignore attr.
+    deps.retrieval.index(stored)  # type: ignore[attr-defined]
+    chunks: list[Any] = deps.retrieval.search(  # type: ignore[attr-defined]
+        query, mode=mode, top_k=cfg.top_chunks)
     return chunks
