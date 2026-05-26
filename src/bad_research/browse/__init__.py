@@ -9,8 +9,10 @@ from bad_research.browse.base import (
     get_extract_provider,
 )
 from bad_research.browse.cache import ActCache, replay_key_for
+from bad_research.browse.ladder import fetch_tiered
 
 __all__ = [
+    "fetch_tiered",
     "BrowseProvider",
     "ExtractProvider",
     "get_browse_provider",
