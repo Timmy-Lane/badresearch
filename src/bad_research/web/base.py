@@ -228,4 +228,74 @@ def get_provider(
 
         return ExaProvider()
 
-    raise ValueError(f"Unknown web provider: {name!r}. Available: builtin, crawl4ai, exa")
+    if name == "tavily":
+        from bad_research.web.providers.tavily_provider import TavilyProvider
+
+        return TavilyProvider()
+
+    if name == "sonar":
+        from bad_research.web.providers.sonar_provider import SonarProvider
+
+        return SonarProvider()
+
+    if name == "searxng":
+        from bad_research.web.providers.searxng_provider import SearxngProvider
+
+        return SearxngProvider()
+
+    if name == "firecrawl":
+        from bad_research.web.providers.firecrawl_provider import FirecrawlProvider
+
+        return FirecrawlProvider()
+
+    if name == "cascade":
+        return _build_cascade()
+
+    raise ValueError(
+        f"Unknown web provider: {name!r}. Available: builtin, crawl4ai, exa, "
+        f"tavily, sonar, searxng, firecrawl, cascade"
+    )
+
+
+def _build_cascade():
+    """Assemble a CascadeProvider from whatever provider keys are present.
+
+    Zero-key -> SearXNG-only keyword set, no neural, no extractor (the floor that
+    still beats hyperresearch's NotImplementedError search). (SPEC §5 zero-key path.)
+    """
+    import os
+
+    from bad_research.web.providers.cascade import CascadeProvider
+    from bad_research.web.providers.searxng_provider import SearxngProvider
+
+    keyword: list = []
+    if os.environ.get("PERPLEXITY_API_KEY"):
+        from bad_research.web.providers.sonar_provider import SonarProvider
+
+        keyword.append(SonarProvider())
+    if os.environ.get("TAVILY_API_KEY"):
+        from bad_research.web.providers.tavily_provider import TavilyProvider
+
+        keyword.append(TavilyProvider())
+    keyword.append(SearxngProvider())  # always available — zero-key backbone
+
+    neural = None
+    if os.environ.get("EXA_API_KEY"):
+        from bad_research.web.exa_provider import ExaProvider
+
+        neural = ExaProvider()
+
+    extractor = None
+    if os.environ.get("FIRECRAWL_API_KEY"):
+        from bad_research.web.providers.firecrawl_provider import FirecrawlProvider
+
+        extractor = FirecrawlProvider()
+    elif neural is not None:
+        extractor = neural  # Exa /contents as the extract fallback
+
+    return CascadeProvider(
+        keyword_providers=keyword,
+        neural_provider=neural,
+        extractor=extractor,
+        extract_top_n=8 if extractor is not None else 0,
+    )
