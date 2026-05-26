@@ -9,6 +9,12 @@ reimplementation; CALIBRATE = needs the KR-7 eval.
 
 from __future__ import annotations
 
+import re
+from typing import Any
+from urllib.parse import urljoin
+
+from bs4 import BeautifulSoup
+
 # --- frozen constants (docs/INTERFACES_KEYLESS.md §8 + dossier 12) -------------
 CACHE_TTL = 14 * 86400          # 14-day content cache TTL (dossier 12 §9 step 9)
 PRUNING_THRESHOLD = 0.48        # PruningContentFilter dynamic threshold (dossier 12 §3.3)
@@ -70,14 +76,58 @@ Return the cleaned markdown content preserving the original markdown formatting.
 
 
 def strip_boilerplate(html: str, base_url: str, only_main: bool = True) -> str:
-    raise NotImplementedError  # Task 3
+    """Verbatim port of Firecrawl removeUnwantedElements.ts (dossier 12 §2). KNOWN.
+
+    Drops script/style/noscript/meta/head always; when only_main, drops the
+    excludeNonMainTags chrome selectors UNLESS the element contains a #main marker
+    (the force-include guard, §2.3); picks the biggest srcset candidate; absolutifies
+    a[href] and img[src] against base_url. Pure BeautifulSoup, no key.
+    """
+    soup = BeautifulSoup(html, "lxml")
+    for t in soup(STRIP_ALWAYS):
+        t.decompose()
+    if only_main:
+        for sel in EXCLUDE:
+            for el in soup.select(sel):
+                # force-include guard: keep if it (or a descendant) matches a FORCE_KEEP marker
+                if any(el.select(fk) for fk in FORCE_KEEP):
+                    continue
+                el.decompose()
+    # srcset -> biggest candidate as src (§2.4)
+    for img in soup.select("img[srcset]"):
+        cands: list[tuple[str, float]] = []
+        for c in str(img["srcset"]).split(","):
+            parts = c.strip().split()
+            if not parts:
+                continue
+            url_part = parts[0]
+            size = 1.0
+            if len(parts) > 1:
+                m = re.match(r"([\d.]+)[wx]?$", parts[1])
+                if m:
+                    size = float(m.group(1))
+            cands.append((url_part, size))
+        if cands:
+            img["src"] = max(cands, key=lambda c: c[1])[0]
+    # absolutify (§2.4)
+    for a in soup.select("a[href]"):
+        try:
+            a["href"] = urljoin(base_url, str(a["href"]))
+        except Exception:
+            pass
+    for img in soup.select("img[src]"):
+        try:
+            img["src"] = urljoin(base_url, str(img["src"]))
+        except Exception:
+            pass
+    return str(soup)
 
 
 def main_content(stripped_html: str, query: str | None = None) -> str:
     raise NotImplementedError  # Task 4
 
 
-def extract_metadata(stripped_html: str, url: str) -> dict:
+def extract_metadata(stripped_html: str, url: str) -> dict[str, Any]:
     raise NotImplementedError  # Task 9
 
 
@@ -85,7 +135,7 @@ def extract_published_date(stripped_html: str) -> str | None:
     raise NotImplementedError  # Task 9
 
 
-def highlights(markdown: str, query: str, k: int = HL_TOPK) -> list[dict]:
+def highlights(markdown: str, query: str, k: int = HL_TOPK) -> list[dict[str, Any]]:
     raise NotImplementedError  # Task 8
 
 
@@ -98,5 +148,6 @@ def llm_clean(markdown: str) -> str:
 
 
 def fetch_clean(url: str, query: str | None = None, *, want_llm_clean: bool = False,
-                formats: tuple[str, ...] = ("markdown", "metadata", "links")) -> dict:
+                formats: tuple[str, ...] = ("markdown", "metadata", "links")
+                ) -> dict[str, Any]:
     raise NotImplementedError  # Task 10
