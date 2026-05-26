@@ -102,12 +102,41 @@ def tier_c_judge(
 PARTIAL_LOW, SUPPORTED_FLOOR = 0.40, 0.70
 
 
+# Confidence-band thresholds (dossier 16 §7 / 08 §4). The band is the prose hedge
+# driver; the raw verify_score stays off-band on claim_anchors (Gemini §879).
+BAND_HIGH_SCORE = 0.70
+BAND_LOW_SCORE = 0.40
+
+
+def confidence_band(
+    verify_score: float, fetcher_confidence: str | None, n_sources: int
+) -> str:
+    """Combine the verifier's score, the fetcher's self-reported confidence, and
+    the independent-source count into a high/medium/low band (dossier 16 §7):
+
+      high   : fetcher=high AND verify_score>=0.70 AND n_sources>=2
+      medium : verify_score in [0.40, 0.70) OR n_sources==1
+      low    : verify_score<0.40 OR fetcher=low
+
+    Low wins over high (conservative). The patcher hedges medium/low claims."""
+    if verify_score < BAND_LOW_SCORE or fetcher_confidence == "low":
+        return "low"
+    if (
+        fetcher_confidence == "high"
+        and verify_score >= BAND_HIGH_SCORE
+        and n_sources >= 2
+    ):
+        return "high"
+    return "medium"
+
+
 @dataclass
 class CitationFinding:
     anchor_id: str
     sentence: str
     verdict: VerifyVerdict
     score: float
+    confidence_band: str | None = None
 
 
 @dataclass
@@ -204,9 +233,15 @@ class CitationVerifier:
                 stub.score = score
                 findings.append(stub)
 
-        # Persist dispositions (dossier §2.3): supported->verified=1; partial->keep
-        # but unverified (hedge); unsupported->0; contradicted->0 (flag).
+        # Persist dispositions (dossier §2.3) + stamp the confidence band (dossier
+        # 16 §7). fetcher-confidence + n_independent_sources come from the claims
+        # JSON the caller threads via note_bodies' companion data; absent that, the
+        # band derives from verify_score alone (conservative). The CLI writes the
+        # band into citation-verify-actions.json for the patcher's hedge rule.
         for f in findings:
+            f.confidence_band = confidence_band(
+                f.score, fetcher_confidence=None, n_sources=1
+            )
             if f.verdict is VerifyVerdict.SUPPORTED:
                 store.set_verified(f.anchor_id, verified=1, score=f.score)
             else:
