@@ -182,11 +182,12 @@ class TieredFetcher:
         if not self._browse_resolved:
             self._browse_resolved = True
             try:
-                from bad_research.browse.base import is_available
+                from bad_research.browse.agent_browser import (
+                    AgentBrowserProvider,
+                    is_available,
+                )
 
                 if is_available():
-                    from bad_research.browse.agent_browser import AgentBrowserProvider
-
                     self._browse_provider = AgentBrowserProvider(engine=self.engine)
             except Exception:
                 self._browse_provider = None

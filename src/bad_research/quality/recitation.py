@@ -83,8 +83,8 @@ def recitation_findings(report_md: str, note_bodies: dict[str, str]) -> list[Fin
                         location=sent,
                         recommendation=(
                             "Sentence reproduces a source span verbatim "
-                            "(longest run %d words) — paraphrase and keep the [N] citation."
-                            % len(run)
+                            f"(longest run {len(run)} words) — paraphrase and keep "
+                            "the [N] citation."
                         ),
                     )
                 )

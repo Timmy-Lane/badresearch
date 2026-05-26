@@ -8,6 +8,7 @@ round; the loop counter lives in the bad-research-12.5-grader skill. dossier 16 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from bad_research.calibrate.constants import JUDGE_MAX_TOKENS, JUDGE_TEMPERATURE, JUDGE_TIER
 from bad_research.calibrate.judge import JUDGE_SYSTEM, AxisScores, JudgeVerdict, _extract_json
@@ -40,7 +41,7 @@ class GraderVerdict:
     def passed(self) -> bool:
         return self.verdict.passed
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         d = self.verdict.to_dict()  # includes scores, overall, passed, rationale
         d["findings"] = [
             {
@@ -54,7 +55,7 @@ class GraderVerdict:
         return d
 
 
-def _parse_findings(raw: dict) -> list[Finding]:
+def _parse_findings(raw: dict[str, Any]) -> list[Finding]:
     """Translate the judge's `findings` array into patcher-shaped Finding rows.
     Tolerant: a non-list or a malformed row degrades to fewer/zero findings, never
     an exception (the axes still gate even if findings are unusable)."""
@@ -86,7 +87,7 @@ class Grader:
     provider: LLMProvider
     tier: str = JUDGE_TIER
 
-    def grade(self, query: str, report: str, corpus: list[dict]) -> GraderVerdict:
+    def grade(self, query: str, report: str, corpus: list[dict[str, Any]]) -> GraderVerdict:
         corpus_block = "\n".join(
             f"[{c.get('note_id', i)}] {c.get('url', '')}\n{c.get('text', '')[:1200]}"
             for i, c in enumerate(corpus)

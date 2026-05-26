@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import typer
 
@@ -41,7 +42,7 @@ def _build_providers(cfg: object) -> list:
     Intent-routed scholarly verticals are added by the skill (route_query), not
     here — this builder supplies the always-on keyless breadth sources. Every
     provider is cost_per_search=0.0, zero key. Degrades to [] on import error."""
-    provs: list = []
+    provs: list[Any] = []
     try:
         from bad_research.web.search.base import DdgsProvider, WebSearchToolProvider
 
@@ -64,10 +65,16 @@ def _build_tiered_fetcher(cfg: object) -> object | None:
     """Keyless 4-rung browse fetcher (KR-4): httpx -> crawl4ai -> agent-browser
     (lightpanda) -> agent-browser (chrome). No Browserbase/Browser-Use rung.
     The ladder reads the default browse engine from config."""
+    from typing import Literal
+
     try:
         from bad_research.browse.ladder import TieredFetcher
 
-        engine = getattr(cfg, "browse_engine", "lightpanda")
+        # Normalize to the Literal the ladder accepts; any non-"chrome" value
+        # defaults to lightpanda (the keyless rung-2.5 default, dossier 14 §12.5).
+        engine: Literal["lightpanda", "chrome"] = (
+            "chrome" if getattr(cfg, "browse_engine", "lightpanda") == "chrome" else "lightpanda"
+        )
         return TieredFetcher(engine=engine)
     except TypeError:
         # TieredFetcher() may not yet accept engine= on an older KR-4 build.
