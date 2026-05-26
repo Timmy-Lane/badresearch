@@ -76,3 +76,29 @@ class FakeLLMProvider:
 @pytest.fixture
 def fake_llm():
     return FakeLLMProvider
+
+
+import sqlite3 as _sqlite3  # noqa: E402
+
+
+@pytest.fixture
+def stub_links_db(tmp_path):
+    """A minimal `links` table matching core/db.py: (source_id, target_ref,
+    target_id, line_number, context). Returns the db path after seeding edges."""
+    def _make(edges: list[tuple[str, str]]) -> object:
+        path = tmp_path / "links.db"
+        conn = _sqlite3.connect(str(path))
+        conn.executescript(
+            "CREATE TABLE IF NOT EXISTS links ("
+            "  source_id TEXT NOT NULL, target_ref TEXT NOT NULL, target_id TEXT,"
+            "  line_number INTEGER NOT NULL DEFAULT 0, context TEXT,"
+            "  PRIMARY KEY (source_id, target_ref, line_number));"
+        )
+        for src, tgt in edges:
+            conn.execute(
+                "INSERT OR IGNORE INTO links (source_id, target_ref, target_id, line_number) "
+                "VALUES (?, ?, ?, 0)", (src, tgt, tgt))
+        conn.commit()
+        conn.close()
+        return path
+    return _make

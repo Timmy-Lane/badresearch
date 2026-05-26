@@ -60,6 +60,7 @@ class RetrievalEngine:
     def __init__(self, *, cache_db: Path, reranker: Reranker,
                  embedder: EmbedProvider | None = None,
                  lance_dir: Path | None = None,
+                 links_db: Path | None = None,
                  alpha: float = ALPHA, gate: float = RELEVANCE_GATE,
                  top_k_retrieve: int = TOP_K_RETRIEVE):
         self.embedder = embedder
@@ -76,6 +77,7 @@ class RetrievalEngine:
             store_dir = Path(lance_dir) if lance_dir is not None \
                 else Path(cache_db).with_name("lance")
             self.store = LanceChunkStore(store_dir, dim=embedder.dim)
+        self.links_db = Path(links_db) if links_db is not None else None
         # Cache backend: lexical (no embedder) | cosine 0.92 (embedder resident).
         self.cache = get_cache(Path(cache_db), embedder=embedder)
         # Chunk metadata DB (FTS lane + chunk_id→meta map), per-vault — ALWAYS on.
@@ -144,13 +146,30 @@ class RetrievalEngine:
         return result
 
     def _expand_symbols(self, top_note: str | None) -> set[str]:
-        """Same-note neighbor widening (the FTS-only default fallback). Pull every
-        chunk of the top note so a low-pass round still has a widening lever even
-        with no links DB wired. Task 7 upgrades this to wiki-link graph neighbors
-        via the `links` table (dossier 15 §7.3)."""
+        """Wiki-link neighbor widening (dossier 15 §7.3). Pull chunks of the top
+        note's graph neighbors (outlinks it makes + backlinks to it) from the
+        `links` table, unioned with same-note neighbor chunks. Pure SQL + set
+        union — keyless, only runs on the rare <30%-pass path. With no links DB
+        wired it degrades to the same-note fallback."""
         if top_note is None:
             return set()
-        return {cid for cid, m in self._meta.items() if m.chunk.note_id == top_note}
+        neighbor_notes: set[str] = {top_note}
+        if self.links_db is not None and self.links_db.exists():
+            conn = sqlite3.connect(str(self.links_db))
+            try:
+                # outlinks: notes top_note links TO (resolved target_id).
+                for (tid,) in conn.execute(
+                    "SELECT DISTINCT target_id FROM links "
+                    "WHERE source_id = ? AND target_id IS NOT NULL", (top_note,)):
+                    neighbor_notes.add(tid)
+                # backlinks: notes that link TO top_note.
+                for (sid,) in conn.execute(
+                    "SELECT DISTINCT source_id FROM links WHERE target_id = ?", (top_note,)):
+                    neighbor_notes.add(sid)
+            finally:
+                conn.close()
+        return {cid for cid, m in self._meta.items()
+                if m.chunk.note_id in neighbor_notes}
 
     def _one_round(self, query: str,
                    extra_ids: set[str]) -> tuple[list[Chunk], float, str | None]:

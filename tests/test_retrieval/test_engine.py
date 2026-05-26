@@ -107,3 +107,31 @@ def test_lexical_cache_miss_when_negation_added(tmp_path):
     eng.search("python async concurrency", mode="light", top_k=3)
     eng.search("python NOT async concurrency", mode="light", top_k=3)
     assert eng.last_cache_hit is False
+
+
+def test_expand_symbols_pulls_wiki_link_neighbors(tmp_path, stub_links_db):
+    # Note "a" links to note "b"; a low-pass first round should widen to b's chunks.
+    links_path = stub_links_db([("a", "b")])
+
+    class _LowPassLLM:
+        name = "lowpass"
+        def complete(self, messages, *, tier, tools=None, cache=False,
+                     max_tokens=4096, temperature=0.1):
+            from bad_research.llm.base import LLMResponse
+            # Score everything 0.0 on round 1 so <30% pass → forces a widen.
+            import json as _json
+            user = messages[1].content
+            ns = [int(line[1:line.index("]")]) for line in user.splitlines()
+                  if line.startswith("[") and "]" in line]
+            return LLMResponse(text=_json.dumps([{"i": n, "s": 0.0} for n in ns]),
+                               tool_calls=[], usage={}, model="lowpass")
+
+    from bad_research.retrieval.rerank import ClaudeCodeReranker
+    eng = RetrievalEngine(cache_db=tmp_path / "cache.db",
+                          reranker=ClaudeCodeReranker(llm=_LowPassLLM()),
+                          links_db=links_path)
+    eng.index([_note("a", "# A\n\nquery seed token alpha\n"),
+               _note("b", "# B\n\nneighbor body unrelated tokens\n")])
+    neighbors = eng._expand_symbols("a")
+    # b's chunk ids are pulled in as widening candidates (outlink a→b).
+    assert any(eng._meta[cid].chunk.note_id == "b" for cid in neighbors)
