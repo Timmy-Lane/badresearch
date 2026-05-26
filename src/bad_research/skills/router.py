@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from bad_research.skills import routing_constants as R
+from bad_research.skills import routing_constants as R  # noqa: N812
 
 Route = Literal["agentic-fast", "light", "full"]
 
