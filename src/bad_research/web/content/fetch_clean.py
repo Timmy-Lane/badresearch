@@ -235,8 +235,64 @@ def pdf_to_markdown(pdf_bytes: bytes) -> str:
             pass
 
 
+def _host_model(system: str, user: str) -> str:
+    """Host-model dispatch seam (dossier 12 §6 / INTERFACES_KEYLESS §9 ambiguity-1).
+
+    DEFAULT = passthrough (returns the user content unchanged) so the deterministic
+    pipeline never blocks on a model and unit tests need no network. The orchestrator
+    (KR-6) monkeypatches this to the real Claude Code Skill/Task dispatch — the HOST
+    supplies inference, no ANTHROPIC_API_KEY. Keyless.
+    """
+    return user
+
+
+# Identity sentinel: lets llm_clean detect the unwired (passthrough) default and
+# short-circuit so the <UNTRUSTED_PAGE> scaffolding never leaks into the output.
+_DEFAULT_HOST_MODEL = _host_model
+
+
+_DIRTY_SIGNALS = (
+    "subscribe to our newsletter", "we use cookies", "cookie policy",
+    "accept cookies", "skip to content", "sign up for our",
+)
+
+
+def looks_dirty(md: str) -> bool:
+    """Heuristic gate for when llm_clean is worth invoking (dossier 12 §6). DESIGNED.
+
+    True if residual chrome signals survive the deterministic strip — newsletter CTAs,
+    cookie text, a copyright line, or >3 consecutive link-only lines.
+    """
+    low = md.lower()
+    if any(s in low for s in _DIRTY_SIGNALS):
+        return True
+    if re.search(r"©\s*20\d\d", md):
+        return True
+    link_only_run = 0
+    for line in md.splitlines():
+        if re.fullmatch(r"\s*\[[^\]]+\]\([^)]+\)\s*", line):
+            link_only_run += 1
+            if link_only_run > 3:
+                return True
+        else:
+            link_only_run = 0
+    return False
+
+
 def llm_clean(markdown: str) -> str:
-    raise NotImplementedError  # Task 7
+    """Host-model content clean with the verbatim Firecrawl prompt (dossier 12 §6).
+
+    The page content is delimited as UNTRUSTED data (§6.2). Dispatches via the
+    _host_model seam (keyless). If the seam is the default passthrough (no model wired),
+    returns the input unchanged — the deterministic markdown is already good enough by
+    default, and we never leak the <UNTRUSTED_PAGE> scaffolding into the result.
+    """
+    if _host_model is _DEFAULT_HOST_MODEL:
+        return markdown
+    return _host_model(
+        system=FIRECRAWL_CLEAN_PROMPT,
+        user=f"Clean this page content:\n<UNTRUSTED_PAGE>\n{markdown}\n</UNTRUSTED_PAGE>",
+    )
 
 
 def fetch_clean(url: str, query: str | None = None, *, want_llm_clean: bool = False,
