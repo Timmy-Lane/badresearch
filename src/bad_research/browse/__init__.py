@@ -8,10 +8,13 @@ from bad_research.browse.base import (
     get_browse_provider,
     get_extract_provider,
 )
+from bad_research.browse.cache import ActCache, replay_key_for
 
 __all__ = [
     "BrowseProvider",
     "ExtractProvider",
     "get_browse_provider",
     "get_extract_provider",
+    "ActCache",
+    "replay_key_for",
 ]
