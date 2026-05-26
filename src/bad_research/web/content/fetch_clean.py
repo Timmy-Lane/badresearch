@@ -124,7 +124,40 @@ def strip_boilerplate(html: str, base_url: str, only_main: bool = True) -> str:
 
 
 def main_content(stripped_html: str, query: str | None = None) -> str:
-    raise NotImplementedError  # Task 4
+    """Readability extraction (dossier 12 §3). KNOWN (crawl4ai filters) + DESIGNED (fallback).
+
+    No query -> PruningContentFilter (dynamic 0.48); query -> BM25ContentFilter.
+    Both return a list of HTML block strings. If the extracted text is < 200 chars,
+    fall back to trafilatura's precision engine (§3.5), then to the stripped HTML.
+    """
+    from crawl4ai.content_filter_strategy import (  # type: ignore[import-untyped]
+        BM25ContentFilter,
+        PruningContentFilter,
+    )
+
+    flt = (
+        BM25ContentFilter(user_query=query)
+        if query
+        else PruningContentFilter(threshold=PRUNING_THRESHOLD, threshold_type="dynamic")
+    )
+    try:
+        blocks = flt.filter_content(stripped_html)
+    except Exception:
+        blocks = []
+    html = "\n".join(f"<div>{b}</div>" for b in blocks)
+    if len(BeautifulSoup(html, "lxml").get_text(strip=True)) >= MAIN_CONTENT_FLOOR:
+        return html
+    # fallback: trafilatura precision engine (§3.5)
+    try:
+        import trafilatura
+
+        md = trafilatura.extract(
+            stripped_html, output_format="markdown",
+            include_links=True, include_tables=True,
+        )
+    except Exception:
+        md = None
+    return md or html or stripped_html
 
 
 def extract_metadata(stripped_html: str, url: str) -> dict[str, Any]:
