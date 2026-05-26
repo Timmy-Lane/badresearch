@@ -205,8 +205,19 @@ def get_provider(
     magic: bool = False,
     headless: bool = True,
 ) -> WebProvider:
-    """Load a web provider by name. Falls back to builtin if none specified."""
-    if name is None or name == "builtin":
+    """Keyless web provider factory. Default = the host WebSearch tool adapter.
+
+    Every branch is keyless (host tool / local lib / self-host / local render).
+    No env var, no API key. `websearch`/`ddgs`/`searxng` are KR-2 stubs until the
+    `web/search/` package lands; `builtin` (httpx Tier-0) and `crawl4ai` (local JS
+    render) are real today.
+    """
+    if name in (None, "websearch", "ddgs", "searxng"):
+        from bad_research.web.search.base import get_keyless_provider
+
+        return get_keyless_provider(name or "websearch")
+
+    if name == "builtin":
         from bad_research.web.builtin import BuiltinProvider
 
         return BuiltinProvider()
@@ -215,36 +226,11 @@ def get_provider(
         try:
             from bad_research.web.crawl4ai_provider import Crawl4AIProvider
 
-            return Crawl4AIProvider(
-                profile=profile or None,
-                magic=magic,
-                headless=headless,
-            )
+            return Crawl4AIProvider(profile=profile or None, magic=magic, headless=headless)
         except ImportError:
-            raise ImportError("crawl4ai provider requires: pip install bad-research[crawl4ai]")
-
-    if name == "searxng":
-        from bad_research.web.providers.searxng_provider import SearxngProvider
-
-        return SearxngProvider()
-
-    if name == "cascade":
-        return _build_cascade()
+            raise ImportError("crawl4ai provider requires: pip install bad-research[browse]")
 
     raise ValueError(
-        f"Unknown web provider: {name!r}. Available: builtin, crawl4ai, exa, "
-        f"tavily, sonar, searxng, firecrawl, cascade"
-    )
-
-
-def _build_cascade():
-    """Transitional zero-key cascade (SearXNG only). Deleted in KR-1 Task 4."""
-    from bad_research.web.providers.cascade import CascadeProvider
-    from bad_research.web.providers.searxng_provider import SearxngProvider
-
-    return CascadeProvider(
-        keyword_providers=[SearxngProvider()],
-        neural_provider=None,
-        extractor=None,
-        extract_top_n=0,
+        f"Unknown web provider: {name!r}. Available (all keyless): "
+        f"websearch, ddgs, searxng, builtin, crawl4ai"
     )

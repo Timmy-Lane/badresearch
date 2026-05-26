@@ -1,4 +1,5 @@
-"""get_provider() routes to the new providers; unknown still raises ValueError."""
+"""get_provider() is keyless: builtin/crawl4ai real; websearch/ddgs/searxng are
+KR-2 stubs; unknown raises ValueError listing only keyless names."""
 
 from __future__ import annotations
 
@@ -7,32 +8,33 @@ import pytest
 from bad_research.web.base import get_provider
 
 
-def test_factory_searxng(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("SEARXNG_ENDPOINT", raising=False)
-    prov = get_provider("searxng")
-    assert prov.name == "searxng"
+def test_factory_default_is_websearch_stub() -> None:
+    """Default provider is the keyless host WebSearch adapter (a KR-2 stub for now)."""
+    prov = get_provider()  # no name -> default
+    assert prov.name == "websearch"
 
 
-def test_factory_cascade_zero_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    """No premium keys -> cascade assembles a SearXNG-only keyword set."""
-    for k in ("TAVILY_API_KEY", "PERPLEXITY_API_KEY", "EXA_API_KEY", "FIRECRAWL_API_KEY"):
-        monkeypatch.delenv(k, raising=False)
-    prov = get_provider("cascade")
-    assert prov.name == "cascade"
-    assert any(p.name == "searxng" for p in prov._keyword)
-    assert prov._neural is None
+def test_factory_builtin_is_real() -> None:
+    prov = get_provider("builtin")
+    assert prov.name == "builtin"
 
 
-def test_factory_unknown_raises_with_full_list() -> None:
+def test_factory_ddgs_and_searxng_resolve_by_name() -> None:
+    assert get_provider("ddgs").name == "ddgs"
+    assert get_provider("searxng").name == "searxng"
+
+
+def test_factory_unknown_raises_keyless_list() -> None:
     with pytest.raises(ValueError) as exc:
         get_provider("not-real")
     msg = str(exc.value)
-    for name in ("builtin", "crawl4ai", "exa", "tavily", "sonar", "searxng", "firecrawl", "cascade"):
+    for name in ("websearch", "ddgs", "searxng", "builtin", "crawl4ai"):
         assert name in msg
+    for gone in ("tavily", "sonar", "exa", "firecrawl", "cascade"):
+        assert gone not in msg
 
 
-def test_providers_package_reexports() -> None:
-    from bad_research.web.providers import CascadeProvider, SearxngProvider
-
-    assert SearxngProvider.name == "searxng"
-    assert CascadeProvider.name == "cascade"
+def test_no_keyed_providers_package() -> None:
+    """The web.providers package is gone."""
+    with pytest.raises(ImportError):
+        import bad_research.web.providers  # noqa: F401
