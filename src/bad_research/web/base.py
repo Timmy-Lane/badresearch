@@ -223,11 +223,6 @@ def get_provider(
         except ImportError:
             raise ImportError("crawl4ai provider requires: pip install bad-research[crawl4ai]")
 
-    if name == "exa":
-        from bad_research.web.exa_provider import ExaProvider
-
-        return ExaProvider()
-
     if name == "tavily":
         from bad_research.web.providers.tavily_provider import TavilyProvider
 
