@@ -1,15 +1,40 @@
+"""RetrievalEngine — the KEYLESS DEFAULT path (embedder=None → FTS5/BM25 recall,
+min-max BM25 initial, ClaudeCodeReranker over top-30, three-tier fuse, 0.70 gate,
+<30%-pass re-retrieve, token-set LexicalCacheBackend). No LanceDB, no key, no
+local model. The host LLM is the FakeLLMProvider-shaped _RubricLLM (deterministic
+query-token-overlap scoring in the §5.3 JSON shape, 0-based to match the shared
+parser)."""
+import json
+
 from bad_research.models.note import Note, NoteMeta
 from bad_research.retrieval.base import Reranker
 from bad_research.retrieval.engine import RetrievalEngine
+from bad_research.retrieval.rerank import ClaudeCodeReranker
 
 
-class _IdentityReranker:
-    """reranker_score = 1.0 if query token-set ⊆ doc else 0.2; stable order."""
-    def rerank(self, query, docs):
-        qtoks = set(query.lower().split())
-        out = [(i, 0.95 if qtoks & set(d.lower().split()) else 0.20) for i, d in enumerate(docs)]
-        out.sort(key=lambda x: (-x[1], x[0]))
-        return out
+class _RubricLLM:
+    """A FakeLLMProvider-shaped host that scores by query-token overlap so the
+    rerank is deterministic without a real model. Returns the §5.3 JSON shape
+    with 0-based chunk indices (matching the shared KR-2 parser)."""
+    name = "rubric"
+
+    def __init__(self):
+        self.calls = []
+
+    def complete(self, messages, *, tier, tools=None, cache=False,
+                 max_tokens=4096, temperature=0.1):
+        from bad_research.llm.base import LLMResponse
+        self.calls.append(messages)
+        user = messages[1].content
+        qtoks = set(user.split("QUERY: ")[1].splitlines()[0].lower().split())
+        items = []
+        for line in user.splitlines():
+            if line.startswith("[") and "]" in line:
+                n = int(line[1:line.index("]")])
+                body = line[line.index("]") + 1:].strip().lower()
+                hit = bool(qtoks & set(body.split()))
+                items.append({"i": n, "s": 0.95 if hit else 0.10})
+        return LLMResponse(text=json.dumps(items), tool_calls=[], usage={}, model="rubric")
 
 
 def _note(nid, body, ct=None, status="evergreen"):
@@ -18,20 +43,25 @@ def _note(nid, body, ct=None, status="evergreen"):
                 body=body, path=f"research/{nid}.md")
 
 
-def _engine(tmp_path, _stub_embedder=None):
-    # FTS-only keyless default: no embedder, no lance_dir.
-    return RetrievalEngine(
-        cache_db=tmp_path / "cache.db",
-        reranker=_IdentityReranker(),
-    )
+def _fts_engine(tmp_path, llm=None):
+    """The KEYLESS DEFAULT: embedder=None, lance_dir=None → FTS-only recall."""
+    rr = ClaudeCodeReranker(llm=llm or _RubricLLM())
+    return RetrievalEngine(cache_db=tmp_path / "cache.db", reranker=rr)
 
 
-def test_reranker_protocol_satisfied():
-    assert isinstance(_IdentityReranker(), Reranker)
+def test_engine_default_has_no_embedder_and_no_lance(tmp_path):
+    eng = _fts_engine(tmp_path)
+    assert eng.embedder is None
+    assert eng.store is None  # no LanceDB constructed on the keyless path.
 
 
-def test_index_then_search_returns_relevant_chunk_first(tmp_path):
-    eng = _engine(tmp_path)
+def test_reranker_protocol_satisfied(tmp_path):
+    eng = _fts_engine(tmp_path)
+    assert isinstance(eng.reranker, Reranker)
+
+
+def test_fts_only_index_then_search_returns_relevant_chunk_first(tmp_path):
+    eng = _fts_engine(tmp_path)
     eng.index([
         _note("a", "# A\n\npython async await concurrency patterns explained\n"),
         _note("b", "# B\n\nrust ownership borrow checker lifetimes memory\n"),
@@ -39,45 +69,41 @@ def test_index_then_search_returns_relevant_chunk_first(tmp_path):
     hits = eng.search("python async", mode="light", top_k=2)
     assert len(hits) >= 1
     assert hits[0].note_id == "a"
-    # Provenance offsets slice back into the note body.
     assert hits[0].char_end > hits[0].char_start
 
 
 def test_relevance_gate_drops_low_scoring_chunks(tmp_path):
-    eng = _engine(tmp_path)
+    eng = _fts_engine(tmp_path)
     eng.index([_note("a", "# A\n\npython async await\n"),
                _note("z", "# Z\n\ntotally unrelated zebra xylophone\n")])
     hits = eng.search("python async", mode="light", top_k=10)
-    # Every returned chunk cleared the 0.70 gate.
     assert all(h.score >= 0.70 for h in hits)
 
 
 def test_source_type_weight_boosts_code(tmp_path):
-    eng = _engine(tmp_path)
-    # Two near-identical chunks; one is content_type=code (×1.2).
+    eng = _fts_engine(tmp_path)
     eng.index([_note("code", "def parse_async(): return async_io_loop()\n" * 80, ct="code"),
                _note("docs", "parse async io loop documentation prose\n" * 80, ct="docs")])
     hits = eng.search("parse async", mode="full", top_k=2)
     by_note = {h.note_id: h.score for h in hits}
-    # If both survive, the code chunk's source-type weight makes it score >= docs.
     if "code" in by_note and "docs" in by_note:
         assert by_note["code"] >= by_note["docs"]
 
 
-def test_semantic_cache_hit_on_repeat_query(tmp_path):
-    eng = _engine(tmp_path)
+def test_lexical_cache_hit_on_repeat_query(tmp_path):
+    eng = _fts_engine(tmp_path)
     eng.index([_note("a", "# A\n\npython async await concurrency\n")])
     first = eng.search("python async concurrency", mode="light", top_k=3)
-    # A negation-free repeat → served from cache, identical chunk_ids.
-    second = eng.search("python async concurrency", mode="light", top_k=3)
+    eng.search("python async concurrency", mode="light", top_k=3)
+    assert eng.last_cache_hit is True
+    second = eng.search("concurrency async python", mode="light", top_k=3)  # reorder → lexical HIT
+    assert eng.last_cache_hit is True
     assert [c.chunk_id for c in first] == [c.chunk_id for c in second]
 
 
-def test_cache_miss_when_negation_added(tmp_path):
-    eng = _engine(tmp_path)
+def test_lexical_cache_miss_when_negation_added(tmp_path):
+    eng = _fts_engine(tmp_path)
     eng.index([_note("a", "# A\n\npython async await concurrency\n")])
     eng.search("python async concurrency", mode="light", top_k=3)
-    # Adding NOT must not serve the affirmative cached answer (force recompute path).
-    # We assert the cache layer reported a miss via the engine's last_cache_hit flag.
     eng.search("python NOT async concurrency", mode="light", top_k=3)
     assert eng.last_cache_hit is False

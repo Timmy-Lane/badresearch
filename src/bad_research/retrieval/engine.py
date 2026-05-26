@@ -1,5 +1,16 @@
-"""Concrete RetrievalEngine: chunk→embed→LanceDB+FTS index; hybrid→rerank→
-three-tier fusion→0.70 gate→<30%-pass re-retrieve→negation-guarded cache."""
+"""Keyless RetrievalEngine (INTERFACES_KEYLESS §5).
+
+Default path (embedder is None): FTS5/BM25 recall → min-max-normed BM25 as
+initial_score → ClaudeCodeReranker over top-30 → three_tier_fuse → 0.70 gate →
+<30%-pass wiki-link re-retrieve → token-set LexicalCacheBackend. Zero API key,
+zero local model.
+
+Optional dense lane ([local] extra, embedder set): also embeds chunks into
+LanceDB; recall = RRF k=60 over (BM25 ranks, bi-encoder ranks); cache = cosine
+0.92 reusing the resident bi-encoder. Auto-enabled above NEURAL_RECALL_VAULT_
+THRESHOLD chunks by the CLI builder (this engine just honors whatever embedder
+it is handed).
+"""
 from __future__ import annotations
 
 import sqlite3
@@ -10,7 +21,7 @@ from typing import Any, Literal
 from bad_research.embed.base import EmbedProvider
 from bad_research.models.note import Note
 from bad_research.retrieval.base import Chunk, Reranker
-from bad_research.retrieval.cache import SemanticCache
+from bad_research.retrieval.cache import get_cache
 from bad_research.retrieval.chunker import chunk_note
 from bad_research.retrieval.chunker_code import embed_text_for
 from bad_research.retrieval.constants import (
@@ -20,6 +31,7 @@ from bad_research.retrieval.constants import (
     RELEVANCE_GATE,
     RERETRIEVE_MAX_ROUNDS,
     RERETRIEVE_PASS_FRACTION,
+    RRF_K,
     TOP_K_RETRIEVE,
 )
 from bad_research.retrieval.fts_chunks import (
@@ -30,6 +42,8 @@ from bad_research.retrieval.fts_chunks import (
 from bad_research.retrieval.fusion import (
     apply_source_type_weight,
     hybrid_fuse,
+    minmax_normalize,
+    rrf_merge,
     three_tier_fuse,
 )
 
@@ -40,32 +54,6 @@ class _ChunkMeta:
     def __init__(self, chunk: Chunk, content_type: str | None):
         self.chunk = chunk
         self.content_type = content_type
-
-
-class _LexicalShimEmbedder:
-    """Keyless deterministic token-hash embedder for the FTS-only cache lane.
-
-    Matches EmbedProvider (name/dim/embed). Same text -> same vector; shared
-    tokens stay close (so repeat queries cache-hit and paraphrases stay near).
-    NOT a model, no key, no torch. KR-5 swaps the cache to the real
-    LexicalCacheBackend; until then this keeps the negation guard alive."""
-
-    name = "lexical-shim"
-    dim = 64
-
-    def embed(self, texts: list[str], *, input_type: str) -> list[list[float]]:
-        import hashlib
-        import math
-
-        out: list[list[float]] = []
-        for t in texts:
-            v = [0.0] * self.dim
-            for tok in t.lower().split():
-                h = int.from_bytes(hashlib.sha256(tok.encode()).digest()[:4], "little")
-                v[h % self.dim] += 1.0
-            norm = math.sqrt(sum(x * x for x in v)) or 1.0
-            out.append([x / norm for x in v])
-        return out
 
 
 class RetrievalEngine:
@@ -79,19 +67,18 @@ class RetrievalEngine:
         self.alpha = alpha
         self.gate = gate
         self.top_k_retrieve = top_k_retrieve
-        # Vector lane is OPTIONAL: only built when a [local] embedder + lance_dir are given.
-        self.store = None
-        if embedder is not None and lance_dir is not None:
+        # Vector store: ONLY when a [local] embedder is supplied. Lazy import so
+        # the keyless default never touches lancedb.
+        self.store: Any | None = None
+        if embedder is not None:
             from bad_research.retrieval.store import LanceChunkStore
 
-            self.store = LanceChunkStore(Path(lance_dir), dim=embedder.dim)
-        # Semantic cache needs an embedder to embed the query. When the keyless
-        # FTS-only path has no neural embedder, feed it a deterministic lexical
-        # token-hash shim (NOT a model, no key) so the negation-guarded cache keeps
-        # working. KR-5 replaces this with the real LexicalCacheBackend (0.85 token
-        # overlap). The shim matches the EmbedProvider Protocol exactly.
-        cache_embedder = embedder if embedder is not None else _LexicalShimEmbedder()
-        self.cache = SemanticCache(Path(cache_db), cache_embedder)
+            store_dir = Path(lance_dir) if lance_dir is not None \
+                else Path(cache_db).with_name("lance")
+            self.store = LanceChunkStore(store_dir, dim=embedder.dim)
+        # Cache backend: lexical (no embedder) | cosine 0.92 (embedder resident).
+        self.cache = get_cache(Path(cache_db), embedder=embedder)
+        # Chunk metadata DB (FTS lane + chunk_id→meta map), per-vault — ALWAYS on.
         self.conn = sqlite3.connect(str(Path(cache_db).with_name("chunks_meta.db")))
         self.conn.row_factory = sqlite3.Row
         create_chunk_fts(self.conn)
@@ -106,35 +93,33 @@ class RetrievalEngine:
         for note in notes:
             ct = getattr(note.meta, "content_type", None)
             for chunk in chunk_note(note):
-                et = embed_text_for(chunk, note) if ct == "code" else chunk.text
-                embed_texts.append(et[:EMBED_TRUNC_CHARS])
                 pending.append(chunk)
                 ct_for.append(ct)
+                if self.embedder is not None:
+                    et = embed_text_for(chunk, note) if ct == "code" else chunk.text
+                    embed_texts.append(et[:EMBED_TRUNC_CHARS])
         if not pending:
             return
         fts_rows: list[dict[str, Any]] = []
-        vectors: list[list[float]] = []
-        model_name: str | None = None
-        model_dim: int | None = None
+        for chunk, ct in zip(pending, ct_for, strict=True):
+            fts_rows.append({"chunk_id": chunk.chunk_id, "body": chunk.text,
+                             "note_id": chunk.note_id})
+            self._meta[chunk.chunk_id] = _ChunkMeta(chunk, ct)
+        index_chunk_fts(self.conn, fts_rows)
+        # Dense lane ([local] only): embed + upsert into LanceDB.
         if self.embedder is not None and self.store is not None:
-            model_name = self.embedder.name
-            model_dim = self.embedder.dim
+            vectors: list[list[float]] = []
             for i in range(0, len(embed_texts), EMBED_BATCH_CAP):
                 batch = embed_texts[i:i + EMBED_BATCH_CAP]
                 vectors.extend(self.embedder.embed(batch, input_type="document"))
-        rows: list[dict[str, Any]] = []
-        for idx, (chunk, ct) in enumerate(zip(pending, ct_for, strict=True)):
-            if vectors:
-                rows.append({"chunk_id": chunk.chunk_id, "vector": vectors[idx],
+            rows: list[dict[str, Any]] = []
+            for chunk, vec in zip(pending, vectors, strict=True):
+                rows.append({"chunk_id": chunk.chunk_id, "vector": vec,
                              "note_id": chunk.note_id, "char_start": chunk.char_start,
-                             "char_end": chunk.char_end, "model": model_name,
-                             "dim": model_dim})
-            fts_rows.append({"chunk_id": chunk.chunk_id, "body": chunk.text, "note_id": chunk.note_id})
-            self._meta[chunk.chunk_id] = _ChunkMeta(chunk, ct)
-        if rows and self.store is not None:
+                             "char_end": chunk.char_end, "model": self.embedder.name,
+                             "dim": self.embedder.dim})
             self.store.upsert(rows)
             self.store.maybe_build_index()
-        index_chunk_fts(self.conn, fts_rows)
 
     # ── SEARCH ───────────────────────────────────────────────────────────
     def search(self, query: str, *, mode: Literal["light", "full"], top_k: int) -> list[Chunk]:
@@ -151,51 +136,62 @@ class RetrievalEngine:
             survivors, pass_fraction, top_note = self._one_round(query, extra_ids)
             if pass_fraction >= RERETRIEVE_PASS_FRACTION or round_idx == RERETRIEVE_MAX_ROUNDS:
                 break
-            # expand_symbols-style widening: pull same-note neighbor chunks.
-            if top_note is not None:
-                extra_ids |= {cid for cid, m in self._meta.items() if m.chunk.note_id == top_note}
+            extra_ids |= self._expand_symbols(top_note)
 
         survivors.sort(key=lambda c: c.score, reverse=True)
         result = survivors[:top_k]
         self.cache.put(query, {"chunk_ids": [c.chunk_id for c in result]})
         return result
 
+    def _expand_symbols(self, top_note: str | None) -> set[str]:
+        """Same-note neighbor widening (the FTS-only default fallback). Pull every
+        chunk of the top note so a low-pass round still has a widening lever even
+        with no links DB wired. Task 7 upgrades this to wiki-link graph neighbors
+        via the `links` table (dossier 15 §7.3)."""
+        if top_note is None:
+            return set()
+        return {cid for cid, m in self._meta.items() if m.chunk.note_id == top_note}
+
     def _one_round(self, query: str,
                    extra_ids: set[str]) -> tuple[list[Chunk], float, str | None]:
         bm_hits = search_chunk_fts(self.conn, query, limit=self.top_k_retrieve)
         bm_scores = dict(bm_hits)
-        if self.embedder is not None and self.store is not None:
-            qv = self.embedder.embed([query], input_type="query")[0]
+
+        if self.embedder is None or self.store is None:
+            # KEYLESS DEFAULT: initial = min-max-normed BM25, no fusion lane.
+            for cid in extra_ids:
+                bm_scores.setdefault(cid, 0.0)
+            ids = [cid for cid in bm_scores if cid in self._meta]
+            if not ids:
+                return [], 0.0, None
+            norm = dict(zip(ids, minmax_normalize([bm_scores[c] for c in ids]), strict=True))
+            fused_initial = norm
+        else:
+            # DENSE LANE ([local]): RRF k=60 over BM25 ranks + bi-encoder ranks (§3.1).
             from bad_research.retrieval.store import LanceChunkStore
 
+            qv = self.embedder.embed([query], input_type="query")[0]
             vec_hits = self.store.search_vector(qv, top_k=self.top_k_retrieve)
             vec_scores = {cid: LanceChunkStore.distance_to_score(d) for cid, d in vec_hits}
             for cid in extra_ids:
                 vec_scores.setdefault(cid, 0.0)
-            fused_initial = hybrid_fuse(vec_scores, bm_scores, alpha=self.alpha)
-        else:
-            # FTS-only: min-max(BM25) is the initial score (dossier 15 §3.1).
-            for cid in extra_ids:
                 bm_scores.setdefault(cid, 0.0)
-            if bm_scores:
-                lo = min(bm_scores.values())
-                hi = max(bm_scores.values())
-                rng = hi - lo
-                # Degenerate range (single hit / all-equal): every survivor is the
-                # top, so map to initial=1.0 (not 0.0) — they are all the best match.
-                if rng <= 0.0:
-                    fused_initial = dict.fromkeys(bm_scores, 1.0)
-                else:
-                    fused_initial = {cid: (s - lo) / rng for cid, s in bm_scores.items()}
-            else:
-                fused_initial = {}
-        if not fused_initial:
-            return [], 0.0, None
+            bm_rank = [cid for cid, _ in sorted(bm_scores.items(), key=lambda kv: kv[1], reverse=True)]
+            vec_rank = [cid for cid, _ in sorted(vec_scores.items(), key=lambda kv: kv[1], reverse=True)]
+            fused_initial = dict(rrf_merge(bm_rank, vec_rank, k=RRF_K))
+            fused_initial = {c: s for c, s in fused_initial.items() if c in self._meta}
+            if not fused_initial:
+                return [], 0.0, None
+            # Renormalize RRF scores into [0,1] so three_tier_fuse's blend is calibrated.
+            ids = list(fused_initial)
+            fused_initial = dict(zip(ids, minmax_normalize([fused_initial[c] for c in ids]),
+                                     strict=True))
+
         # pre-rerank rank (1-based) by initial score desc.
         ranked = sorted(fused_initial.items(), key=lambda kv: kv[1], reverse=True)
-        cand_ids = [cid for cid, _ in ranked if cid in self._meta]
+        cand_ids = [cid for cid, _ in ranked]
         docs = [self._meta[cid].chunk.text for cid in cand_ids]
-        rer = dict(self.reranker.rerank(query, docs))  # idx → reranker_score
+        rer = dict(self.reranker.rerank(query, docs))  # idx0 → reranker_score
 
         survivors: list[Chunk] = []
         for rank0, cid in enumerate(cand_ids):
@@ -212,3 +208,8 @@ class RetrievalEngine:
         pass_fraction = (len(survivors) / len(cand_ids)) if cand_ids else 0.0
         top_note = self._meta[cand_ids[0]].chunk.note_id if cand_ids else None
         return survivors, pass_fraction, top_note
+
+
+# `hybrid_fuse` (α=0.7) and `ALPHA` are imported and retained for the calibrated
+# fuser path / parity tests; the default recall path uses min-max BM25 or RRF.
+_ = (hybrid_fuse, ALPHA)
