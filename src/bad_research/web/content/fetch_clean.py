@@ -554,15 +554,46 @@ def _static_fetch(url: str) -> tuple[str, bytes]:
         return resp.headers.get("content-type", ""), resp.content
 
 
+async def _ssrf_route_handler(route: Any) -> None:
+    """Playwright route handler: abort any request whose URL resolves to a blocked
+    (private/loopback/link-local/metadata/reserved) host, else continue.
+
+    The render rung drives a real headless Chromium which ignores the Python httpx
+    denylist. A malicious page can pass the thin-body static check, trigger needs_js,
+    then re-navigate (30x / <meta refresh> / JS window.location / fetch / XHR) to
+    `http://169.254.169.254/` or `http://127.0.0.1/`. This handler intercepts EVERY
+    request — main-frame nav, redirect, and sub-resource — reusing the SAME denylist
+    predicate (`core/fetcher.is_blocked_url`) as `assert_url_safe` (DRY: one denylist).
+    """
+    from bad_research.core.fetcher import is_blocked_url
+
+    if is_blocked_url(route.request.url):
+        await route.abort()
+    else:
+        await route.continue_()
+
+
+async def _ssrf_on_context_created(page: Any, context: Any = None, **_: Any) -> None:
+    """crawl4ai `on_page_context_created` hook: register the SSRF route at the CONTEXT
+    level so all pages/frames/redirects in the context are intercepted, not just the
+    first page's main frame.
+    """
+    if context is not None:
+        await context.route("**/*", _ssrf_route_handler)
+
+
 def _render_fetch(url: str) -> str:
     """Rung-2 JS render via the existing crawl4ai provider (dossier 12 §1.1). KNOWN.
 
     Reuses web/crawl4ai_provider.Crawl4AIProvider — already in the repo, keyless.
-    Returns rendered HTML (or markdown content as a single-block HTML wrapper).
+    SSRF-gated (`ssrf_guard=True`): the provider installs a Playwright route handler
+    (`_ssrf_on_context_created` -> `_ssrf_route_handler`) that aborts any browser
+    request to a blocked host, closing the render-rung SSRF hole that the httpx
+    denylist cannot reach. Returns rendered HTML (or markdown wrapped as one HTML block).
     """
     from bad_research.web.crawl4ai_provider import Crawl4AIProvider
 
-    res = Crawl4AIProvider().fetch(url)
+    res = Crawl4AIProvider(ssrf_guard=True).fetch(url)
     return res.raw_html or f"<html><body>{res.content}</body></html>"
 
 

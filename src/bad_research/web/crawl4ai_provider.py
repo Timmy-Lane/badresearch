@@ -13,6 +13,7 @@ import os
 import pathlib
 import sys
 from datetime import UTC, datetime
+from typing import Any
 
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, DefaultMarkdownGenerator
 from crawl4ai.content_filter_strategy import PruningContentFilter
@@ -154,6 +155,7 @@ class Crawl4AIProvider:
         profile: str | None = None,
         cookies: list[dict] | None = None,
         magic: bool = False,
+        ssrf_guard: bool = False,
     ):
         # Resolve profile name to path (crawl4ai stores profiles in ~/.crawl4ai/profiles/)
         data_dir = user_data_dir
@@ -163,6 +165,11 @@ class Crawl4AIProvider:
         self._data_dir = data_dir
         self._headless = headless
         self._cookies = cookies
+        # SSRF guard for the render rung: install a Playwright route handler that aborts
+        # any browser request (nav/redirect/sub-resource) to a blocked private/metadata
+        # host. Chromium ignores the Python httpx denylist, so this is the only choke
+        # point for browser-driven SSRF (dossier 12 §1.3 + INTERFACES_KEYLESS §4.1).
+        self._ssrf_guard = ssrf_guard
 
         browser_kwargs: dict = {"headless": headless}
         if data_dir:
@@ -286,8 +293,35 @@ class Crawl4AIProvider:
             screenshot=screenshot_bytes,
         )
 
+    def _build_ssrf_strategy(self) -> Any:
+        """Build an AsyncPlaywrightCrawlerStrategy with the SSRF route hook registered.
+
+        The hook (`fetch_clean._ssrf_on_context_created`) runs `context.route("**/*",
+        ...)` on `on_page_context_created`, so every request in the browser context is
+        intercepted and aborted if it resolves to a blocked host. One denylist, shared
+        with `assert_url_safe` via `core/fetcher.is_blocked_url` (DRY).
+        """
+        from crawl4ai.async_crawler_strategy import (  # type: ignore[import-untyped]
+            AsyncPlaywrightCrawlerStrategy,
+        )
+
+        from bad_research.web.content.fetch_clean import _ssrf_on_context_created
+
+        strat = AsyncPlaywrightCrawlerStrategy(browser_config=self._browser_config)
+        strat.set_hook("on_page_context_created", _ssrf_on_context_created)
+        return strat
+
+    def _make_crawler(self) -> AsyncWebCrawler:
+        """AsyncWebCrawler, with the SSRF-gated strategy wired in when ssrf_guard=True."""
+        if self._ssrf_guard:
+            return AsyncWebCrawler(
+                crawler_strategy=self._build_ssrf_strategy(),
+                config=self._browser_config,
+            )
+        return AsyncWebCrawler(config=self._browser_config)
+
     async def _fetch_async(self, url: str) -> WebResult:
-        async with AsyncWebCrawler(config=self._browser_config) as crawler:
+        async with self._make_crawler() as crawler:
             result = await crawler.arun(url=url, config=self._run_config)
             metadata = result.metadata or {}
 
@@ -358,7 +392,7 @@ class Crawl4AIProvider:
 
         # Fetch HTML pages with browser
         if html_urls:
-            async with AsyncWebCrawler(config=self._browser_config) as crawler:
+            async with self._make_crawler() as crawler:
                 results = await crawler.arun_many(urls=html_urls, config=self._run_config)
                 for cr, url in zip(results, html_urls, strict=False):
                     if not cr.success:

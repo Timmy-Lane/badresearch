@@ -44,20 +44,25 @@ def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     )
 
 
-def assert_url_safe(url: str) -> None:
-    """Raise SSRFError if `url` targets a private/loopback/metadata address.
+def _host_block_reason(url: str) -> str | None:
+    """Return a human-readable reason string if `url`'s host is blocked, else None.
 
-    Resolves the hostname (all A/AAAA records) and blocks if ANY resolved
-    address falls in a blocked range — closing the DNS-rebinding-ish gap where a
-    name resolves to both a public and an internal IP. Literal IPs are checked
-    directly. Non-resolvable hosts are allowed through (the fetch will fail
-    normally) so we never block legitimate-but-momentarily-unresolvable hosts.
+    This is the single source of truth for the SSRF denylist. Both `assert_url_safe`
+    (raises) and `is_blocked_url` (boolean) are thin wrappers over it, and the
+    crawl4ai render-rung route handler reuses `is_blocked_url` — one denylist, one
+    decision function (DRY).
+
+    Resolves the hostname (all A/AAAA records) and blocks if ANY resolved address
+    falls in a blocked range — closing the DNS-rebinding-ish gap where a name resolves
+    to both a public and an internal IP. Literal IPs are checked directly.
+    Non-resolvable hosts are allowed through (the fetch will fail normally) so we never
+    block legitimate-but-momentarily-unresolvable hosts.
     """
     host = (urlparse(url).hostname or "").strip().rstrip(".").lower()
     if not host:
-        raise SSRFError(f"refusing URL with no host: {url!r}")
+        return f"refusing URL with no host: {url!r}"
     if host in _BLOCKED_HOSTNAMES:
-        raise SSRFError(f"refusing loopback host {host!r}")
+        return f"refusing loopback host {host!r}"
 
     # Literal IP in the URL — check directly, no DNS.
     try:
@@ -66,14 +71,14 @@ def assert_url_safe(url: str) -> None:
         literal = None
     if literal is not None:
         if _is_blocked_ip(literal):
-            raise SSRFError(f"refusing private/loopback/metadata IP {host!r}")
-        return
+            return f"refusing private/loopback/metadata IP {host!r}"
+        return None
 
     # Hostname — resolve and check every returned address.
     try:
         infos = socket.getaddrinfo(host, None)
     except socket.gaierror:
-        return  # unresolvable: let the downstream fetch fail naturally
+        return None  # unresolvable: let the downstream fetch fail naturally
     for info in infos:
         addr = info[4][0]
         # strip IPv6 zone id if present (fe80::1%eth0)
@@ -83,7 +88,31 @@ def assert_url_safe(url: str) -> None:
         except ValueError:
             continue
         if _is_blocked_ip(ip):
-            raise SSRFError(f"host {host!r} resolves to blocked address {addr}")
+            return f"host {host!r} resolves to blocked address {addr}"
+    return None
+
+
+def is_blocked_url(url: str) -> bool:
+    """True if `url` targets a private/loopback/link-local/metadata/reserved address.
+
+    The boolean form of the shared SSRF predicate (see `_host_block_reason`). Used by
+    the crawl4ai render-rung Playwright route handler to `route.abort()` any request
+    (main-frame nav, redirect, or sub-resource) that resolves to a blocked host —
+    reusing the SAME denylist as `assert_url_safe` so there is exactly one source of
+    truth. A URL with no host (e.g. `file:///`) is treated as blocked.
+    """
+    return _host_block_reason(url) is not None
+
+
+def assert_url_safe(url: str) -> None:
+    """Raise SSRFError if `url` targets a private/loopback/metadata address.
+
+    Thin wrapper over the shared `_host_block_reason` denylist (DRY) — the same
+    predicate `is_blocked_url` and the render route handler use.
+    """
+    reason = _host_block_reason(url)
+    if reason is not None:
+        raise SSRFError(reason)
 
 
 _MAX_REDIRECT_HOPS = 5
