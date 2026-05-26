@@ -198,11 +198,123 @@ def postclean(md: str) -> str:
 
 
 def extract_metadata(stripped_html: str, url: str) -> dict[str, Any]:
-    raise NotImplementedError  # Task 9
+    """Verbatim extractMetadata.ts port (dossier 12 §8.2). KNOWN.
+
+    title/description/keywords/robots/language + the full og:* and dc/dcterms maps +
+    every <meta name|property|itemprop> with content, merged. Favicon absolutified.
+    """
+    from urllib.parse import urljoin, urlparse
+
+    soup = BeautifulSoup(stripped_html, "lxml")
+    meta: dict[str, Any] = {}
+
+    if soup.title and soup.title.string:
+        meta["title"] = soup.title.string.strip()
+    html_tag = soup.find("html")
+    if html_tag and html_tag.get("lang"):
+        meta["language"] = html_tag["lang"]
+
+    def _name(name: str) -> str | None:
+        el = soup.find("meta", attrs={"name": name})
+        c = el.get("content") if el else None
+        return str(c) if c else None
+
+    def _prop(prop: str) -> str | None:
+        el = soup.find("meta", attrs={"property": prop})
+        c = el.get("content") if el else None
+        return str(c) if c else None
+
+    for key, name in (("description", "description"), ("keywords", "keywords"),
+                      ("robots", "robots")):
+        v = _name(name)
+        if v is not None:
+            meta[key] = v
+
+    # og:* (§8.2)
+    for og in ("og:title", "og:description", "og:url", "og:image", "og:site_name",
+               "og:type", "og:locale"):
+        pv = _prop(og)
+        if pv is not None:
+            meta[og] = pv
+
+    # dc / dcterms (§8.2)
+    for dc in ("dc.description", "dc.subject", "dc.type", "dcterms.subject",
+               "dcterms.type"):
+        dv = _name(dc)
+        if dv is not None:
+            meta[dc] = dv
+
+    # favicon, absolutified against origin (§8.2)
+    icon = soup.find("link", attrs={"rel": "icon"}) or soup.find(
+        "link", attrs={"rel": lambda r: bool(r) and "icon" in str(r)}
+    )
+    if icon and icon.get("href"):
+        origin = f"{urlparse(url).scheme}://{urlparse(url).netloc}"
+        meta["favicon"] = urljoin(origin, str(icon["href"]))
+
+    # every remaining <meta name|property|itemprop> + content, merged (§8.2 "custom")
+    for m in soup.find_all("meta"):
+        raw_key = m.get("name") or m.get("property") or m.get("itemprop")
+        content = m.get("content")
+        if raw_key and content:
+            key = str(raw_key)
+            if key not in meta:
+                meta[key] = str(content)
+    return meta
+
+
+# the published-date meta chain (dossier 12 §8.1), in priority order
+_PUBLISHED_META_CHAIN = (
+    ("property", "article:published_time"),
+    ("name", "dc.date"),
+    ("name", "dc.date.created"),
+    ("name", "dcterms.created"),
+    ("property", "article:modified_time"),
+)
 
 
 def extract_published_date(stripped_html: str) -> str | None:
-    raise NotImplementedError  # Task 9
+    """Published-date extraction (dossier 12 §8.1). KNOWN chain + DESIGNED fallbacks.
+
+    Order: structured meta chain > <time datetime> > visible-text regex over the first
+    500 chars; normalized to ISO-8601 via dateparser. None if nothing parses.
+    """
+    import dateparser  # type: ignore[import-untyped]
+
+    soup = BeautifulSoup(stripped_html, "lxml")
+
+    def _norm(raw: str | None) -> str | None:
+        if not raw:
+            return None
+        dt = dateparser.parse(raw)
+        return dt.date().isoformat() if dt else None
+
+    # 1. structured meta chain
+    for attr, val in _PUBLISHED_META_CHAIN:
+        el = soup.find("meta", attrs={attr: val})
+        if el and el.get("content"):
+            iso = _norm(str(el["content"]))
+            if iso:
+                return iso
+    # 2. <time datetime="...">
+    t = soup.find("time", attrs={"datetime": True})
+    if t:
+        iso = _norm(str(t["datetime"]))
+        if iso:
+            return iso
+    # 3. visible-text regex over the first 500 chars
+    text = soup.get_text(" ", strip=True)[:500]
+    m = re.search(r"\b(\d{4}-\d{2}-\d{2})\b", text)
+    if m:
+        iso = _norm(m.group(1))
+        if iso:
+            return iso
+    m = re.search(r"[Pp]ublished on\s+([A-Za-z0-9 ,]+)", text)
+    if m:
+        iso = _norm(m.group(1))
+        if iso:
+            return iso
+    return None
 
 
 def _stem_tokens(text: str) -> list[str]:
