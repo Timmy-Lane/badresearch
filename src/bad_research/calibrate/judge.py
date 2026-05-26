@@ -1,8 +1,8 @@
 """The 5-axis LLM-judge rubric (dossier 09 §B7; CLAUDE_RESEARCH.md:39; SPEC §14).
 
-A SINGLE strong-model call per report — NOT an ensemble (ensemble tested WORSE,
-dossier 09 §B7). Scores five axes 0.0–1.0; PASS iff every axis ≥ AXIS_PASS_THRESHOLD
-AND the mean ≥ OVERALL_PASS_THRESHOLD. OFFLINE calibration only — never a per-run gate.
+A SINGLE strong-model call per report - NOT an ensemble (ensemble tested WORSE,
+dossier 09 §B7). Scores five axes 0.0-1.0; PASS iff every axis >= AXIS_PASS_THRESHOLD
+AND the mean >= OVERALL_PASS_THRESHOLD. OFFLINE calibration only - never a per-run gate.
 """
 
 from __future__ import annotations
@@ -151,4 +151,4 @@ def _extract_json(text: str) -> dict:
     return {a: 0.0 for a in JUDGE_AXES}
 
 
-__all__ = ["AxisScores", "JudgeVerdict", "Judge", "StubJudge", "LLMJudge"]
+__all__ = ["AxisScores", "Judge", "JudgeVerdict", "LLMJudge", "StubJudge"]

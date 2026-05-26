@@ -8,7 +8,7 @@ from __future__ import annotations
 
 # --- The 5-axis LLM-judge rubric (dossier 09 §B7, CLAUDE_RESEARCH.md:39; SPEC §14) ---
 # Single strong-model call (NOT an ensemble — ensemble tested WORSE, dossier 09 §B7).
-# Each axis scored 0.0–1.0; PASS iff every axis ≥ AXIS_PASS_THRESHOLD AND mean ≥ OVERALL_PASS_THRESHOLD.
+# Each axis scored 0.0-1.0; PASS iff every axis >= AXIS_PASS_THRESHOLD AND mean >= OVERALL_PASS_THRESHOLD.
 JUDGE_AXES = ("factual", "citation", "completeness", "source_quality", "efficiency")
 AXIS_PASS_THRESHOLD = 0.70  # per-axis floor                          [SPEC §8 0.70 bar reuse]
 OVERALL_PASS_THRESHOLD = 0.75  # mean across axes                     [dossier 09 §B7]

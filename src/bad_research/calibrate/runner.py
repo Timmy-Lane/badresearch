@@ -9,14 +9,16 @@ can fall back to the offline stub.
 
 from __future__ import annotations
 
+from typing import Any
+
 from bad_research.calibrate.cost import CostMeter
-from bad_research.calibrate.harness import BadRunOutput, BadRunner
+from bad_research.calibrate.harness import BadRunner, BadRunOutput
 
 
-def default_runner(config) -> BadRunner:
+def default_runner(config: Any) -> BadRunner:
     """Return a runner that drives the bad-research pipeline for one query.
 
-    `config=None` → default BadResearchConfig.
+    `config=None` -> default BadResearchConfig.
     """
     if config is None:
         try:

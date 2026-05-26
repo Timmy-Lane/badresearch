@@ -85,7 +85,7 @@ class CalibrationReport:
                 "",
                 "## Baselines",
                 "",
-                "| system | overall | pass | cost | Δ (bad−base) |",
+                "| system | overall | pass | cost | delta (bad-base) |",
                 "|---|---|---|---|---|",
             ]
             for b in self.baselines:
