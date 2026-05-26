@@ -7,7 +7,14 @@ ExtractorUnavailable when absent. KNOWN = repo/dossier convention; DESIGNED = th
 
 from __future__ import annotations
 
+import glob
+import gzip
+import io
+import os
 import re
+import shutil
+import subprocess
+import tarfile
 import xml.etree.ElementTree as ET
 from datetime import UTC, datetime
 from typing import Any
@@ -32,9 +39,17 @@ class ExtractorUnavailable(RuntimeError):
 
 
 def _iso(raw: str | None) -> str | None:
-    """Normalize a date string to an ISO date, or None. Uses dateparser (keyless)."""
+    """Normalize a date string to an ISO date, or None. Uses dateparser (keyless).
+
+    Handles yt-dlp's compact YYYYMMDD `upload_date` form (dateparser does not), then
+    falls back to dateparser for ISO/RFC/free-text dates from feeds and Atom.
+    """
     if not raw:
         return None
+    raw = raw.strip()
+    # yt-dlp upload_date is always 8 bare digits (YYYYMMDD); dateparser misses it.
+    if re.fullmatch(r"\d{8}", raw):
+        return f"{raw[:4]}-{raw[4:6]}-{raw[6:8]}"
     import dateparser  # type: ignore[import-untyped]
 
     dt = dateparser.parse(raw)
@@ -75,21 +90,232 @@ def classify_source(url: str) -> str:
     return "html_or_pdf"
 
 
+def _clean_vtt(vtt: str) -> str:
+    """Deterministic VTT clean (dossier 12 §A). DESIGNED (the repo's strip-VTT convention).
+
+    Drops WEBVTT/Kind/Language headers + timestamp lines; strips inline <..> timing/<c>
+    tags; takes each cue block's fullest line; dedups rolling captions (a cue that is a
+    prefix of the next is dropped) + adjacent exact repeats.
+    """
+    lines: list[str] = []
+    prev = ""
+    for blk in vtt.split("\n\n"):
+        txt = [
+            ln for ln in blk.splitlines()
+            if ln and "-->" not in ln
+            and not ln.startswith(("WEBVTT", "Kind:", "Language:"))
+        ]
+        if not txt:
+            continue
+        cue = re.sub(r"<[^>]+>", "", txt[-1]).strip()
+        if cue and cue != prev and not prev.endswith(cue):
+            lines.append(cue)
+            prev = cue
+    # final adjacent-dedup
+    out: list[str] = []
+    for ln in lines:
+        if not out or out[-1] != ln:
+            out.append(ln)
+    return "\n".join(out)
+
+
+def _require_cli(tool: str, hint: str) -> None:
+    if shutil.which(tool) is None:
+        raise ExtractorUnavailable(tool, hint)
+
+
+def _ytdlp_subs_dir(url: str) -> str:  # pragma: no cover - patched in tests
+    import tempfile
+
+    return tempfile.mkdtemp(prefix="bad_yt_")
+
+
+def _ytdlp_json(url: str) -> dict[str, Any]:  # pragma: no cover - patched in tests
+    out = subprocess.run(
+        ["yt-dlp", "--skip-download", "--dump-json", url],
+        capture_output=True, text=True, check=True,
+    )
+    import json as _json
+
+    return _json.loads(out.stdout or "{}")  # type: ignore[no-any-return]
+
+
 def youtube_transcript(url: str) -> dict[str, Any]:
-    raise NotImplementedError  # Task 13
+    """yt-dlp caption track -> densify-ready transcript note (dossier 12 §A). KNOWN command.
+
+    --skip-download => no video bytes, no Data-API call, keyless. Degrades via
+    ExtractorUnavailable when yt-dlp is not installed. The host-model densification
+    (the §6 pattern) is applied by the orchestrator, not here.
+    """
+    _require_cli("yt-dlp", "install with: pipx install yt-dlp (or brew install yt-dlp)")
+    out_dir = _ytdlp_subs_dir(url)
+    subprocess.run(
+        ["yt-dlp", "--write-sub", "--write-auto-sub", "--sub-lang", "en",
+         "--skip-download", "--sub-format", "vtt",
+         "-o", os.path.join(out_dir, "%(id)s.%(ext)s"), url],
+        capture_output=True, text=True, check=True,
+    )
+    vtt_files = sorted(glob.glob(os.path.join(out_dir, "*.vtt")))
+    body = ""
+    if vtt_files:
+        with open(vtt_files[0], encoding="utf-8") as fh:
+            body = _clean_vtt(fh.read())
+    meta = _ytdlp_json(url)
+    return {
+        "title": meta.get("title"),
+        "source": url,
+        "source_type": "youtube",
+        "fetched_at": _now(),
+        "published": _iso(meta.get("upload_date")),
+        "provenance": "yt-dlp --write-sub --write-auto-sub --sub-lang en "
+                      "--skip-download --sub-format vtt",
+        "markdown": body,
+    }
+
+
+_KEY_SOURCE_GLOBS = ("**/*.py", "**/*.ts", "**/*.rs", "**/*.go",
+                     "pyproject.toml", "Dockerfile", "**/*.md")
 
 
 def github_clone_notes(repo_url: str) -> list[dict[str, Any]]:
-    raise NotImplementedError  # Task 13
+    """git clone --depth=1 -> per-file notes (dossier 12 §B). KNOWN.
+
+    Shallow clone over smart-HTTP (no REST 60/hr cap). Degrades via ExtractorUnavailable
+    when git is absent. Reads README + key source files into normalized notes.
+    """
+    _require_cli("git", "install git (https://git-scm.com/downloads)")
+    slug = "/".join(urlparse(repo_url).path.strip("/").split("/")[:2])
+    import tempfile
+
+    dst = tempfile.mkdtemp(prefix="bad_gh_")
+    subprocess.run(
+        ["git", "clone", "--depth=1", f"https://github.com/{slug}.git", dst],
+        capture_output=True, text=True, check=True,
+    )
+    if not os.path.isdir(os.path.join(dst, ".git")):
+        raise RuntimeError(f"clone did not land for {slug}")
+    notes: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for pat in _KEY_SOURCE_GLOBS:
+        for fp in glob.glob(os.path.join(dst, pat), recursive=True):
+            if fp in seen or not os.path.isfile(fp):
+                continue
+            seen.add(fp)
+            rel = os.path.relpath(fp, dst)
+            try:
+                with open(fp, encoding="utf-8", errors="replace") as fh:
+                    text = fh.read()
+            except Exception:
+                continue
+            notes.append({
+                "title": f"{slug}:{rel}",
+                "source": f"https://github.com/{slug}/blob/HEAD/{rel}",
+                "source_type": "github",
+                "fetched_at": _now(),
+                "published": None,
+                "provenance": f"git clone --depth=1 https://github.com/{slug}.git",
+                "markdown": f"```\n{text}\n```" if not rel.endswith(".md") else text,
+            })
+    return notes
 
 
 def github_file(owner: str, repo: str, path: str,
                 branch: str | None = None) -> dict[str, Any]:
-    raise NotImplementedError  # Task 13
+    """Single file via raw.githubusercontent.com (CDN, uncapped) (dossier 12 §B). KNOWN."""
+    if branch is None:
+        meta_url = f"https://api.github.com/repos/{owner}/{repo}"
+        assert_url_safe(meta_url)
+        branch = httpx.get(meta_url, follow_redirects=True, timeout=15).json().get(
+            "default_branch", "main"
+        )
+    raw_url = f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}"
+    assert_url_safe(raw_url)
+    text = httpx.get(raw_url, follow_redirects=True, timeout=15).text
+    return {
+        "title": f"{owner}/{repo}:{path}",
+        "source": f"https://github.com/{owner}/{repo}/blob/{branch}/{path}",
+        "source_type": "github",
+        "fetched_at": _now(),
+        "published": None,
+        "provenance": f"GET {raw_url}",
+        "markdown": text,
+    }
+
+
+def _arxiv_atom_meta(aid: str) -> dict[str, Any]:  # pragma: no cover - patched in tests
+    import feedparser  # type: ignore[import-untyped]
+
+    f = feedparser.parse(f"https://export.arxiv.org/api/query?id_list={aid}")
+    if not f.entries:
+        return {"title": aid, "published": None}
+    e = f.entries[0]
+    return {"title": e.get("title"), "published": _iso(e.get("published"))}
+
+
+def _detex(tex: str) -> str:
+    """Cheap LaTeX -> markdown (dossier 12 §C). DESIGNED. pandoc if present, else regex."""
+    body = tex.split(r"\begin{document}", 1)[-1]
+    body = re.sub(r"(?m)%.*$", "", body)                       # drop comments
+    if shutil.which("pandoc"):
+        try:
+            out = subprocess.run(
+                ["pandoc", "-f", "latex", "-t", "gfm"],
+                input=body, capture_output=True, text=True, timeout=30,
+            )
+            if out.returncode == 0 and out.stdout.strip():
+                return out.stdout
+        except Exception:
+            pass
+    body = re.sub(r"\\section\*?\{([^}]*)\}", r"## \1", body)
+    body = re.sub(r"\\subsection\*?\{([^}]*)\}", r"### \1", body)
+    body = re.sub(r"\\textbf\{([^}]*)\}", r"**\1**", body)
+    body = re.sub(r"\\item\s*", "- ", body)
+    body = re.sub(r"\\end\{document\}", "", body)
+    body = re.sub(r"\\[a-zA-Z]+\*?(\[[^\]]*\])?", "", body)    # strip remaining commands
+    body = body.replace("{", "").replace("}", "")
+    return re.sub(r"\n{3,}", "\n\n", body).strip()
+
+
+def _extract_tex(raw: bytes) -> str:
+    """Untar/gunzip the arXiv source tarball, concat all .tex (dossier 12 §C). KNOWN."""
+    try:
+        with tarfile.open(fileobj=io.BytesIO(raw), mode="r:gz") as tar:
+            texts = []
+            for m in tar.getmembers():
+                if m.name.endswith(".tex") and m.isfile():
+                    f = tar.extractfile(m)
+                    if f:
+                        texts.append(f.read().decode("utf-8", errors="replace"))
+            return "\n".join(texts)
+    except (tarfile.TarError, OSError):
+        try:
+            return gzip.decompress(raw).decode("utf-8", errors="replace")
+        except OSError:
+            return raw.decode("utf-8", errors="replace")
 
 
 def arxiv_source_notes(url: str) -> dict[str, Any]:
-    raise NotImplementedError  # Task 13
+    """arXiv LaTeX source tarball -> note (dossier 12 §C). KNOWN. Prefer over the PDF.
+
+    export.arxiv.org/e-print/<id> is keyless (no token). De-TeX the source; metadata
+    from the keyless Atom export API.
+    """
+    m = re.search(r"arxiv\.org/(?:abs|pdf)/([\d.]+(?:v\d+)?)", url)
+    aid = m.group(1) if m else url.rstrip("/").split("/")[-1]
+    src_url = f"https://export.arxiv.org/e-print/{aid}"
+    assert_url_safe(src_url)
+    raw = httpx.get(src_url, follow_redirects=True, timeout=30).content
+    body = _detex(_extract_tex(raw))
+    meta = _arxiv_atom_meta(aid)
+    return {
+        "title": meta.get("title"),
+        "source": f"https://arxiv.org/abs/{aid}",
+        "source_type": "arxiv_src",
+        "fetched_at": _now(),
+        "published": meta.get("published"),
+        "provenance": f"GET export.arxiv.org/e-print/{aid}",
+        "markdown": body,
+    }
 
 
 def feed_notes(feed_url: str) -> list[dict[str, Any]]:
@@ -98,7 +324,7 @@ def feed_notes(feed_url: str) -> list[dict[str, Any]]:
     Accepts a feed URL or a raw XML string (feedparser handles both). Each entry yields
     {title, source=link, published, markdown}; full-content feeds inline the body.
     """
-    import feedparser  # type: ignore[import-untyped]
+    import feedparser
 
     f = feedparser.parse(feed_url)
     out: list[dict[str, Any]] = []
