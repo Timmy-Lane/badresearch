@@ -14,6 +14,10 @@ from pathlib import Path
 
 import typer
 
+# Re-export the idempotent installer (Plan 08's `core.hooks`) so callers and the
+# Plan-09 idempotency contract test import it from the CLI surface.
+from bad_research.core.hooks import install_global_hooks  # noqa: F401
+
 
 def install(
     path: str = typer.Argument(".", help="Project path (only used with --project / --steps-only)"),
@@ -56,4 +60,4 @@ def install(
         typer.echo(msg)
 
 
-__all__ = ["install"]
+__all__ = ["install", "install_global_hooks"]
