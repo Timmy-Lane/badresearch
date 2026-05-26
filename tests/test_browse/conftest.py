@@ -62,3 +62,92 @@ class FakeLLM:
 @pytest.fixture
 def fake_llm() -> Any:
     return FakeLLM
+
+
+import json as _json
+
+# A canonical agent-browser `snapshot -i --json` stdout (dossier 14 §10B / README.md:911-913).
+SNAPSHOT_JSON = _json.dumps({
+    "success": True,
+    "data": {
+        "snapshot": (
+            "Page: Example - Log in\n"
+            "URL: https://example.com/login\n\n"
+            "@e1 [heading] \"Log in\"\n"
+            "@e2 [form]\n"
+            "  @e3 [input type=\"email\"] placeholder=\"Email\"\n"
+            "  @e4 [input type=\"password\"] placeholder=\"Password\"\n"
+            "  @e5 [button type=\"submit\"] \"Continue\"\n"
+            "  @e6 [link] \"Forgot password?\""
+        ),
+        "refs": {
+            "e1": {"role": "heading", "name": "Log in"},
+            "e2": {"role": "form", "name": ""},
+            "e3": {"role": "textbox", "name": "Email"},
+            "e4": {"role": "textbox", "name": "Password"},
+            "e5": {"role": "button", "name": "Continue"},
+            "e6": {"role": "link", "name": "Forgot password?"},
+        },
+    },
+})
+
+# An empty/near-empty snapshot (lightpanda failed to hydrate → triggers chrome fallback).
+EMPTY_SNAPSHOT_JSON = _json.dumps({
+    "success": True,
+    "data": {"snapshot": "Page: Loading…\nURL: https://spa.example/\n", "refs": {}},
+})
+
+
+class FakeRunner:
+    """Stand-in for subprocess.run. Records every argv it is asked to run and returns
+    canned (returncode, stdout, stderr) tuples in order. If `route` is given it maps a
+    matched command word -> stdout (so a multi-step loop can return different stdout per
+    command). Never spawns a real process."""
+
+    def __init__(self, replies=None, route=None, returncode=0):
+        self.calls: list[list[str]] = []
+        self._replies = list(replies or [])
+        self._route = dict(route or {})
+        self._returncode = returncode
+        self.stdin: str | None = None
+
+    def __call__(self, argv, *, timeout=None, env=None, stdin=None):
+        self.calls.append(list(argv))
+        if stdin is not None:
+            self.stdin = stdin
+        # route by the command word (argv[1] after the `agent-browser` program name).
+        # the global flags (--engine X, --session Y, ...) precede the command word, so
+        # find the first argv element that is not a flag and not a flag's value.
+        cmd = _first_command_word(argv)
+        if cmd in self._route:
+            out = self._route[cmd]
+        elif self._replies:
+            out = self._replies.pop(0)
+        else:
+            out = ""
+        return (self._returncode, out, "")
+
+    def argvs(self) -> list[list[str]]:
+        return self.calls
+
+    def last(self) -> list[str]:
+        return self.calls[-1]
+
+
+# global flags that take a value (so the value is skipped when finding the command word)
+_GLOBAL_VALUE_FLAGS = {"--engine", "--session", "--state", "--headers"}
+
+
+def _first_command_word(argv: list[str]) -> str:
+    """Return the agent-browser subcommand word (skipping the program name + global flags)."""
+    i = 1  # skip the program name (argv[0])
+    while i < len(argv):
+        tok = argv[i]
+        if tok in _GLOBAL_VALUE_FLAGS:
+            i += 2  # skip the flag and its value
+            continue
+        if tok.startswith("--"):
+            i += 1  # bare flag
+            continue
+        return tok
+    return ""
