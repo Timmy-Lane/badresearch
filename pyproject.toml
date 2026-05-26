@@ -54,6 +54,7 @@ all = ["bad-research[cohere,exa,mcp,web,browse,quality]"]
 dev = [
     "pytest>=7.4",
     "pytest-cov>=4.1",
+    "pytest-asyncio>=0.23",
     "ruff>=0.3",
     "mypy>=1.8",
     "respx>=0.21",
@@ -82,3 +83,4 @@ strict = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra -q --strict-markers"
+asyncio_mode = "auto"
