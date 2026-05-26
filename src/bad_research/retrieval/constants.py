@@ -27,6 +27,16 @@ RERETRIEVE_MAX_ROUNDS = 2
 SEMANTIC_CACHE_THRESHOLD = 0.92
 NEGATION_PATTERN = r"\b(not|without|except|unlike|no_std|never|cannot|isn't|aren't|doesn't|don't|won't|n't)\b"
 
+# ── KR-5 keyless retrieval (INTERFACES_KEYLESS §5.6, dossier 15) ─────────────
+SEMANTIC_CACHE_THRESHOLD_LEXICAL = 0.85   # token-set overlap HIT (no embedder)  [15 §6.2]
+NEURAL_RECALL_VAULT_THRESHOLD = 25_000    # auto-enable the [local] dense lane    [15 §4.3]
+LLM_RERANK_TRUNC_CHARS = 800              # truncate each chunk for the rerank prompt  [15 §5.3]
+LLM_RERANK_BATCH = 30                     # rerank the full top-30 (top-12 cascade = budget knob)  [15 §5.3, §7.4]
+# Tiny stopword set for the lexical-cache token normalizer (dossier 15 §6.2).
+LLM_RERANK_STOPWORDS = frozenset(
+    {"how", "does", "the", "a", "in", "of", "to", "is", "what", "why"}
+)
+
 # ── RRF (Exa / LanceDB §8.8) ────────────────────────────────────────────────
 RRF_K = 60
 
