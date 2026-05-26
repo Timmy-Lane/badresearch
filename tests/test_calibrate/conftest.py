@@ -1,0 +1,61 @@
+"""Calibration test fixtures: stub judge, stub LLM, a tiny report fixture."""
+
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from bad_research.llm.base import LLMResponse
+
+
+@pytest.fixture
+def tiny_report() -> str:
+    return (
+        "# Does X cause Y?\n\n"
+        "Evidence indicates X correlates with Y [1]. A controlled study found a 23% "
+        "increase [2]. However, confounders remain unaddressed [1].\n"
+    )
+
+
+@pytest.fixture
+def tiny_corpus() -> list[dict]:
+    return [
+        {"note_id": "note-1", "url": "https://a.edu/x", "text": "X correlates with Y in cohort data."},
+        {"note_id": "note-2", "url": "https://b.org/y", "text": "A controlled study found a 23% increase."},
+    ]
+
+
+class StubLLM:
+    """Returns a canned 5-axis JSON verdict; records the prompt for assertions."""
+
+    name = "stub-llm"
+
+    def __init__(self, verdict: dict | None = None):
+        self.last_messages = None
+        self.call_count = 0
+        self._verdict = verdict or {
+            "factual": 0.9,
+            "citation": 0.85,
+            "completeness": 0.8,
+            "source_quality": 0.78,
+            "efficiency": 0.95,
+            "rationale": "well grounded",
+        }
+
+    def complete(
+        self, messages, *, tier, tools=None, cache=False, max_tokens=4096, temperature=0.1
+    ) -> LLMResponse:
+        self.last_messages = messages
+        self.call_count += 1
+        return LLMResponse(
+            text=json.dumps(self._verdict),
+            tool_calls=[],
+            usage={"input_tokens": 1200, "output_tokens": 180},
+            model="stub",
+        )
+
+
+@pytest.fixture
+def stub_llm() -> StubLLM:
+    return StubLLM()
