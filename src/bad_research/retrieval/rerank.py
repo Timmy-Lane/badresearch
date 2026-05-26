@@ -78,9 +78,22 @@ class ClaudeCodeReranker:
 
     name = "claude-code"
 
-    def __init__(self, *, llm: Any, tier: str = "work"):
+    def __init__(self, *, llm: Any = None, tier: str = "work"):
+        # llm may be None at construction: the host provider is resolved LAZILY on
+        # the first rerank() call (the skill path supplies the host model only when
+        # an actual rerank happens — no key is read at build time, keyless-correct).
         self._llm = llm
         self._tier = tier
+
+    def _provider(self) -> Any:
+        """Resolve the host LLM provider lazily (cached). Only touched when a real
+        rerank is performed — never at construction, so the keyless build path
+        (get_reranker → _build_reranker) never reads ANTHROPIC_API_KEY."""
+        if self._llm is None:
+            from bad_research.llm.base import get_llm_provider
+
+            self._llm = get_llm_provider("anthropic")
+        return self._llm
 
     def rerank(self, query: str, docs: list[str]) -> list[tuple[int, float]]:
         if not docs:
@@ -90,8 +103,8 @@ class ClaudeCodeReranker:
             LLMMessage(role="user", content=_build_user_message(query, docs)),
         ]
         try:
-            resp = self._llm.complete(messages, tier=self._tier, temperature=0,
-                                      max_tokens=2048)
+            resp = self._provider().complete(messages, tier=self._tier, temperature=0,
+                                             max_tokens=2048)
             # The shared KR-2 parser returns a list[float] (0-based, all-0.0 on a
             # fully-unparseable reply, per-item 0.0 on a missing/malformed item).
             scores = _parse_scores(resp.text, n=len(docs))
@@ -156,16 +169,13 @@ def get_reranker(config: Any, *, llm: Any = None,
       "local" → BGEReranker(ms-marco-MiniLM-L-6-v2) ([local] extra)
       "none"  → IdentityReranker (the --no-rerank floor)
     ``config.reranker`` selects; falls back to "host". The ``llm`` kwarg injects a
-    host provider for tests/headless; if absent on the "host" path it is resolved
-    lazily from the LLM seam (no key is read at factory time for none/local)."""
+    host provider for tests/headless; if absent on the "host" path the provider is
+    resolved LAZILY on first rerank() (no key is read at factory time for any
+    branch — the keyless build path never touches ANTHROPIC_API_KEY)."""
     choice = getattr(config, "reranker", "host")
     if choice == "none":
         return IdentityReranker()
     if choice == "local":
         return BGEReranker(scorer=bge_scorer)
-    # "host" (default): ClaudeCodeReranker needs a host LLM provider.
-    if llm is None:
-        from bad_research.llm.base import get_llm_provider
-
-        llm = get_llm_provider("anthropic")
+    # "host" (default): ClaudeCodeReranker resolves the host LLM lazily (llm may be None).
     return ClaudeCodeReranker(llm=llm)
