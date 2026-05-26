@@ -44,6 +44,8 @@ app.command("install")(_install_cmd)
 # ── research-pipeline subcommands (Task 12) ──────────────────────────────────
 from bad_research.cli.research import (
     funnel_gather_cmd,
+    grade_report_cmd,
+    recitation_gate_cmd,
     retrieve_cmd,
     route_cmd,
     uncited_gate_cmd,
@@ -55,6 +57,8 @@ app.command("funnel-gather")(funnel_gather_cmd)
 app.command("retrieve")(retrieve_cmd)
 app.command("verify-citations")(verify_citations_cmd)
 app.command("uncited-gate")(uncited_gate_cmd)
+app.command("grade-report")(grade_report_cmd)
+app.command("recitation-gate")(recitation_gate_cmd)
 
 # ── doctor + calibrate commands (Plan 09) ────────────────────────────────────
 from bad_research.cli.calibrate import calibrate as _calibrate_cmd

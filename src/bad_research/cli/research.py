@@ -276,8 +276,60 @@ def uncited_gate_cmd(
         raise typer.Exit(1)
 
 
+# ── grade-report (Stage 12.5) — in-pipeline grader, single host-model call ────
+def grade_report_cmd(
+    report: str = typer.Option(..., "--report"),
+    corpus: str = typer.Option(..., "--corpus"),
+    json_output: bool = typer.Option(False, "--json", "-j"),
+) -> None:
+    """Grade a report on the 5 axes + emit patcher-shaped findings (Stage 12.5).
+
+    --corpus is a JSON file: a list of {note_id, url, text} dicts (the
+    evidence-digest the report had access to). Returns {passed, scores, overall,
+    findings:[{failure_mode, severity, location, recommendation}]} for the grader
+    loop to feed the patcher. The verdict's findings join critic-findings-grader.json.
+    """
+    from bad_research.config import BadResearchConfig
+    from bad_research.llm.base import get_llm_provider
+    from bad_research.quality.grader import Grader
+
+    cfg = BadResearchConfig.load()
+    report_md = Path(report).read_text(encoding="utf-8")
+    corpus_rows = json.loads(Path(corpus).read_text(encoding="utf-8"))
+    grader = Grader(provider=get_llm_provider("anthropic", config=cfg))
+    # the query is embedded in the report's H1; the grader reads the report directly.
+    query = report_md.splitlines()[0].lstrip("# ").strip() if report_md else ""
+    verdict = grader.grade(query, report_md, corpus_rows)
+    typer.echo(json.dumps(verdict.to_dict(), default=str))
+
+
+# ── recitation-gate (Stage 16) — verbatim-copy detector, $0 deterministic ─────
+def recitation_gate_cmd(
+    report: str = typer.Option(..., "--report"),
+    note_bodies: str = typer.Option(..., "--note-bodies"),
+    json_output: bool = typer.Option(False, "--json", "-j"),
+) -> None:
+    """Deterministic ($0) recitation gate. --note-bodies is a JSON file mapping
+    note_id -> body markdown. Flags sentences that copy a source verbatim. A
+    `major` finding (NOT a ship-block — unlike uncited-gate); exit 0 always."""
+    from bad_research.quality.recitation import recitation_findings
+
+    report_md = Path(report).read_text(encoding="utf-8")
+    bodies = json.loads(Path(note_bodies).read_text(encoding="utf-8"))
+    findings = recitation_findings(report_md, bodies)
+    typer.echo(json.dumps({
+        "recitation": [
+            {"failure_mode": f.failure_mode, "severity": f.severity,
+             "location": f.location, "recommendation": f.recommendation}
+            for f in findings
+        ]
+    }))
+
+
 __all__ = [
     "funnel_gather_cmd",
+    "grade_report_cmd",
+    "recitation_gate_cmd",
     "retrieve_cmd",
     "route_cmd",
     "run_funnel",
