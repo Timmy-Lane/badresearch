@@ -1,0 +1,20 @@
+{
+  "hitCount": 7164,
+  "resultList": {
+    "result": [
+      {
+        "id": "12345",
+        "source": "MED",
+        "doi": "10.1000/epmc",
+        "pmid": "12345",
+        "pmcid": "PMC999",
+        "title": "CRISPR in cancer therapy",
+        "authorString": "Doe J, Roe R.",
+        "pubYear": "2023",
+        "isOpenAccess": "Y",
+        "abstractText": "We review CRISPR applications in oncology."
+      }
+    ]
+  },
+  "nextCursorMark": "AoE"
+}

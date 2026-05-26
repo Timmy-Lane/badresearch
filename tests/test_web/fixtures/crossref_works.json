@@ -1,0 +1,16 @@
+{
+  "message": {
+    "total-results": 455553,
+    "items": [
+      {
+        "DOI": "10.1145/rrf",
+        "title": ["Reciprocal Rank Fusion outperforms Condorcet"],
+        "author": [{"given": "Gordon", "family": "Cormack"}],
+        "issued": {"date-parts": [[2009, 7]]},
+        "score": 28.5,
+        "is-referenced-by-count": 1500,
+        "URL": "https://doi.org/10.1145/rrf"
+      }
+    ]
+  }
+}

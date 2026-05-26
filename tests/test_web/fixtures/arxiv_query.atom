@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom" xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/">
+  <opensearch:totalResults>105106</opensearch:totalResults>
+  <entry>
+    <id>http://arxiv.org/abs/2101.00001v1</id>
+    <title>Reciprocal Rank Fusion Revisited</title>
+    <summary>We study RRF for combining ranked lists in retrieval.</summary>
+    <published>2021-01-01T00:00:00Z</published>
+    <author><name>Ada Lovelace</name></author>
+    <author><name>Alan Turing</name></author>
+    <link title="pdf" href="http://arxiv.org/pdf/2101.00001v1" rel="related" type="application/pdf"/>
+    <arxiv:primary_category term="cs.IR"/>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2102.00002v2</id>
+    <title>Fusion Methods for IR</title>
+    <summary>A survey of rank fusion methods.</summary>
+    <published>2022-02-02T00:00:00Z</published>
+    <author><name>Grace Hopper</name></author>
+    <link title="pdf" href="http://arxiv.org/pdf/2102.00002v2" rel="related" type="application/pdf"/>
+    <arxiv:primary_category term="cs.IR"/>
+  </entry>
+</feed>

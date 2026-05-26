@@ -1,0 +1,7 @@
+{
+  "esearchresult": {
+    "count": "17164",
+    "idlist": ["38000001", "38000002"],
+    "querytranslation": "\"crispr\"[All Fields] AND \"cancer\"[MeSH]"
+  }
+}

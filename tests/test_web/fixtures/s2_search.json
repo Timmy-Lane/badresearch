@@ -1,0 +1,16 @@
+{
+  "total": 42,
+  "data": [
+    {
+      "paperId": "abc",
+      "title": "RRF for Retrieval",
+      "year": 2009,
+      "authors": [{"name": "G. Cormack"}],
+      "abstract": "We combine ranked lists with RRF.",
+      "tldr": {"text": "RRF beats Condorcet."},
+      "externalIds": {"DOI": "10.1145/rrf", "ArXiv": "2101.00001"},
+      "citationCount": 1500,
+      "openAccessPdf": {"url": "https://example.org/s2rrf.pdf"}
+    }
+  ]
+}

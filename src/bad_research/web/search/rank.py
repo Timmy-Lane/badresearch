@@ -79,3 +79,38 @@ def rrf_fuse(ranked_lists: list[list[WebResult]], *, k: int = RRF_K) -> list[Web
         rep.metadata["rrf_score"] = scores[key]
         out.append(rep)
     return out
+
+
+def _identity(r: WebResult) -> str:
+    """DOI-first identity (§8.3.1): collapse the same paper across arXiv/DOI/OA/PMC."""
+    doi = (r.metadata or {}).get("doi")
+    return f"doi:{doi.lower()}" if doi else canon(r.url)
+
+
+def _richness(r: WebResult) -> int:
+    m = r.metadata or {}
+    return sum(bool(m.get(f)) for f in ("doi", "content", "citations", "oa_pdf")) + bool(r.content)
+
+
+def rrf_fuse_with_verticals(ranked_lists: list[list[WebResult]], *, k: int = RRF_K) -> list[WebResult]:
+    """§3.2 RRF + DOI-first dedup + metadata-richness tie-break (§8.3). No formula
+    change — RRF stays rank-based; only the identity key and tie-break differ."""
+    scores: dict[str, float] = defaultdict(float)
+    reps: dict[str, WebResult] = {}
+    for lst in ranked_lists:
+        for rank, r in enumerate(lst, start=1):
+            key = _identity(r)
+            scores[key] += 1.0 / (k + rank)
+            reps[key] = _richer(reps.get(key), r)
+    ordered = sorted(
+        reps,
+        key=lambda key: (scores[key], len(reps[key].metadata.get("sources", ())), _richness(reps[key])),
+        reverse=True,
+    )
+    out = []
+    for key in ordered:
+        rep = reps[key]
+        rep.metadata["sources"] = sorted(rep.metadata.get("sources", set()))
+        rep.metadata["rrf_score"] = scores[key]
+        out.append(rep)
+    return out

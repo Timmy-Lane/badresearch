@@ -1,0 +1,7 @@
+{
+  "result": {
+    "uids": ["38000001", "38000002"],
+    "38000001": {"uid": "38000001", "title": "CRISPR-Cas9 in tumors", "pubdate": "2024 Jan", "authors": [{"name": "Doe J"}], "fulljournalname": "Nature"},
+    "38000002": {"uid": "38000002", "title": "Gene editing oncology", "pubdate": "2023", "authors": [{"name": "Roe R"}], "fulljournalname": "Cell"}
+  }
+}

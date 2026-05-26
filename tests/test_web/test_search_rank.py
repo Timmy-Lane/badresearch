@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from bad_research.web.base import WebResult
-from bad_research.web.search.rank import rrf_fuse
+from bad_research.web.search.rank import rrf_fuse, rrf_fuse_with_verticals
 
 
 def _r(url, source, content="", doi=None, citations=None, oa_pdf=None, title="t"):
@@ -51,3 +51,23 @@ def test_rrf_keeps_richer_representative():
     assert len(fused) == 1
     assert fused[0].content == "a long abstract here"   # longer content kept (§1.3)
     assert set(fused[0].metadata["sources"]) == {"websearch", "openalex"}
+
+
+def test_rrf_with_verticals_dedups_on_doi_first():
+    # same paper, three sources, three different URLs, one DOI → ONE candidate
+    arxiv = _r("https://arxiv.org/abs/1", "arxiv", content="abs", doi="10.1/x", oa_pdf="p1")
+    oalex = _r("https://doi.org/10.1/x", "openalex", content="longer abstract", doi="10.1/x", citations=99)
+    s2 = _r("https://s2.org/p", "s2", content="abs", doi="10.1/x")
+    fused = rrf_fuse_with_verticals([[arxiv], [oalex], [s2]])
+    assert len(fused) == 1
+    assert set(fused[0].metadata["sources"]) == {"arxiv", "openalex", "s2"}
+    assert fused[0].content == "longer abstract"   # richest representative
+
+
+def test_rrf_with_verticals_richness_tiebreak():
+    # two candidates tie on RRF (both rank-1 single source) → richer one first
+    bare = _r("https://web.com/a", "websearch")                       # 0 rich fields
+    rich = _r("https://web.com/b", "openalex", content="c", doi="10.1/y",
+              citations=5, oa_pdf="pdf")                              # 4 rich fields
+    fused = rrf_fuse_with_verticals([[bare], [rich]])
+    assert fused[0].url == "https://web.com/b"

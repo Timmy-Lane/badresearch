@@ -1,0 +1,16 @@
+{
+  "meta": {"count": 22208, "page": 1},
+  "results": [
+    {
+      "id": "https://openalex.org/W123",
+      "doi": "https://doi.org/10.1145/rrf",
+      "title": "Reciprocal Rank Fusion",
+      "relevance_score": 3261.0,
+      "publication_year": 2009,
+      "authorships": [{"author": {"display_name": "Gordon Cormack"}}],
+      "open_access": {"is_oa": true, "oa_url": "https://example.org/rrf.pdf"},
+      "cited_by_count": 1500,
+      "abstract_inverted_index": {"Reciprocal": [0], "rank": [1], "fusion": [2], "works": [3]}
+    }
+  ]
+}
