@@ -22,7 +22,7 @@ THIN_PASS_FRACTION = 0.30        # <30% pass -> Stage-2 fires (Perplexity failsa
 MAX_RERETRIEVE_ROUNDS = 2        # re-retrieve max rounds
 
 _TRACKING_PARAM_PREFIXES = ("utm_",)
-_TRACKING_PARAM_EXACT = frozenset({"fbclid", "gclid", "mc_eid", "mc_cid", "ref"})
+_TRACKING_PARAM_EXACT = frozenset({"fbclid", "gclid", "mc_eid", "mc_cid"})
 
 
 def _canonical_url(url: str) -> str:
@@ -70,7 +70,12 @@ def _dedup_union(by_provider: dict[str, list[WebResult]]) -> list[WebResult]:
     for key in order:
         r = seen[key]
         # Normalize the kept result's URL to the canonical form so downstream
-        # stages key off one stable URL per page (dossier 02 §6.3 dedup).
+        # stages key off one stable URL per page (dossier 02 §6.3 dedup). Stash
+        # the pre-canonical URL so Stage-3 re-fetch can fall back to it — the
+        # canonical (www-stripped/slash-trimmed) form sometimes 404s on hosts
+        # that require the original.
+        if r.url != key:
+            r.metadata.setdefault("original_url", r.url)
         r.url = key
         r.metadata["found_by"] = found_by[key]
         out.append(r)
@@ -237,8 +242,12 @@ class CascadeProvider:
                 extracted < self._extract_top_n and r.looks_like_junk() is not None
             )
             if needs_extract:
+                # Prefer the pre-canonical URL when present — canonicalization
+                # (www-strip/slash-trim) can 404 on hosts that require the
+                # original form (dedup stashes it in metadata['original_url']).
+                fetch_url = r.metadata.get("original_url", r.url)
                 try:
-                    fetched = self._extractor.fetch(r.url)
+                    fetched = self._extractor.fetch(fetch_url)
                 except ProviderError:
                     out.append(r)
                     continue

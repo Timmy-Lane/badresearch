@@ -45,6 +45,34 @@ def test_dedup_union_merges_by_canonical_url() -> None:
     assert set(a_row.metadata["found_by"]) == {"sonar", "tavily"}
 
 
+def test_dedup_preserves_original_url() -> None:
+    """Canonicalization rewrites r.url but stashes the original in metadata so
+    Stage-3 re-fetch can fall back to it."""
+    original = "https://www.x.test/a/?utm_source=z"
+    merged = _dedup_union({"sonar": [_r(original)]})
+    assert len(merged) == 1
+    row = merged[0]
+    assert row.url == "https://x.test/a"          # canonicalized
+    assert row.metadata["original_url"] == original  # original preserved
+
+
+def test_dedup_no_original_url_when_unchanged() -> None:
+    """When canonicalization is a no-op, no original_url is stashed."""
+    url = "https://x.test/a"
+    merged = _dedup_union({"sonar": [_r(url)]})
+    assert merged[0].url == url
+    assert "original_url" not in merged[0].metadata
+
+
+def test_canonical_keeps_ref_param() -> None:
+    """?ref=main is a meaningful routing/branch param (GitHub etc.) and must NOT
+    be stripped — two distinct ref values stay distinct."""
+    assert _canonical_url("https://github.com/a/b?ref=main") == "https://github.com/a/b?ref=main"
+    assert _canonical_url("https://github.com/a/b?ref=main") != _canonical_url(
+        "https://github.com/a/b?ref=dev"
+    )
+
+
 def test_rrf_fuse_k_is_60() -> None:
     assert RRF_K == 60
 
@@ -193,6 +221,23 @@ def test_stage3_extracts_content_less_top_results() -> None:
     assert "https://thin.test" in extractor.fetched
     thin_row = next(r for r in results if "thin.test" in r.url)
     assert thin_row.content.startswith("Full extracted body")
+
+
+def test_stage3_fetches_original_url_when_present() -> None:
+    """Stage-3 re-fetch prefers metadata['original_url'] (set by dedup) over the
+    canonical r.url, since the canonical form can 404 on strict hosts."""
+    serp = _StubProvider(
+        "sonar",
+        [WebResult(url="https://www.thin.test/a/", title="t", content="too short")],
+    )
+    extractor = _StubExtractor()
+    cascade = CascadeProvider(
+        keyword_providers=[serp], extractor=extractor, extract_top_n=2
+    )
+    cascade.search_ex(SearchQuery(query="x"))
+    # dedup canonicalized to https://thin.test/a and stashed the original;
+    # Stage-3 must have fetched the ORIGINAL, not the canonical form.
+    assert extractor.fetched == ["https://www.thin.test/a/"]
 
 
 def test_zero_key_path_searxng_only() -> None:
