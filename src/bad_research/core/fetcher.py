@@ -3,9 +3,87 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
+import socket
 from urllib.parse import urlparse
 
 from bad_research.browse import fetch_tiered  # Tier 0->3 ladder hook
+
+
+class SSRFError(ValueError):
+    """Raised when a URL resolves to a private/loopback/metadata address.
+
+    The funnel + browse layers fetch attacker-influenceable URLs (search-result
+    links + chained-crawl hrefs). Without this guard a malicious page could point
+    the fetcher at `http://169.254.169.254/` (cloud metadata) or an internal
+    service. We refuse any URL whose host resolves into a blocked range.
+    """
+
+
+# Hostnames refused outright (no DNS resolution needed).
+_BLOCKED_HOSTNAMES = frozenset({"localhost", "ip6-localhost", "ip6-loopback"})
+
+
+def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """True if `ip` is loopback / private / link-local / metadata / reserved.
+
+    Covers 127.0.0.0/8, 10/8, 172.16/12, 192.168/16, 169.254.0.0/16 (cloud
+    metadata at 169.254.169.254), ::1, and IPv4-mapped IPv6 forms of all of them.
+    """
+    # Unwrap IPv4-mapped IPv6 (e.g. ::ffff:127.0.0.1) so the v4 rules apply.
+    mapped = getattr(ip, "ipv4_mapped", None)
+    if mapped is not None:
+        ip = mapped
+    return (
+        ip.is_loopback
+        or ip.is_private
+        or ip.is_link_local      # 169.254.0.0/16 incl. cloud metadata
+        or ip.is_reserved
+        or ip.is_unspecified
+        or ip.is_multicast
+    )
+
+
+def assert_url_safe(url: str) -> None:
+    """Raise SSRFError if `url` targets a private/loopback/metadata address.
+
+    Resolves the hostname (all A/AAAA records) and blocks if ANY resolved
+    address falls in a blocked range — closing the DNS-rebinding-ish gap where a
+    name resolves to both a public and an internal IP. Literal IPs are checked
+    directly. Non-resolvable hosts are allowed through (the fetch will fail
+    normally) so we never block legitimate-but-momentarily-unresolvable hosts.
+    """
+    host = (urlparse(url).hostname or "").strip().rstrip(".").lower()
+    if not host:
+        raise SSRFError(f"refusing URL with no host: {url!r}")
+    if host in _BLOCKED_HOSTNAMES:
+        raise SSRFError(f"refusing loopback host {host!r}")
+
+    # Literal IP in the URL — check directly, no DNS.
+    try:
+        literal = ipaddress.ip_address(host)
+    except ValueError:
+        literal = None
+    if literal is not None:
+        if _is_blocked_ip(literal):
+            raise SSRFError(f"refusing private/loopback/metadata IP {host!r}")
+        return
+
+    # Hostname — resolve and check every returned address.
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror:
+        return  # unresolvable: let the downstream fetch fail naturally
+    for info in infos:
+        addr = info[4][0]
+        # strip IPv6 zone id if present (fe80::1%eth0)
+        addr = addr.split("%", 1)[0]
+        try:
+            ip = ipaddress.ip_address(addr)
+        except ValueError:
+            continue
+        if _is_blocked_ip(ip):
+            raise SSRFError(f"host {host!r} resolves to blocked address {addr}")
 
 
 def fetch_and_save(
@@ -34,6 +112,11 @@ def fetch_and_save(
         RuntimeError: If fetch fails.
     """
     from bad_research.web.base import get_provider
+
+    # SSRF guard — refuse private/loopback/cloud-metadata targets before any
+    # network call. URLs here are attacker-influenceable (search results +
+    # chained-crawl links), so this is the choke point.
+    assert_url_safe(url)
 
     tags = tags or []
     conn = vault.db
