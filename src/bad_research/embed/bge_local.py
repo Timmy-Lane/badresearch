@@ -20,7 +20,9 @@ class BgeLocalEmbedProvider:
 
     def __init__(self, *, model: str = "BAAI/bge-small-en-v1.5",
                  device: str | None = None):
-        from sentence_transformers import SentenceTransformer  # lazy ([local])
+        from sentence_transformers import (  # type: ignore[import-not-found]  # lazy ([local])
+            SentenceTransformer,
+        )
 
         self.name = model.split("/")[-1]
         self._model = SentenceTransformer(model, device=device)

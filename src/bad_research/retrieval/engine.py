@@ -229,6 +229,7 @@ class RetrievalEngine:
         return survivors, pass_fraction, top_note
 
 
-# `hybrid_fuse` (α=0.7) and `ALPHA` are imported and retained for the calibrated
-# fuser path / parity tests; the default recall path uses min-max BM25 or RRF.
+# `hybrid_fuse` (alpha=0.7) and `ALPHA` are imported and retained for the
+# calibrated fuser path / parity tests; the default recall path uses min-max
+# BM25 or RRF.
 _ = (hybrid_fuse, ALPHA)

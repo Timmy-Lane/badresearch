@@ -117,9 +117,10 @@ def test_expand_symbols_pulls_wiki_link_neighbors(tmp_path, stub_links_db):
         name = "lowpass"
         def complete(self, messages, *, tier, tools=None, cache=False,
                      max_tokens=4096, temperature=0.1):
-            from bad_research.llm.base import LLMResponse
             # Score everything 0.0 on round 1 so <30% pass → forces a widen.
             import json as _json
+
+            from bad_research.llm.base import LLMResponse
             user = messages[1].content
             ns = [int(line[1:line.index("]")]) for line in user.splitlines()
                   if line.startswith("[") and "]" in line]

@@ -24,7 +24,6 @@ def test_frozen_constants_match_interfaces():
 
 
 def test_kr5_keyless_constants_present_and_exact():
-    from bad_research.retrieval import constants as C
     # dossier 15 §6.2 — token-set lexical cache threshold (looser than the 0.92 cosine).
     assert C.SEMANTIC_CACHE_THRESHOLD_LEXICAL == 0.85
     # dossier 15 §4.3 — auto-enable the [local] dense lane above this chunk count.

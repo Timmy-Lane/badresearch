@@ -5,8 +5,6 @@ KR-2 in web/search/rerank.py (the brief's "ONE rerank prompt" rule). These tests
 assert the shared-import identity, the prompt assembly, the JSON parse, graceful
 0.0 degradation, and the get_reranker host/local/none factory — all keyless via
 the FakeLLMProvider double (no network, no key)."""
-import pytest
-
 from bad_research.retrieval.base import Reranker
 from bad_research.retrieval.rerank import (
     LLM_RERANK_SYSTEM,

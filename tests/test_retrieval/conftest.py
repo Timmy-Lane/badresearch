@@ -50,7 +50,7 @@ def chunk_factory():
     return make_chunk
 
 
-from bad_research.llm.base import LLMResponse  # noqa: E402
+from bad_research.llm.base import LLMResponse
 
 
 class FakeLLMProvider:
@@ -78,7 +78,7 @@ def fake_llm():
     return FakeLLMProvider
 
 
-import sqlite3 as _sqlite3  # noqa: E402
+import sqlite3 as _sqlite3
 
 
 @pytest.fixture

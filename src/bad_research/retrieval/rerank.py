@@ -46,10 +46,10 @@ from bad_research.web.search.rerank import (
 )
 
 __all__ = [
+    "LLM_RERANK_SYSTEM",
     "BGEReranker",
     "ClaudeCodeReranker",
     "IdentityReranker",
-    "LLM_RERANK_SYSTEM",
     "Scorer",
     "get_reranker",
 ]
@@ -95,7 +95,7 @@ class ClaudeCodeReranker:
             # The shared KR-2 parser returns a list[float] (0-based, all-0.0 on a
             # fully-unparseable reply, per-item 0.0 on a missing/malformed item).
             scores = _parse_scores(resp.text, n=len(docs))
-        except Exception:  # noqa: BLE001 — a failed host call must not crash retrieval (§5.3)
+        except Exception:  # a failed host call must not crash retrieval (§5.3)
             scores = [0.0] * len(docs)
         # Clamp to [0,1] (defensive; the parser already keeps the model's raw float).
         scored = [(i, max(0.0, min(1.0, float(s)))) for i, s in enumerate(scores)]
