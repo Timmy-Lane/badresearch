@@ -205,8 +205,62 @@ def extract_published_date(stripped_html: str) -> str | None:
     raise NotImplementedError  # Task 9
 
 
+def _stem_tokens(text: str) -> list[str]:
+    """Lowercase word tokens, Snowball-stemmed (dossier 12 §7 / §3.4). DESIGNED."""
+    from snowballstemmer import stemmer  # type: ignore[import-untyped]
+
+    st = stemmer("english")
+    return [st.stemWord(w) for w in re.findall(r"[a-z0-9]+", text.lower())]
+
+
 def highlights(markdown: str, query: str, k: int = HL_TOPK) -> list[dict[str, Any]]:
-    raise NotImplementedError  # Task 8
+    """Query-biased top-k passages via BM25 over sliding windows (dossier 12 §7). DESIGNED.
+
+    Windows of HL_WINDOW (120) words, step HL_STEP (60); BM25Okapi over Snowball-stemmed
+    windows scored against the stemmed query; top-k returned, each capped at HL_CHAR_CAP
+    (500) chars. The keyless analogue of Exa Highlights (no cross-encoder, no key).
+    """
+    from rank_bm25 import BM25Okapi  # type: ignore[import-untyped]
+
+    words = markdown.split()
+    if not words:
+        return []
+    starts = list(range(0, max(1, len(words) - HL_WINDOW + 1), HL_STEP))
+    # ensure the trailing words are covered: if the last window stops short of the
+    # document end, anchor a final window at the end (no tail content is ever dropped).
+    if starts[-1] + HL_WINDOW < len(words):
+        starts.append(len(words) - HL_WINDOW)
+    wins = [" ".join(words[i:i + HL_WINDOW]) for i in starts] or [markdown]
+    tokenized = [_stem_tokens(w) or ["_"] for w in wins]
+    bm25 = BM25Okapi(tokenized)
+    q_stems = _stem_tokens(query) or ["_"]
+    scores = bm25.get_scores(q_stems)
+    ranked = sorted(zip(wins, scores, strict=True), key=lambda x: -x[1])[:k]
+    return [{"text": _cap_passage(w, q_stems), "score": float(s)} for w, s in ranked]
+
+
+def _cap_passage(window: str, q_stems: list[str]) -> str:
+    """Clip a window to <= HL_CHAR_CAP (500) chars around the query match (dossier 12 §7).
+
+    A 120-word window exceeds 500 chars; clipping the head would drop a tail match that
+    drove the score. Anchor the slice on the first query-term hit so the returned passage
+    actually contains the matched content. DESIGNED.
+    """
+    if len(window) <= HL_CHAR_CAP:
+        return window
+    qset = set(q_stems)
+    # locate the first word whose stem is a query term
+    words = window.split()
+    hit = 0
+    for i, w in enumerate(words):
+        toks = _stem_tokens(w)
+        if any(t in qset for t in toks):
+            hit = i
+            break
+    # char offset of that word, then back up a little for context
+    prefix = " ".join(words[:hit])
+    start = max(0, len(prefix) - 120)
+    return window[start:start + HL_CHAR_CAP]
 
 
 def pdf_to_markdown(pdf_bytes: bytes) -> str:
