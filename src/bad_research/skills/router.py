@@ -79,3 +79,25 @@ def route_reason(decomp: dict) -> str:
     if route == "agentic-fast":
         return f"agentic-fast: {n} atomic item(s), short, single-domain, no tension"
     return f"light: {n} atomic item(s) / structured coverage, no full-tier trigger"
+
+
+def effort_overrides(effort: str | None) -> dict | None:
+    """Translate the `--reasoning-effort` dial (minimal/low/medium/high) into the
+    router overrides the orchestrator applies on top of the auto-classified route.
+
+    Returns None for an absent/invalid effort (the auto-route is left untouched).
+    The returned dict pins {route, tier, fetchers_max, loci_max, extended_thinking,
+    single_draft} — OpenAI's 4-level continuum expressed as a host-side config
+    (dossier 16 §6.1). This is the wiring for the stub flag in cli/research.py.
+    """
+    if effort not in R.EFFORT_MAP:
+        return None
+    return dict(R.EFFORT_MAP[effort])
+
+
+def degrade_order() -> tuple[str, ...]:
+    """The Claude token-ceiling degrade order (dossier 16 §6.2): cut tool-call
+    redundancy, then fan-out width, then model tier — NEVER the synthesis/grounding
+    token budget (the 80%-variance core). The orchestrator walks this list when a
+    run approaches its --max-tokens ceiling."""
+    return R.DEGRADE_ORDER
