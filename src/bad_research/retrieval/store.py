@@ -18,8 +18,9 @@ all plan APIs confirmed working verbatim — no [CORRECTION] needed):
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
-import lancedb
+import lancedb  # type: ignore[import-untyped]
 import pyarrow as pa
 
 from bad_research.retrieval.constants import (
@@ -52,14 +53,14 @@ class LanceChunkStore:
             pa.field("dim", pa.int64()),
         ])
 
-    def _open_or_create(self):
+    def _open_or_create(self) -> Any:
         # list_tables() (table_names() is deprecated in lancedb 0.30.x).
         existing = self.db.list_tables() if hasattr(self.db, "list_tables") else self.db.table_names()
         if TABLE in existing:
             return self.db.open_table(TABLE)
         return self.db.create_table(TABLE, schema=self._schema())
 
-    def upsert(self, rows: list[dict]) -> None:
+    def upsert(self, rows: list[dict[str, Any]]) -> None:
         """Idempotent on chunk_id (merge_insert delete-then-insert on match)."""
         if not rows:
             return
@@ -70,7 +71,7 @@ class LanceChunkStore:
             .execute(tbl))
 
     def count(self) -> int:
-        return self._table.count_rows()
+        return int(self._table.count_rows())
 
     def maybe_build_index(self) -> bool:
         """Build a deterministic IVF_HNSW_PQ index iff rows >= threshold.

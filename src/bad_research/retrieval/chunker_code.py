@@ -21,6 +21,7 @@ property-style API so the chunker is robust across tree-sitter versions.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 from typing import Any
 
 from tree_sitter_language_pack import get_parser
@@ -83,13 +84,13 @@ class _NodeView:
     def child_count(self) -> int:
         return int(_call_or_value(self._n.child_count))
 
-    def child(self, i: int) -> "_NodeView":
+    def child(self, i: int) -> _NodeView:
         return _NodeView(self._n.child(i))
 
-    def children(self) -> list["_NodeView"]:
+    def children(self) -> list[_NodeView]:
         return [self.child(i) for i in range(self.child_count())]
 
-    def field(self, name: str) -> "_NodeView | None":
+    def field(self, name: str) -> _NodeView | None:
         sub = self._n.child_by_field_name(name)
         return _NodeView(sub) if sub is not None else None
 
@@ -97,11 +98,11 @@ class _NodeView:
 def _parse_root(code: str, language: str) -> _NodeView:
     parser = get_parser(language)
     tree = parser.parse(code)            # str input (binding-verified)
-    root = _call_or_value(tree.root_node)
+    root = _call_or_value(tree.root_node)  # type: ignore[union-attr]
     return _NodeView(root)
 
 
-def _walk(node: _NodeView):
+def _walk(node: _NodeView) -> Iterator[_NodeView]:
     yield node
     for child in node.children():
         yield from _walk(child)

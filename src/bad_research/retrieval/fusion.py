@@ -48,7 +48,7 @@ def retrieval_weight(pre_rerank_rank: int) -> float:
 
 
 def three_tier_fuse(initial_score: float, reranker_score: float, pre_rerank_rank: int) -> float:
-    """final = max(0, w*initial + (1-w)*reranker − penalty)."""
+    """final = max(0, w*initial + (1-w)*reranker - penalty)."""
     w = retrieval_weight(pre_rerank_rank)
     base = w * initial_score + (1 - w) * reranker_score
     if pre_rerank_rank > 10:

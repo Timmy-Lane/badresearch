@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from bad_research.embed.base import EmbedProvider
 from bad_research.models.note import Note
@@ -80,8 +80,8 @@ class RetrievalEngine:
         for i in range(0, len(embed_texts), EMBED_BATCH_CAP):
             batch = embed_texts[i:i + EMBED_BATCH_CAP]
             vectors.extend(self.embedder.embed(batch, input_type="document"))
-        rows: list[dict] = []
-        fts_rows: list[dict] = []
+        rows: list[dict[str, Any]] = []
+        fts_rows: list[dict[str, Any]] = []
         for chunk, vec, ct in zip(pending, vectors, ct_for, strict=True):
             rows.append({"chunk_id": chunk.chunk_id, "vector": vec, "note_id": chunk.note_id,
                          "char_start": chunk.char_start, "char_end": chunk.char_end,
@@ -116,7 +116,8 @@ class RetrievalEngine:
         self.cache.put(query, {"chunk_ids": [c.chunk_id for c in result]})
         return result
 
-    def _one_round(self, query: str, extra_ids: set[str]):
+    def _one_round(self, query: str,
+                   extra_ids: set[str]) -> tuple[list[Chunk], float, str | None]:
         qv = self.embedder.embed([query], input_type="query")[0]
         vec_hits = self.store.search_vector(qv, top_k=self.top_k_retrieve)
         vec_scores = {cid: LanceChunkStore.distance_to_score(d) for cid, d in vec_hits}

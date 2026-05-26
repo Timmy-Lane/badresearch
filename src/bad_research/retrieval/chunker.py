@@ -55,9 +55,9 @@ def _split_oversized(span: _Span, body: str) -> list[_Span]:
     if len(text.encode()) <= CHUNK_BYTE_TARGET:
         return [span]
     pieces: list[_Span] = []
-    para_starts = [span.start] + [span.start + m.end() for m in re.finditer(r"\n\s*\n", text)]
+    para_starts = [span.start, *(span.start + m.end() for m in re.finditer(r"\n\s*\n", text))]
     buf_start = span.start
-    for nxt in para_starts[1:] + [span.end]:
+    for nxt in [*para_starts[1:], span.end]:
         if (nxt - buf_start) > CHUNK_BYTE_TARGET and nxt > buf_start:
             pieces.append(_Span(span.heading, buf_start, nxt))
             buf_start = nxt

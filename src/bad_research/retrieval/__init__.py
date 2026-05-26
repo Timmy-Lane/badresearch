@@ -1,4 +1,4 @@
-"""Perplexity×NIA hybrid retrieval engine.
+"""Perplexity x NIA hybrid retrieval engine.
 
 Public surface: `Chunk`, `Reranker` (contracts, base.py), `RetrievalEngine`
 (concrete impl, engine.py), `chunk_note` (chunker.py)."""

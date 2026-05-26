@@ -3,6 +3,7 @@ the body weight; chunk_fts has a single content column so we only weight body.""
 from __future__ import annotations
 
 import sqlite3
+from typing import Any
 
 from bad_research.retrieval.constants import BM25_BODY_WEIGHT
 from bad_research.search.fts import preprocess_query  # forked hyperresearch helper
@@ -22,7 +23,7 @@ def create_chunk_fts(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def index_chunk_fts(conn: sqlite3.Connection, rows: list[dict]) -> None:
+def index_chunk_fts(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> None:
     """Upsert chunk bodies. FTS5 has no PK, so delete-by-chunk_id then insert."""
     for r in rows:
         conn.execute("DELETE FROM chunk_fts WHERE chunk_id = ?", (r["chunk_id"],))

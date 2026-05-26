@@ -10,6 +10,7 @@ import json
 import re
 import sqlite3
 from pathlib import Path
+from typing import Any
 
 from bad_research.embed.base import EmbedProvider
 from bad_research.retrieval.constants import NEGATION_PATTERN, SEMANTIC_CACHE_THRESHOLD
@@ -50,7 +51,7 @@ class SemanticCache:
         self.conn.executescript(_DDL)
         self.conn.commit()
 
-    def get(self, query: str) -> dict | None:
+    def get(self, query: str) -> dict[str, Any] | None:
         qv = self.embedder.embed([query], input_type="query")[0]
         q_neg = has_negation(query)
         best = None
@@ -76,7 +77,7 @@ class SemanticCache:
                 "cache_similarity": best_sim,
                 "original_query": best["query_text"]}
 
-    def put(self, query: str, payload: dict) -> None:
+    def put(self, query: str, payload: dict[str, Any]) -> None:
         qv = self.embedder.embed([query], input_type="query")[0]
         self.conn.execute(
             "INSERT OR REPLACE INTO query_cache (query_text, embedding, has_negation, payload) "

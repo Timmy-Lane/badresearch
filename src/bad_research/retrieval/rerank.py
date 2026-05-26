@@ -14,10 +14,15 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
+from typing import Any
+
+# A local cross-encoder scorer: maps [(query, doc)] -> [relevance_score].
+Scorer = Callable[[list[tuple[str, str]]], list[float]]
 
 
 class CohereReranker:
-    def __init__(self, *, model: str = "rerank-v3.5", api_key: str | None = None, client=None):
+    def __init__(self, *, model: str = "rerank-v3.5", api_key: str | None = None,
+                 client: Any = None):
         self.model = model
         if client is not None:
             self._client = client
@@ -32,7 +37,7 @@ class CohereReranker:
         return [(r.index, float(r.relevance_score)) for r in resp.results]
 
 
-def _default_bge_scorer(model: str) -> Callable:
+def _default_bge_scorer(model: str) -> Scorer:
     """Build a local cross-encoder scorer. Prefer FlagEmbedding.FlagReranker;
     fall back to sentence-transformers CrossEncoder. Import-guarded so the
     module imports cleanly even with neither installed (the scorer is only
@@ -58,7 +63,7 @@ class BGEReranker:
     In production, scorer wraps FlagEmbedding.FlagReranker('BAAI/bge-reranker-v2-m3')
     (or a sentence-transformers CrossEncoder fallback)."""
 
-    def __init__(self, *, model: str = "bge-reranker-v2-m3", scorer: Callable | None = None):
+    def __init__(self, *, model: str = "bge-reranker-v2-m3", scorer: Scorer | None = None):
         self.model = model
         self._scorer = scorer if scorer is not None else _default_bge_scorer(model)
 
@@ -72,7 +77,8 @@ class BGEReranker:
         return scored
 
 
-def get_reranker(config, *, client=None, bge_scorer=None):
+def get_reranker(config: Any, *, client: Any = None,
+                 bge_scorer: Scorer | None = None) -> CohereReranker | BGEReranker:
     """Cohere when rerank_model is a 'rerank*' id AND a COHERE_API_KEY exists
     (or a client is injected); else the offline BGE reranker."""
     model = getattr(config, "rerank_model", "rerank-v3.5")
