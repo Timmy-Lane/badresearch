@@ -45,7 +45,6 @@ def test_browse_signature_accepts_keyword_only_args() -> None:
     assert r.content == "browsed load all reviews"
 
 
-@pytest.mark.xfail(reason="extract_llm built in Task 3", raises=ModuleNotFoundError)
 def test_get_extract_provider_default_is_llm() -> None:
     """Default extract provider is the zero-dep LLM extractor (always available)."""
     p = get_extract_provider()  # no name -> default
