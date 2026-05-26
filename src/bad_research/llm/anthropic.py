@@ -1,0 +1,142 @@
+"""AnthropicProvider — the default LLM backend.
+
+Resolves model TIERS (triage/work/heavy) to concrete Claude IDs via config, applies
+the --cheap demotion (heavy->work), and stamps Anthropic prompt-cache cache_control
+breakpoints on the stable system+tools prefix when cache=True. This is the single
+cheapest cost win in the product (dossier 09 A1.2): the 2nd..Nth spawn of a worker
+type within a run pays ~10% of input-token cost on the cached prefix.
+
+Anthropic allows <=4 cache_control breakpoints per request; we use 2 (last system
+block + last tool). The CALLER is responsible for keeping the system+tools prefix
+byte-identical across spawns so the cache actually hits; this provider only stamps
+the markers.
+"""
+
+from __future__ import annotations
+
+import os
+from typing import Any
+
+from bad_research.config import BadResearchConfig
+from bad_research.llm.base import LLMMessage, LLMResponse, ModelTier
+
+
+class AnthropicProvider:
+    """LLMProvider backed by the Anthropic Messages API."""
+
+    name = "anthropic"
+
+    def __init__(
+        self,
+        api_key: str | None = None,
+        config: BadResearchConfig | None = None,
+    ) -> None:
+        try:
+            import anthropic
+        except ImportError as exc:  # pragma: no cover - hard dep, defensive
+            raise ImportError(
+                "anthropic provider requires: pip install anthropic"
+            ) from exc
+
+        key = api_key or os.environ.get("ANTHROPIC_API_KEY", "").strip()
+        if not key:
+            raise RuntimeError(
+                "ANTHROPIC_API_KEY is not set. Export it or put it in "
+                "~/.config/bad-research/config.toml."
+            )
+
+        self._config = config or BadResearchConfig()
+        self._client = anthropic.Anthropic(api_key=key)
+
+    def _resolve_model(self, tier: ModelTier) -> str:
+        """tier -> concrete model ID, applying the --cheap heavy->work demotion."""
+        tiers = self._config.model_tiers
+        if tier == "heavy" and self._config.cheap:
+            return tiers["work"]
+        return tiers[tier]
+
+    @staticmethod
+    def _split_messages(
+        messages: list[LLMMessage],
+    ) -> tuple[list[dict], list[dict]]:
+        """Split into Anthropic's top-level `system` blocks and the `messages[]` array.
+
+        Anthropic does NOT accept role="system" inside messages[]; system text goes
+        to the top-level `system` param as a list of text blocks.
+        """
+        system_blocks: list[dict] = []
+        convo: list[dict] = []
+        for m in messages:
+            if m.role == "system":
+                text = m.content if isinstance(m.content, str) else ""
+                system_blocks.append({"type": "text", "text": text})
+            else:
+                # tool role maps to a user turn carrying tool_result content
+                role = "user" if m.role == "tool" else m.role
+                convo.append({"role": role, "content": m.content})
+        return system_blocks, convo
+
+    def complete(
+        self,
+        messages: list[LLMMessage],
+        *,
+        tier: ModelTier,
+        tools: list[dict] | None = None,
+        cache: bool = False,
+        max_tokens: int = 4096,
+        temperature: float = 0.1,
+    ) -> LLMResponse:
+        model = self._resolve_model(tier)
+        system_blocks, convo = self._split_messages(messages)
+        tools = list(tools) if tools else []
+
+        if cache:
+            # Stamp the stable prefix: last system block + last tool definition.
+            # (<=4 breakpoints allowed; 2 used.) The cached prefix must be
+            # byte-identical across spawns — that's the caller's job.
+            if system_blocks:
+                system_blocks[-1] = {**system_blocks[-1], "cache_control": {"type": "ephemeral"}}
+            if tools:
+                tools[-1] = {**tools[-1], "cache_control": {"type": "ephemeral"}}
+
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "messages": convo,
+        }
+        if system_blocks:
+            kwargs["system"] = system_blocks
+        if tools:
+            kwargs["tools"] = tools
+
+        resp = self._client.messages.create(**kwargs)
+        return self._to_llmresponse(resp)
+
+    @staticmethod
+    def _to_llmresponse(resp: Any) -> LLMResponse:
+        text_parts: list[str] = []
+        tool_calls: list[dict] = []
+        for block in resp.content:
+            btype = getattr(block, "type", None)
+            if btype == "text":
+                text_parts.append(block.text)
+            elif btype == "tool_use":
+                tool_calls.append(
+                    {"id": block.id, "name": block.name, "input": block.input}
+                )
+
+        usage_obj = resp.usage
+        usage = {
+            "input_tokens": getattr(usage_obj, "input_tokens", 0),
+            "output_tokens": getattr(usage_obj, "output_tokens", 0),
+            "cache_read": getattr(usage_obj, "cache_read_input_tokens", 0) or 0,
+            "cache_write": getattr(usage_obj, "cache_creation_input_tokens", 0) or 0,
+        }
+
+        return LLMResponse(
+            text="".join(text_parts),
+            tool_calls=tool_calls,
+            usage=usage,
+            model=getattr(resp, "model", ""),
+        )
