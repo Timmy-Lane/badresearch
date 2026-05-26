@@ -11,7 +11,8 @@ keyword args); production uses the real factories by default.
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from bad_research.web.base import WebResult
 
