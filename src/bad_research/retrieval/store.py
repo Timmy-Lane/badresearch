@@ -18,10 +18,10 @@ all plan APIs confirmed working verbatim — no [CORRECTION] needed):
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import lancedb  # type: ignore[import-untyped]
-import pyarrow as pa
+if TYPE_CHECKING:  # type-only — never imported at runtime in the keyless default
+    import pyarrow as pa
 
 from bad_research.retrieval.constants import (
     LANCE_HNSW_EF_CONSTRUCTION,
@@ -36,6 +36,8 @@ TABLE = "chunks"
 
 class LanceChunkStore:
     def __init__(self, lance_dir: Path, *, dim: int):
+        import lancedb  # type: ignore[import-untyped]  # ([local] extra)
+
         self.dir = Path(lance_dir)
         self.dir.mkdir(parents=True, exist_ok=True)
         self.dim = dim
@@ -43,6 +45,8 @@ class LanceChunkStore:
         self._table = self._open_or_create()
 
     def _schema(self) -> pa.Schema:
+        import pyarrow as pa  # ([local] extra)
+
         return pa.schema([
             pa.field("chunk_id", pa.string()),
             pa.field("vector", pa.list_(pa.float32(), self.dim)),
@@ -62,6 +66,8 @@ class LanceChunkStore:
 
     def upsert(self, rows: list[dict[str, Any]]) -> None:
         """Idempotent on chunk_id (merge_insert delete-then-insert on match)."""
+        import pyarrow as pa  # ([local] extra)
+
         if not rows:
             return
         tbl = pa.Table.from_pylist(rows, schema=self._schema())
