@@ -1,5 +1,5 @@
 ---
-name: hyperresearch-5-depth-investigation
+name: bad-research-5-depth-investigation
 description: >
   Step 5 of the hyperresearch V8 pipeline. Spawns K depth-investigator
   subagents in parallel (one per scored locus), each producing one
@@ -29,11 +29,11 @@ Read these inputs:
 
 ## Procedure
 
-1. **Spawn K `hyperresearch-depth-investigator` subagents in parallel** (ONE message, all Task calls). One per locus with `source_budget > 0`, capped at 6.
+1. **Spawn K `bad-research-depth-investigator` subagents in parallel** (ONE message, all Task calls). One per locus with `source_budget > 0`, capped at 6.
 
    **Spawn template:**
    ```
-   subagent_type: hyperresearch-depth-investigator
+   subagent_type: bad-research-depth-investigator
    prompt: |
      RESEARCH QUERY (verbatim, gospel):
      > {{paste research/query-<vault_tag>.md body}}
@@ -105,5 +105,5 @@ If >50% of investigators failed: stop and escalate.
 Return to the entry skill (`hyperresearch`). Invoke step 6:
 
 ```
-Skill(skill: "hyperresearch-6-cross-locus-reconcile")
+Skill(skill: "bad-research-6-cross-locus-reconcile")
 ```

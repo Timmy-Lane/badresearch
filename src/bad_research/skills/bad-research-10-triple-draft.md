@@ -1,8 +1,8 @@
 ---
-name: hyperresearch-10-triple-draft
+name: bad-research-10-triple-draft
 description: >
   Step 10 of the hyperresearch V8 pipeline. Orchestrator pre-curates 20-50
-  angle-specific source IDs per draft, then spawns 3 hyperresearch-draft-
+  angle-specific source IDs per draft, then spawns 3 bad-research-draft-
   orchestrator subagents in parallel — each reads its curated list (no
   vault surveys, no source-fetching) and writes one angle-specific draft.
   This step ENDS when all 3 drafts are written and validated. Step 11
@@ -13,7 +13,7 @@ description: >
 
 # Step 10 — Triple-draft ensemble (curated lists, parallel writers)
 
-**⚠ CRITICAL ANTI-PATTERN: Writing a single draft for `full` tier is a PIPELINE VIOLATION.** In V7 runs, context compaction caused the orchestrator to forget this step's procedure and write a single draft instead of spawning 3 sub-orchestrators. V8 fixes this by loading this skill fresh at the moment it's needed. **If you find yourself about to write `research/notes/final_report_<vault_tag>.md` directly without spawning 3 `hyperresearch-draft-orchestrator` subagents, STOP. Re-read this skill. Spawn the sub-orchestrators.** (Light tier is the ONE exception — see "Light tier" section below.)
+**⚠ CRITICAL ANTI-PATTERN: Writing a single draft for `full` tier is a PIPELINE VIOLATION.** In V7 runs, context compaction caused the orchestrator to forget this step's procedure and write a single draft instead of spawning 3 sub-orchestrators. V8 fixes this by loading this skill fresh at the moment it's needed. **If you find yourself about to write `research/notes/final_report_<vault_tag>.md` directly without spawning 3 `bad-research-draft-orchestrator` subagents, STOP. Re-read this skill. Spawn the sub-orchestrators.** (Light tier is the ONE exception — see "Light tier" section below.)
 
 **Tier gate:** Runs for ALL tiers. For `light` tier: write a single draft directly to `research/notes/final_report_<vault_tag>.md` and skip ahead to step 15 (polish). For `full`: run the triple-draft ensemble below — step 11 (synthesizer) will turn the 3 drafts into the final report.
 
@@ -73,7 +73,7 @@ If `pipeline_tier == "light"`: SKIP step 10.1 — 10.3 below and follow this sec
 
 4. **Hygiene.** No YAML frontmatter on the final report. No pipeline vocabulary in prose ("hyperresearch", "evidence digest", "comparisons.md", "committed reading", etc.). When `citation_style == "wikilink"`, `[[<source-note-id>]]` markers ARE the citation system and must be preserved — only strip wikilinks that point at workspace artifacts (interim-*, scaffold, comparisons). Step 15 (polish) is a backstop, not a license to leak.
 
-5. **Exit and route.** Once `research/notes/final_report_<vault_tag>.md` is written, return to the entry skill and invoke `Skill(skill: "hyperresearch-15-polish")`. Light tier skips steps 11–14 entirely.
+5. **Exit and route.** Once `research/notes/final_report_<vault_tag>.md` is written, return to the entry skill and invoke `Skill(skill: "bad-research-15-polish")`. Light tier skips steps 11–14 entirely.
 
 ---
 
@@ -135,11 +135,11 @@ Write the 3 angle assignments to `research/temp/draft-angles.md` (for the run lo
 
 ## Step 10.3 — Spawn 3 draft sub-orchestrators in parallel
 
-**Spawn 3 `hyperresearch-draft-orchestrator` subagents in ONE message.** This is true parallel execution. Each gets a different `draft_id`, `analytical_angle`, and (CRUCIALLY) a different `must_read_note_ids` array.
+**Spawn 3 `bad-research-draft-orchestrator` subagents in ONE message.** This is true parallel execution. Each gets a different `draft_id`, `analytical_angle`, and (CRUCIALLY) a different `must_read_note_ids` array.
 
 **Spawn template:**
 ```
-subagent_type: hyperresearch-draft-orchestrator
+subagent_type: bad-research-draft-orchestrator
 prompt: |
   RESEARCH QUERY (verbatim, gospel):
   > {{paste research/query-<vault_tag>.md body}}
@@ -214,5 +214,5 @@ When all 3 sub-orchestrators return:
 
 Return to the entry skill (`hyperresearch`). Tier-based routing:
 
-- **light tier:** You already wrote `research/notes/final_report_<vault_tag>.md` directly. Skip steps 11-14 (no synthesis, no critics, no patcher) and invoke `Skill(skill: "hyperresearch-15-polish")`.
-- **full tier:** Invoke `Skill(skill: "hyperresearch-11-synthesize")`.
+- **light tier:** You already wrote `research/notes/final_report_<vault_tag>.md` directly. Skip steps 11-14 (no synthesis, no critics, no patcher) and invoke `Skill(skill: "bad-research-15-polish")`.
+- **full tier:** Invoke `Skill(skill: "bad-research-11-synthesize")`.

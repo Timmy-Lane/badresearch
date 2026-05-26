@@ -1,8 +1,8 @@
 ---
-name: hyperresearch-15-polish
+name: bad-research-15-polish
 description: >
   Step 15 (final) of the hyperresearch V8 pipeline. Spawns the
-  hyperresearch-polish-auditor subagent (TOOL-LOCKED to Read + Edit) for
+  bad-research-polish-auditor subagent (TOOL-LOCKED to Read + Edit) for
   the final hygiene + readability pass. Strips pipeline-reference leaks,
   YAML frontmatter, scaffold sections, filler phrases, run-on sentences.
   Escalates structural mismatches rather than fabricating content.
@@ -42,7 +42,7 @@ Spawn ONCE.
 
 **Spawn template:**
 ```
-subagent_type: hyperresearch-polish-auditor
+subagent_type: bad-research-polish-auditor
 prompt: |
   RESEARCH QUERY (verbatim, gospel):
   > {{paste research/query-<vault_tag>.md body}}
@@ -108,7 +108,7 @@ If any artifact is missing, the responsible step failed silently. Re-spawn the r
 1. **Record the run.** Append to `research/audit_findings.json`:
    ```json
    {
-     "mode": "hyperresearch-v8",
+     "mode": "bad-research-v8",
      "run_id": "<iso timestamp>",
      "loci_count": <K>,
      "critical_findings_applied": <int>,
@@ -156,7 +156,7 @@ The final report lives at `research/notes/final_report_<vault_tag>.md`. The wrap
 Return to the entry skill (`hyperresearch`). Invoke step 16:
 
 ```
-Skill(skill: "hyperresearch-16-readability-audit")
+Skill(skill: "bad-research-16-readability-audit")
 ```
 
 Step 16 is the final step — readability audit + selective apply. Runs for ALL tiers.

@@ -1,12 +1,12 @@
 ---
-name: hyperresearch
+name: bad-research
 description: >
   Deep research via the HYPERRESEARCH V8 architecture — a tier-adaptive 16-step
   pipeline (light / full) that scales from a ~30-minute light-tier answer to
   a 1.5–2.5 hour adversarially-audited report. This entry skill is a ROUTER.
   It does not contain step procedures — it tells you which Skill to invoke
   for each step, in order. Each step's instructions live in its own skill
-  file (`hyperresearch-1-decompose` through `hyperresearch-16-readability-audit`)
+  file (`bad-research-1-decompose` through `bad-research-16-readability-audit`)
   and are loaded fresh into context when you invoke them.
 ---
 
@@ -27,33 +27,33 @@ You do NOT do the work of any step yourself. The step skills do. You just sequen
 Each pipeline step is its own skill file. To run a step:
 
 ```
-Skill(skill: "hyperresearch-N-stepname")
+Skill(skill: "bad-research-N-stepname")
 ```
 
 When you invoke a Skill, that skill's full procedure is loaded into your context **fresh**. You then execute that step's procedure, hit its exit criterion, and return to the entry skill (this file) to invoke the next step.
 
 **Why this design?** Context compaction. V7 was one 1200-line skill that got compacted away by the time Layer 4 needed its triple-draft procedure. The orchestrator forgot the procedure, wrote a single draft, and produced a flat-scoring report. V8 fixes this at the source: each step's procedure is loaded into context **only at the moment it's needed**, fresh, with no eviction risk.
 
-**The 16 step skills** (all prefixed `hyperresearch-`):
+**The 16 step skills** (all prefixed `bad-research-`):
 
 | # | Skill name | What it does | Tiers |
 |---|---|---|---|
-| 1 | `hyperresearch-1-decompose` | Canonical query → scaffold + decomposition + coverage matrix + tier classification | all |
-| 2 | `hyperresearch-2-width-sweep` | Multi-perspective search plan + parallel fetcher waves | all |
-| 3 | `hyperresearch-3-contradiction-graph` | Pair contradictions across the corpus into ranked fight clusters | full |
-| 4 | `hyperresearch-4-loci-analysis` | 2 loci-analysts → scored loci.json with source budgets | full |
-| 5 | `hyperresearch-5-depth-investigation` | K depth-investigators in parallel → interim notes with committed positions | full |
-| 6 | `hyperresearch-6-cross-locus-reconcile` | Reconcile committed positions → comparisons.md | full |
-| 7 | `hyperresearch-7-source-tensions` | Extract expert disagreements → source-tensions.json | full |
-| 8 | `hyperresearch-8-corpus-critic` | "What source would overturn this?" + targeted gap-fill fetch | full |
-| 9 | `hyperresearch-9-evidence-digest` | Top claims + verbatim quotes → evidence-digest.md | full |
-| 10 | `hyperresearch-10-triple-draft` | Per-angle source curation + 3 parallel draft-orchestrators (3 angle-specific drafts) | all |
-| 11 | `hyperresearch-11-synthesize` | Synthesis plan + outline + spawn synthesizer subagent (two-pass write) → final_report.md | full |
-| 12 | `hyperresearch-12-critics` | 4 adversarial critics in parallel → findings JSONs | full |
-| 13 | `hyperresearch-13-gap-fetch` | Fetch sources for critic-identified vault gaps | full |
-| 14 | `hyperresearch-14-patcher` | Surgical Edit hunks applied to draft | full |
-| 15 | `hyperresearch-15-polish` | Hygiene + filler pass (Edit-based subagent) | all |
-| 16 | `hyperresearch-16-readability-audit` | Readability recommender writes JSON suggestions; orchestrator selectively applies via Edit | all |
+| 1 | `bad-research-1-decompose` | Canonical query → scaffold + decomposition + coverage matrix + tier classification | all |
+| 2 | `bad-research-2-width-sweep` | Multi-perspective search plan + parallel fetcher waves | all |
+| 3 | `bad-research-3-contradiction-graph` | Pair contradictions across the corpus into ranked fight clusters | full |
+| 4 | `bad-research-4-loci-analysis` | 2 loci-analysts → scored loci.json with source budgets | full |
+| 5 | `bad-research-5-depth-investigation` | K depth-investigators in parallel → interim notes with committed positions | full |
+| 6 | `bad-research-6-cross-locus-reconcile` | Reconcile committed positions → comparisons.md | full |
+| 7 | `bad-research-7-source-tensions` | Extract expert disagreements → source-tensions.json | full |
+| 8 | `bad-research-8-corpus-critic` | "What source would overturn this?" + targeted gap-fill fetch | full |
+| 9 | `bad-research-9-evidence-digest` | Top claims + verbatim quotes → evidence-digest.md | full |
+| 10 | `bad-research-10-triple-draft` | Per-angle source curation + 3 parallel draft-orchestrators (3 angle-specific drafts) | all |
+| 11 | `bad-research-11-synthesize` | Synthesis plan + outline + spawn synthesizer subagent (two-pass write) → final_report.md | full |
+| 12 | `bad-research-12-critics` | 4 adversarial critics in parallel → findings JSONs | full |
+| 13 | `bad-research-13-gap-fetch` | Fetch sources for critic-identified vault gaps | full |
+| 14 | `bad-research-14-patcher` | Surgical Edit hunks applied to draft | full |
+| 15 | `bad-research-15-polish` | Hygiene + filler pass (Edit-based subagent) | all |
+| 16 | `bad-research-16-readability-audit` | Readability recommender writes JSON suggestions; orchestrator selectively applies via Edit | all |
 
 ---
 
@@ -76,7 +76,7 @@ Before you invoke any step skill, do this:
 
 0. **Auto-init if missing.** Two checks for the first-run-after-global-install case:
    - **Vault check.** If `.hyperresearch/` doesn't exist in the working directory, run `hyperresearch init . --json`. Creates the SQLite vault and `research/` directory.
-   - **Step-skills check.** If `.claude/skills/hyperresearch-1-decompose/SKILL.md` doesn't exist relative to the working directory, run `hyperresearch install --steps-only . --json`. Installs the 16 step skill files needed by `Skill(skill: "hyperresearch-N-...")` calls in later steps.
+   - **Step-skills check.** If `.claude/skills/bad-research-1-decompose/SKILL.md` doesn't exist relative to the working directory, run `hyperresearch install --steps-only . --json`. Installs the 16 step skill files needed by `Skill(skill: "bad-research-N-...")` calls in later steps.
 
    If either command fails because the binary isn't on PATH, tell the user to run `pip install hyperresearch` first. If both files already exist, both commands no-op cheaply — safe to run unconditionally.
 
@@ -116,13 +116,13 @@ Before you invoke any step skill, do this:
    - Wrapper requirements (save path, citation format, terminal sections)
 
 6. **Seed the TodoWrite list.** Create todos for all 16 step skill invocations using the integer step numbers, e.g.:
-   - `Step 1 — Skill: hyperresearch-1-decompose`
-   - `Step 2 — Skill: hyperresearch-2-width-sweep`
+   - `Step 1 — Skill: bad-research-1-decompose`
+   - `Step 2 — Skill: bad-research-2-width-sweep`
    - ... (through Step 16)
 
    The todo list survives context compaction; it's your durable memory of where you are in the chain.
 
-7. **Invoke step 1:** `Skill(skill: "hyperresearch-1-decompose")`.
+7. **Invoke step 1:** `Skill(skill: "bad-research-1-decompose")`.
 
 After step 1 returns, read `research/prompt-decomposition.json` to learn the tier, then continue invoking step skills per the tier routing table above. After each step's exit criterion is met, mark its todo complete and move to the next.
 
@@ -177,7 +177,7 @@ Context compaction may eat parts of this conversation. If you're unsure what ste
    - Step 15: `research/polish-log.json` (and edited final_report.md)
    - Step 16: `research/readability-recommendations.json`, `research/readability-decisions.json` (and edited final_report.md)
 3. **Find the highest-numbered step whose artifact exists.** Resume from the next step.
-4. **Re-invoke this entry skill** if you've lost track entirely: `Skill(skill: "hyperresearch")`. It loads fresh.
+4. **Re-invoke this entry skill** if you've lost track entirely: `Skill(skill: "bad-research")`. It loads fresh.
 
 If you're ever uncertain what to do next, the answer is: re-read this file and find the next step in the tier sequence.
 
@@ -223,7 +223,7 @@ If any rule returns `error` severity issues, address them before declaring compl
 7. **Canonical research query is gospel everywhere.** Every subagent gets the verbatim query.
 8. **Hygiene rules apply to the final report only.** Workspace artifacts (scaffold, loci JSONs, interim notes, comparisons.md, patch log) can look however they need to look.
 9. **NEVER skip a step that the tier gate says to run.** For `full` tier, ALL 16 steps run. For `light`, the prescribed 5 steps run.
-10. **Step 10 triple-draft ensemble is MANDATORY for `full` tier.** You MUST spawn 3 `hyperresearch-draft-orchestrator` subagents. Writing `research/notes/final_report_<vault_tag>.md` directly in step 10 (instead of going through the synthesizer in step 11) is a PIPELINE VIOLATION for these tiers.
+10. **Step 10 triple-draft ensemble is MANDATORY for `full` tier.** You MUST spawn 3 `bad-research-draft-orchestrator` subagents. Writing `research/notes/final_report_<vault_tag>.md` directly in step 10 (instead of going through the synthesizer in step 11) is a PIPELINE VIOLATION for these tiers.
 11. **Step 11 synthesis is MANDATORY for `full` tier.** The synthesizer subagent (Read+Write tool-locked) writes the final report from the 3 drafts. The orchestrator does NOT write the final report itself for these tiers.
 12. **Subagents read full source text.** Draft sub-orchestrators MUST batch-read every note in their `must_read_note_ids` list before writing. Fetchers MUST chase 3-8 primary sources via citation chains.
 13. **NEVER emit a bare text response while subagent tasks are in flight.**
@@ -245,7 +245,7 @@ The trade: 16 skill files instead of 1, plus 16 invocations of the `Skill` tool 
 If you've read this far and the bootstrap (above) is done, invoke step 1:
 
 ```
-Skill(skill: "hyperresearch-1-decompose")
+Skill(skill: "bad-research-1-decompose")
 ```
 
 If the bootstrap is NOT done, do the bootstrap first, then invoke step 1.

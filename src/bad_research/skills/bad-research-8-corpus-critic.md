@@ -1,5 +1,5 @@
 ---
-name: hyperresearch-8-corpus-critic
+name: bad-research-8-corpus-critic
 description: >
   Step 8 of the hyperresearch V8 pipeline. Spawns one corpus-critic subagent
   to identify "what source, if found, would overturn the current
@@ -60,11 +60,11 @@ The targeted fetch wave in the next step will pull these filings BEFORE the corp
 
 ## Procedure
 
-1. **Spawn ONE `hyperresearch-corpus-critic` subagent** (Sonnet).
+1. **Spawn ONE `bad-research-corpus-critic` subagent** (Sonnet).
 
    **Spawn template:**
    ```
-   subagent_type: hyperresearch-corpus-critic
+   subagent_type: bad-research-corpus-critic
    prompt: |
      RESEARCH QUERY (verbatim, gospel):
      > {{paste research/query-<vault_tag>.md body}}
@@ -88,7 +88,7 @@ The targeted fetch wave in the next step will pull these filings BEFORE the corp
 
    **Spawn template:**
    ```
-   subagent_type: hyperresearch-fetcher
+   subagent_type: bad-research-fetcher
    prompt: |
      RESEARCH QUERY (verbatim, gospel):
      > {{paste research/query-<vault_tag>.md body}}
@@ -132,5 +132,5 @@ The targeted fetch wave in the next step will pull these filings BEFORE the corp
 Return to the entry skill (`hyperresearch`). Invoke step 9:
 
 ```
-Skill(skill: "hyperresearch-9-evidence-digest")
+Skill(skill: "bad-research-9-evidence-digest")
 ```

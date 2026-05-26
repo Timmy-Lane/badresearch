@@ -1,5 +1,5 @@
 ---
-name: hyperresearch-12-critics
+name: bad-research-12-critics
 description: >
   Step 12 of the hyperresearch V8 pipeline. Spawns 4 adversarial critics
   in parallel against the synthesized final report from step 11. Each
@@ -29,14 +29,14 @@ Read these inputs:
 ## Procedure
 
 1. **Spawn all 4 critics in parallel.** In ONE message:
-   - `hyperresearch-dialectic-critic` → `research/critic-findings-dialectic.json` (counter-evidence the draft missed or straw-manned)
-   - `hyperresearch-depth-critic` → `research/critic-findings-depth.json` (shallow spots where interim notes could fill substance)
-   - `hyperresearch-width-critic` → `research/critic-findings-width.json` (corpus clusters the draft ignores despite evidence)
-   - `hyperresearch-instruction-critic` → `research/critic-findings-instruction.json` (atomic items from the decomposition that the draft missed, under-covered, reordered, or reformatted)
+   - `bad-research-dialectic-critic` → `research/critic-findings-dialectic.json` (counter-evidence the draft missed or straw-manned)
+   - `bad-research-depth-critic` → `research/critic-findings-depth.json` (shallow spots where interim notes could fill substance)
+   - `bad-research-width-critic` → `research/critic-findings-width.json` (corpus clusters the draft ignores despite evidence)
+   - `bad-research-instruction-critic` → `research/critic-findings-instruction.json` (atomic items from the decomposition that the draft missed, under-covered, reordered, or reformatted)
 
 2. **Pass each critic** (standard 3-piece contract):
    ```
-   subagent_type: hyperresearch-<critic-name>-critic
+   subagent_type: bad-research-<critic-name>-critic
    prompt: |
      RESEARCH QUERY (verbatim, gospel):
      > {{paste research/query-<vault_tag>.md body}}
@@ -73,5 +73,5 @@ Read these inputs:
 Return to the entry skill (`hyperresearch`). Invoke step 13:
 
 ```
-Skill(skill: "hyperresearch-13-gap-fetch")
+Skill(skill: "bad-research-13-gap-fetch")
 ```

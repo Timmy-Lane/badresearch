@@ -1,5 +1,5 @@
 ---
-name: hyperresearch-6-cross-locus-reconcile
+name: bad-research-6-cross-locus-reconcile
 description: >
   Step 6 of the hyperresearch V8 pipeline. Reconciles the committed positions
   from all depth investigators into research/comparisons.md — 3-5 named
@@ -78,5 +78,5 @@ You need the `## Committed position` section from every interim note in your con
 Return to the entry skill (`hyperresearch`). Invoke step 7:
 
 ```
-Skill(skill: "hyperresearch-7-source-tensions")
+Skill(skill: "bad-research-7-source-tensions")
 ```

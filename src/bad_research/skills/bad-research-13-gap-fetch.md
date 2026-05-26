@@ -1,5 +1,5 @@
 ---
-name: hyperresearch-13-gap-fetch
+name: bad-research-13-gap-fetch
 description: >
   Step 13 of the hyperresearch V8 pipeline. Conditional fetcher wave to fill
   vault gaps that critics identified. If a critic says "the draft ignored
@@ -46,7 +46,7 @@ Read these inputs:
 
    **Spawn template:**
    ```
-   subagent_type: hyperresearch-fetcher
+   subagent_type: bad-research-fetcher
    prompt: |
      RESEARCH QUERY (verbatim, gospel):
      > {{paste research/query-<vault_tag>.md body}}
@@ -88,5 +88,5 @@ Read these inputs:
 Return to the entry skill (`hyperresearch`). Invoke step 14:
 
 ```
-Skill(skill: "hyperresearch-14-patcher")
+Skill(skill: "bad-research-14-patcher")
 ```

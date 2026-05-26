@@ -1,7 +1,7 @@
 ---
-name: hyperresearch-14-patcher
+name: bad-research-14-patcher
 description: >
-  Step 14 of the hyperresearch V8 pipeline. Spawns the hyperresearch-patcher
+  Step 14 of the hyperresearch V8 pipeline. Spawns the bad-research-patcher
   subagent (TOOL-LOCKED to Read + Edit) to apply critic findings as
   surgical Edit hunks against the synthesized final report. Zero
   regeneration. Pre-stubs the patch log because Edit cannot create files.
@@ -67,7 +67,7 @@ Spawn ONCE.
 
 **Spawn template:**
 ```
-subagent_type: hyperresearch-patcher
+subagent_type: bad-research-patcher
 prompt: |
   RESEARCH QUERY (verbatim, gospel):
   > {{paste research/query-<vault_tag>.md body}}
@@ -152,5 +152,5 @@ For each entry:
 Return to the entry skill (`hyperresearch`). Invoke step 15:
 
 ```
-Skill(skill: "hyperresearch-15-polish")
+Skill(skill: "bad-research-15-polish")
 ```

@@ -1,5 +1,5 @@
 ---
-name: hyperresearch-4-loci-analysis
+name: bad-research-4-loci-analysis
 description: >
   Step 4 of the hyperresearch V8 pipeline. Spawns 2 parallel loci-analyst
   subagents that read the width corpus and identify 1-6 specific
@@ -31,11 +31,11 @@ Survey the corpus: `$HPR search "" --tag <vault_tag> -j` to confirm width sweep 
 
 ## Procedure
 
-1. **Spawn 2 `hyperresearch-loci-analyst` subagents in parallel** (ONE message, both Task calls). Both read the same width corpus but return independently.
+1. **Spawn 2 `bad-research-loci-analyst` subagents in parallel** (ONE message, both Task calls). Both read the same width corpus but return independently.
 
    **Spawn template:**
    ```
-   subagent_type: hyperresearch-loci-analyst
+   subagent_type: bad-research-loci-analyst
    prompt: |
      RESEARCH QUERY (verbatim, gospel):
      > {{paste research/query-<vault_tag>.md body}}
@@ -103,7 +103,7 @@ Survey the corpus: `$HPR search "" --tag <vault_tag> -j` to confirm width sweep 
 
 **INVARIANT:** at least one `flavor: "dialectical"` locus must be present unless an analyst's `skip_loci` justifies its absence with specific evidence of a univocal corpus. No dialectical locus + no justification = re-spawn the loci-analyst with a tighter prompt.
 
-**Placeholder-breadcrumb ban:** depth investigators will fetch sources; do not hand them breadcrumb placeholders like `hyperresearch-locus-seed` — use real source note ids from the vault or omit `--suggested-by` entirely.
+**Placeholder-breadcrumb ban:** depth investigators will fetch sources; do not hand them breadcrumb placeholders like `bad-research-locus-seed` — use real source note ids from the vault or omit `--suggested-by` entirely.
 
 ---
 
@@ -120,5 +120,5 @@ Survey the corpus: `$HPR search "" --tag <vault_tag> -j` to confirm width sweep 
 Return to the entry skill (`hyperresearch`). Invoke step 5:
 
 ```
-Skill(skill: "hyperresearch-5-depth-investigation")
+Skill(skill: "bad-research-5-depth-investigation")
 ```

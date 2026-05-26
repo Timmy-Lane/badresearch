@@ -1,5 +1,5 @@
 ---
-name: hyperresearch-3-contradiction-graph
+name: bad-research-3-contradiction-graph
 description: >
   Step 3 of the hyperresearch V8 pipeline. Builds an explicit graph of opposing
   claims across the corpus. Ranked fight clusters feed step 4's loci
@@ -70,4 +70,4 @@ If no claims files exist (e.g., fetchers didn't produce them), skip this step en
 
 Return to the entry skill (`hyperresearch`). Tier-based routing:
 
-- **full tier:** Invoke `Skill(skill: "hyperresearch-4-loci-analysis")`
+- **full tier:** Invoke `Skill(skill: "bad-research-4-loci-analysis")`

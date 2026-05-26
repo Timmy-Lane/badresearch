@@ -1,9 +1,9 @@
 ---
-name: hyperresearch-11-synthesize
+name: bad-research-11-synthesize
 description: >
   Step 11 of the hyperresearch V8 pipeline. Reads the 3 angle-specific drafts
   from step 10, spot-checks factual conflicts, writes a synthesis plan +
-  outline, then spawns ONE hyperresearch-synthesizer subagent (Read+Write
+  outline, then spawns ONE bad-research-synthesizer subagent (Read+Write
   tool-locked) that writes the final report in TWO passes — pass 1 rough
   integrated draft, pass 2 voice/redundancy/length cleanup. Skipped for
   light tier (which writes a single draft directly in step 10). Invoked
@@ -145,11 +145,11 @@ If any are missing or trivial, fix them before proceeding. The synthesizer canno
 
 ## Step 11.6 — Spawn the synthesizer
 
-Spawn ONE `hyperresearch-synthesizer` subagent. Single spawn, runs once.
+Spawn ONE `bad-research-synthesizer` subagent. Single spawn, runs once.
 
 **Spawn template:**
 ```
-subagent_type: hyperresearch-synthesizer
+subagent_type: bad-research-synthesizer
 prompt: |
   RESEARCH QUERY (verbatim, gospel):
   > {{paste research/query-<vault_tag>.md body}}
@@ -250,5 +250,5 @@ After this step, the final report is only modified by Edit hunks from the patche
 Return to the entry skill (`hyperresearch`). Invoke step 12:
 
 ```
-Skill(skill: "hyperresearch-12-critics")
+Skill(skill: "bad-research-12-critics")
 ```

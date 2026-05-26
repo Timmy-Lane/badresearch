@@ -1,5 +1,5 @@
 ---
-name: hyperresearch-9-evidence-digest
+name: bad-research-9-evidence-digest
 description: >
   Step 9 of the hyperresearch V8 pipeline. Assembles the top load-bearing
   claims and verbatim quotes from the claims JSONs into
@@ -77,7 +77,7 @@ If fewer claims exist in total, include all of them.
 Return to the entry skill (`hyperresearch`). Invoke step 10:
 
 ```
-Skill(skill: "hyperresearch-10-triple-draft")
+Skill(skill: "bad-research-10-triple-draft")
 ```
 
 Step 10 is the most important step in the pipeline. Re-read the entry skill before invoking if needed — the triple-draft ensemble must spawn 3 draft-orchestrators for `full` tier.

@@ -1,8 +1,8 @@
 ---
-name: hyperresearch-16-readability-audit
+name: bad-research-16-readability-audit
 description: >
   Step 16 (final) of the hyperresearch V8 pipeline. Spawns the
-  hyperresearch-readability-recommender subagent (Read+Write tool-locked,
+  bad-research-readability-recommender subagent (Read+Write tool-locked,
   Opus) to audit the polished final report and write JSON
   recommendations for paragraph merges, breaks, list/table conversions,
   bold injection, sentence splits, and HR removal. The orchestrator
@@ -32,11 +32,11 @@ Read these inputs:
 
 ## Step 16.1 — Spawn the readability recommender
 
-Spawn ONE `hyperresearch-readability-recommender` subagent. Single spawn, runs once.
+Spawn ONE `bad-research-readability-recommender` subagent. Single spawn, runs once.
 
 **Spawn template:**
 ```
-subagent_type: hyperresearch-readability-recommender
+subagent_type: bad-research-readability-recommender
 prompt: |
   RESEARCH QUERY (verbatim, gospel):
   > {{paste research/query-<vault_tag>.md body}}

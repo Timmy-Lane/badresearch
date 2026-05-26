@@ -1,5 +1,5 @@
 ---
-name: hyperresearch-2-width-sweep
+name: bad-research-2-width-sweep
 description: >
   Step 2 of the hyperresearch V8 pipeline. Multi-perspective search planning
   (breadth / depth / adversarial lenses) followed by parallel fetcher waves.
@@ -127,11 +127,11 @@ Write to `research/temp/scored-urls.md`.
 
 **Wave 1 (main wave):** Spawn **10–12 fetcher subagents in ONE message** — true parallel execution. Each fetcher gets its own non-overlapping batch.
 
-**Subagent type:** `hyperresearch-fetcher`
+**Subagent type:** `bad-research-fetcher`
 
 **Spawn template (use the standard 3-piece contract):**
 ```
-subagent_type: hyperresearch-fetcher
+subagent_type: bad-research-fetcher
 prompt: |
   RESEARCH QUERY (verbatim, gospel):
   > {{paste contents of research/query-<vault_tag>.md}}
@@ -230,7 +230,7 @@ Substantive (non-deprecated) note counts. Quality over quantity — reference re
 
 ## Long-source delegation (any time during step 2)
 
-When a single long source (>5000 words) is load-bearing, delegate end-to-end analysis to `hyperresearch-source-analyst` (Sonnet, 1M context):
+When a single long source (>5000 words) is load-bearing, delegate end-to-end analysis to `bad-research-source-analyst` (Sonnet, 1M context):
 
 Trigger conditions (ALL three must hold):
 1. **Length:** source's `word_count` (visible on `$HPR note show <id> -j`) exceeds ~5000 words
@@ -241,7 +241,7 @@ Trigger conditions (ALL three must hold):
 
 Spawn template:
 ```
-subagent_type: hyperresearch-source-analyst
+subagent_type: bad-research-source-analyst
 prompt: |
   RESEARCH QUERY (verbatim, gospel):
   > {{paste research/query-<vault_tag>.md body}}
@@ -275,5 +275,5 @@ If you fall short after two waves, proceed anyway but ensure `coverage-gaps.md` 
 
 Return to the entry skill (`hyperresearch`). Tier-based routing:
 
-- **light tier:** Skip directly to step 10 — invoke `Skill(skill: "hyperresearch-10-triple-draft")` (light tier writes a single draft, not the ensemble)
-- **full tier:** Invoke `Skill(skill: "hyperresearch-3-contradiction-graph")`
+- **light tier:** Skip directly to step 10 — invoke `Skill(skill: "bad-research-10-triple-draft")` (light tier writes a single draft, not the ensemble)
+- **full tier:** Invoke `Skill(skill: "bad-research-3-contradiction-graph")`

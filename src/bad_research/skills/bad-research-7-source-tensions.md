@@ -1,5 +1,5 @@
 ---
-name: hyperresearch-7-source-tensions
+name: bad-research-7-source-tensions
 description: >
   Step 7 of the hyperresearch V8 pipeline. Extracts explicit expert
   disagreements from the corpus into research/temp/source-tensions.json,
@@ -97,5 +97,5 @@ This artifact feeds directly into step 10's mandatory Source Tensions section. E
 Return to the entry skill (`hyperresearch`). Invoke step 8:
 
 ```
-Skill(skill: "hyperresearch-8-corpus-critic")
+Skill(skill: "bad-research-8-corpus-critic")
 ```
