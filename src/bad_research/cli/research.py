@@ -130,35 +130,45 @@ def funnel_gather_cmd(
 
 # ── retrieve (Task 9/12) — hybrid retrieval top-chunks ───────────────────────
 def _build_engine(cfg: object, vault: object) -> object:
-    """Construct a RetrievalEngine bound to the vault's lance/cache dirs."""
+    """Construct a keyless FTS-only RetrievalEngine bound to the vault's cache dir.
+
+    The dense vector lane (LanceDB + a [local] embedder) is opt-in — None here by
+    default. KR-5 turns it on above the 25k-chunk threshold or when neural_recall=1.
+    """
     from bad_research.retrieval.engine import RetrievalEngine
 
     root = Path(getattr(vault, "root", Path.cwd()))
     base = root / ".bad-research"
     base.mkdir(parents=True, exist_ok=True)
     embedder = _build_embedder(cfg)
-    reranker = _build_reranker(cfg)
+    lance_dir = (base / "lance") if embedder is not None else None
     return RetrievalEngine(
-        lance_dir=base / "lance",
         cache_db=base / "semantic_cache.db",
+        reranker=_build_reranker(cfg),
         embedder=embedder,
-        reranker=reranker,
+        lance_dir=lance_dir,
     )
 
 
-def _build_embedder(cfg: object) -> object:
-    from bad_research.embed.base import get_embed_provider
+def _build_embedder(cfg: object) -> object | None:
+    """Keyless default = no neural embedder (FTS-only). The local bi-encoder lane
+    ([local]) is opt-in via config.neural_recall — built in KR-5. Returns None
+    unless neural recall is explicitly enabled AND the [local] stack imports."""
+    if not getattr(cfg, "neural_recall", False):
+        return None
+    try:
+        from bad_research.embed.base import get_embed_provider
 
-    # get_embed_provider(name, **kwargs) forwards kwargs to CohereEmbedProvider,
-    # whose `model` kwarg selects the embedder. The model comes from config.
-    return get_embed_provider("cohere", model=getattr(cfg, "embed_model", "embed-english-v3.0"))
+        return get_embed_provider("bge-local")
+    except ImportError:
+        return None  # [local] not installed -> degrade to FTS-only (graceful)
 
 
 def _build_reranker(cfg: object) -> object:
+    """Keyless reranker: get_reranker reads cfg.reranker (default "host" ->
+    ClaudeCodeReranker, the host-model LLM-rerank). "local"/"none" also keyless."""
     from bad_research.retrieval.rerank import get_reranker
 
-    # get_reranker(config, *, client=None, bge_scorer=None) reads rerank_model off
-    # the config object itself — pass the config, not a model-name string.
     return get_reranker(cfg)
 
 
