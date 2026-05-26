@@ -1,12 +1,21 @@
-"""fetch_tiered — the Tier 0->3 escalation ladder (dossier 03 §6).
+"""fetch_tiered — the 4-rung KEYLESS escalation ladder (INTERFACES_KEYLESS §4.4, dossier 14 §7).
 
-Walk tiers in order; escalate only when a cheaper tier's WebResult trips a gate
-(looks_like_junk / looks_like_login_wall — both verbatim from web/base.py). The caller
-controls the ceiling with tier_max, and opts into typed output (schema) or interaction
-(instruction). Every optional tier degrades gracefully: a missing provider/lib/key means
-that rung is skipped and the best lower-tier result is returned. Providers are injectable
-for testing (the `_tier0` / `_tier1_factory` / `_extractor` / `_browse` keyword args);
-production uses the real factories by default.
+  rung 1   httpx GET (core/fetcher) ............... $0  static HTML/APIs
+  rung 2   crawl4ai local JS render → fit_markdown . $0  clean MD, no interaction
+  rung 2.5 agent-browser --engine lightpanda ....... $0  fast keyless JS render (snapshot/eval)
+  rung 3   agent-browser --engine chrome ........... $0  login/click/typed/screenshot
+
+Escalation gates KEPT verbatim from web/base.py (looks_like_junk / looks_like_login_wall).
+There is NO rung that costs money. The lightpanda→chrome fallback lives inside
+AgentBrowserProvider.browse (it retries on an empty snapshot). Every optional rung degrades
+gracefully: a missing provider/CLI means the rung is skipped and the best lower-tier result
+is returned. Providers are injectable for tests (_tier0/_tier1_factory/_browse/_extractor/_llm).
+
+SSRF (same contract as the KR-3 content fix): agent-browser drives a REAL browser, so a
+malicious page could redirect/navigate to an internal host. We reuse the shared denylist
+predicate `core.fetcher.is_blocked_url` (the DRY single source of truth) to (a) gate the
+browse-rung entry URL before driving the CLI, and (b) re-validate the final/landed URL the
+provider reports (Snapshot.url → WebResult.url) and discard the result if it is internal.
 """
 
 from __future__ import annotations
@@ -33,21 +42,20 @@ def fetch_tiered(
     schema: dict | str | None = None,
     replay_key: str | None = None,
     variables: dict | None = None,
-    # ---- injection seams (tests pass mocks; production gets real defaults) ----
+    # ---- injection seams (tests pass mocks; production gets real keyless defaults) ----
     _tier0: Any | None = None,
     _tier1_factory: Callable[[], Any | None] | None = None,
-    _extractor: Any | None = None,
     _browse: Any | None = None,
+    _extractor: Any | None = None,
     _llm: Any | None = None,
 ) -> WebResult:
-    # ---------- Tier 0: HTTP ----------
+    # ---------- Rung 1: httpx (core/fetcher builtin) ----------
     if _tier0 is None:
         from bad_research.web.base import get_provider
-
         _tier0 = get_provider("builtin")
     result = _tier0.fetch(url)
 
-    # ---------- Tier 1: crawl4ai JS render ----------
+    # ---------- Rung 2: crawl4ai local JS render ----------
     if tier_max >= 1 and _is_empty(result):
         if _tier1_factory is None:
             def _tier1_factory():
@@ -63,9 +71,9 @@ def fetch_tiered(
                 if len(t1_result.content.strip()) >= len(result.content.strip()):
                     result = t1_result
             except Exception:
-                pass  # keep Tier-0 result
+                pass  # keep the rung-1 result
 
-    # ---------- Decide on Tier-3 escalation triggers ----------
+    # ---------- Rung 2.5 / 3: agent-browser (local Chrome/lightpanda over CDP) ----------
     want_anti_bot = tier_max >= 3 and _is_bot_wall(result)
     want_login = tier_max >= 3 and result.looks_like_login_wall(url)
     want_interactive = tier_max >= 3 and bool(instruction)
@@ -73,19 +81,19 @@ def fetch_tiered(
     if want_anti_bot or want_login or want_interactive:
         browse_result = _do_browse(
             url, instruction or "Read the main content of this page.",
-            anti_bot=want_anti_bot, replay_key=replay_key, variables=variables,
-            browse=_browse,
+            replay_key=replay_key, variables=variables, browse=_browse,
         )
         if browse_result is not None and browse_result.content.strip():
             result = browse_result
 
-    # ---------- Tier 2: typed extraction (output-shape request) ----------
+    # ---------- Rung 2: typed extraction (schema / AQL request) ----------
     if schema is not None and tier_max >= 2:
         extractor = _extractor
         if extractor is None:
             from bad_research.browse.base import get_extract_provider
-
-            extractor = get_extract_provider("llm")
+            # An AQL string selects the AQL resolver; a JSON-schema dict selects the LLM extractor.
+            extractor = get_extract_provider("aql") if isinstance(schema, str) else \
+                get_extract_provider("llm")
             if extractor is not None and _llm is not None and hasattr(extractor, "_llm"):
                 extractor._llm = _llm
         if extractor is not None:
@@ -93,25 +101,47 @@ def fetch_tiered(
                 data = extractor.extract(result, schema, instruction or "")
             except Exception:
                 data = {}
-            if data:  # non-empty -> attach; {} leaves result untouched (graceful)
+            if data:
                 result.metadata["extracted"] = data
 
     return result
 
 
-def _do_browse(url, instruction, *, anti_bot, replay_key, variables, browse) -> WebResult | None:
-    """Resolve the single keyless browse provider (agent-browser, KR-4) and run it.
+def _do_browse(url, instruction, *, replay_key, variables, browse) -> WebResult | None:
+    """Drive the keyless AgentBrowserProvider (rung 2.5 lightpanda → 3 chrome inside browse()).
     Returns None if no provider is available (caller keeps the lower-tier result).
-    `anti_bot` is accepted for signature stability but no longer routes to a
-    separate cloud backend — the keyless agent-browser handles every case."""
+
+    SSRF gating (reuses core.fetcher.is_blocked_url — the DRY denylist from the KR-3 fix):
+      (a) ENTRY gate: refuse to drive the browser at an internal target up front.
+      (b) FINAL-URL re-validation: agent-browser reports the landed URL (Snapshot.url →
+          WebResult.url); if a mid-navigation redirect landed on an internal host, discard
+          the result rather than return content scraped from inside the perimeter.
+
+      # SSRF LIMITATION: agent-browser is an external CLI and exposes no per-navigation
+      # request-interception hook we can drive from Python (unlike the crawl4ai render rung,
+      # which uses a Playwright `route` handler in KR-3). So intermediate redirects that
+      # *transit* an internal host but land back on a public URL are not individually gated
+      # here — only the entry URL and the final landed URL are validated. A future
+      # `agent-browser --proxy`/interception surface (dossier 14 §11) would close this.
+    """
+    from bad_research.core.fetcher import is_blocked_url
+
+    # (a) entry gate — never drive a real browser at an internal/loopback/metadata host.
+    if is_blocked_url(url):
+        return None
+
     prov = browse
     if prov is None:
         from bad_research.browse.base import get_browse_provider
-
-        prov = get_browse_provider()
+        prov = get_browse_provider("agent-browser")  # None when CLI absent (graceful)
     if prov is None:
         return None
     try:
-        return prov.browse(url, instruction, replay_key=replay_key, variables=variables)
+        landed = prov.browse(url, instruction, replay_key=replay_key, variables=variables)
     except Exception:
         return None
+
+    # (b) final-URL re-validation — discard if the browser landed on an internal host.
+    if landed is not None and is_blocked_url(landed.url):
+        return None
+    return landed
