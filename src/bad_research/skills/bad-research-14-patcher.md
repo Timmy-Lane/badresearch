@@ -85,7 +85,8 @@ prompt: |
       research/critic-findings-dialectic.json,    (full tier only)
       research/critic-findings-depth.json,        (full tier only)
       research/critic-findings-width.json,
-      research/critic-findings-instruction.json
+      research/critic-findings-instruction.json,
+      research/critic-findings-grader.json        (full tier only; Stage-12.5 grader loop, if present)
     ]
   - patch_log_path: research/patch-log.json   (already stubbed)
   - evidence_digest_path: research/temp/evidence-digest.md
@@ -97,6 +98,33 @@ The patcher's job:
 - Each Edit hunk stays surgical: change as little as possible while addressing the issue
 - Reject findings that don't serve the research_query (the patcher checks every finding against the canonical query)
 - Escalate findings that require structural restructure (rather than applying them as oversized patches)
+
+---
+
+## Step 14.2b — Confidence-band hedging (dossier 16 §7)
+
+The Stage-11.5 CitationVerifier wrote a `confidence_band` (high / medium / low)
+per cited sentence into `research/temp/citation-verify-actions.json`, derived from
+`verify_score` × the fetcher's self-reported confidence × the independent-source
+count (`research/temp/consensus-claims.json`). The patcher MUST add a band-
+appropriate hedge to any **medium / low** claim the synthesizer asserted too
+confidently — WITHOUT changing the citation or the number:
+
+| `confidence_band` | prose treatment |
+|---|---|
+| `high` (fetcher=high AND verify_score≥0.70 AND n_sources≥2) | assert plainly, no hedge |
+| `medium` (verify_score 0.40–0.70 OR n_sources==1) | "the evidence suggests…" / "one source reports…" |
+| `low` (verify_score<0.40 OR fetcher=low) | "preliminary…" / "a single commentary claims…" |
+
+Keep the raw 0.0–1.0 score OFF the page (it lives on `claim_anchors.verify_score`
+for the CLI/audit only). The prose carries only the hedge word. This is a patcher
+finding like any other — a surgical Edit that prepends the hedge frame; if the
+sentence is already hedged at the right band, no edit.
+
+The patcher spawn prompt (Step 14.2) must instruct the subagent: *"For any cited
+sentence whose `confidence_band` in citation-verify-actions.json is `medium` or
+`low` and which is asserted without a hedge, add the band-appropriate hedge frame
+via a surgical Edit. Do not change the citation or any number."*
 
 ---
 

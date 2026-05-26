@@ -42,3 +42,18 @@ def test_step16_has_uncited_gate(skills_dir):
     body = (skills_dir / "bad-research-16-readability-audit.md").read_text()
     assert "bad uncited-gate" in body
     assert "ship-block" in body.lower() or "ship block" in body.lower()
+
+
+def test_patcher_consumes_grader_findings_and_hedges(skills_dir):
+    body = (skills_dir / "bad-research-14-patcher.md").read_text()
+    assert "critic-findings-grader.json" in body
+    # the confidence-band hedge rule (dossier 16 §7)
+    assert "confidence_band" in body
+    assert "hedge" in body.lower()
+
+
+def test_step16_has_recitation_gate(skills_dir):
+    body = (skills_dir / "bad-research-16-readability-audit.md").read_text()
+    assert "bad recitation-gate" in body
+    # it's a major finding, NOT a ship-block (unlike uncited)
+    assert "not a ship-block" in body.lower() or "does not block ship" in body.lower()

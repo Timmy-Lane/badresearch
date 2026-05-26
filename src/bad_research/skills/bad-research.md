@@ -68,13 +68,14 @@ decomposition into a `route` (`agentic-fast` / `light` / `full`) written to
 |---|---|---|---|
 | `agentic-fast` | 0.5(skip) → 1 → 1.5 → agentic-fast → 15 → 16(+gate) | ~$1–5 | <3 min |
 | `light` | 0.5 → 1 → 1.5 → 2(funnel) → 10(single draft) → 15 → 16(+gate) | ~$5–15 | ~30–40 min |
-| `full` | 0.5 → 1 → 1.5 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 11.5 → 12 → 13 → 14 → 14.5(fresh-review) → 15 → 16(+gate) | ~$60–120 | ~1.5–2.5 h |
+| `full` | 0.5 → 1 → 1.5 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 11.5 → 12 → 13 → 12.5(grader loop) → 14 → 14.5(fresh-review) → 15 → 16(+gate+recitation) | ~$60–120 | ~1.5–2.5 h |
 
 Where the stage numbers map to:
 - 0.5 → `Skill(skill: "bad-research-0.5-clarify")` (triage clarifier; skipped for agentic-fast + --auto)
 - 1.5 → `Skill(skill: "bad-research-query-router")` (the route decision)
 - agentic-fast → `Skill(skill: "bad-research-agentic-fast")` (bounded ReAct; replaces 2–14)
 - 11.5 → `Skill(skill: "bad-research-11.5-citation-verifier")` (backward grounding; full only)
+- 12.5 → `Skill(skill: "bad-research-12.5-grader")` (in-pipeline grader loop: judge→patch→re-judge ≤3; full only — slots between critics/gap-fetch and the patcher's final convergence)
 - 14.5 → `Skill(skill: "bad-research-fresh-review")` (one fresh-context pass; full only)
 
 **RESPECT THE ROUTE.** `agentic-fast` is the cheap bounded ReAct loop, not a
@@ -82,6 +83,33 @@ degraded full run; do NOT add the 16 stages "to be thorough." `full` ALWAYS runs
 11.5 (citation verifier) and 14.5 (fresh-review). The deterministic
 no-uncited-claim gate in step 16 is a **ship-block for ALL routes**. If
 uncertain, route up — but never silently upgrade every query to `full`.
+
+### Reasoning-effort continuum + token ceiling
+
+The `--reasoning-effort` flag (alias `--effort`) is a 4-level dial — `minimal` /
+`low` / `medium` / `high` — that nudges the route + per-stage fan-out on top of
+the auto-classified route (OpenAI's continuum, dossier 16 §6.1). The mapping lives
+in `skills/routing_constants.py::EFFORT_MAP` and is applied by
+`skills/router.py::effort_overrides`:
+
+| `--effort` | route | drafters | fetcher fan-out | extended thinking |
+|---|---|---|---|---|
+| `minimal` | light, single draft | Haiku-tier | ≤4 | off |
+| `low` | light | Sonnet-tier | ≤8 | off |
+| `medium` (default) | full | default | 10–12, loci ≤4 | on |
+| `high` | full, max | Opus-tier | 12, loci ≤6 | on |
+
+When the user passes `--max-tokens <N>`, track the cumulative token total in
+`research/temp/orchestrator-notes.md`. As the run approaches the ceiling, degrade
+in **Claude's order — cut tokens LAST** (`skills/router.py::degrade_order`):
+
+1. cut tool-call redundancy first (skip the redundancy-audit sub-step)
+2. then cut fan-out width (fewer fetchers / fewer loci)
+3. then cut model tier (heavy → light on non-critical stages)
+4. NEVER cut the synthesis / grounding token budget — that's the 80%-variance core.
+
+The ceiling is opt-in; the default is the existing per-tier budget. We surface a
+count, not a billing system.
 
 ---
 
@@ -172,15 +200,23 @@ move to the next.
 
 ## Subagent spawn contract (applies to every Task call)
 
-When a step skill instructs you to spawn a subagent, the prompt you pass MUST include three pieces near the top:
+When a step skill instructs you to spawn a subagent, the prompt you pass MUST include **seven** pieces near the top — the 3-piece HAVE contract plus Claude's 4-field delegation contract (dossier 16 §3.1). A fetcher handed a thin sub-topic with no `stop_conditions` burns its whole budget "searching for nonexistent sources" — the exact documented failure mode. The four added fields are cheap insurance:
 
 1. **`research_query` — verbatim, block-quoted** from `research/query-<vault_tag>.md`. Do not paraphrase, do not summarize.
 
-2. **Pipeline position statement.** One sentence naming what step the subagent runs in, what came before, what comes after. Example: *"You are step 5 (depth investigator) of the hyperresearch V8 pipeline. Step 4's loci analysts produced `research/loci.json`; after you return, step 6 will reconcile your committed position against the other investigators'."*
+2. **`pipeline_position`** — one sentence naming what step the subagent runs in, what came before, what comes after. Example: *"You are step 5 (depth investigator); step 4's loci analysts produced `research/loci.json`; step 6 reconciles your committed position."*
 
-3. **The subagent's specific inputs** (vault_tag, output_path, locus, etc.). Each step skill's spawn template documents the required fields.
+3. **`inputs`** — the subagent's specific inputs (vault_tag, output_path, locus, etc.). Each step skill's spawn template documents the required fields.
 
-Skipping any of these in a Task prompt is a process violation.
+4. **`objective`** — the single self-contained sub-objective the subagent must achieve (one sentence).
+
+5. **`output_shape`** — the exact return format. For fetchers/investigators this is the `claims-*.json` shape: *"JSON array of {claim, note_id, quoted_support, char_start, char_end}"* — pinning this is what makes the downstream Stage-11.5 binding deterministic.
+
+6. **`tools_allowed`** — the explicit tool allowlist, e.g. `["web_search","fetch_url","execute_python"]` for a fetcher, `["Read","Write"]` for a synthesizer.
+
+7. **`stop_conditions`** — the runtime halt rule: *"halt when N primary sources found OR the tool-call cap is reached OR FETCHER_TIMEOUT_S elapses"*. The per-subagent caps live in `skills/routing_constants.py` (`FETCHER_TOOLCALL_CAP={"light":10,"full":20}`, `FETCHER_TIMEOUT_S=300`, `INVESTIGATOR_TIMEOUT_S=900`, `SUBAGENT_SOURCE_KILL=100`). The host cannot hard-interrupt a subagent mid-loop, so the cap is a **prompt-level `stop_conditions` guard + an orchestrator-side per-wave deadline** (you check elapsed wall-clock between batch waves and proceed with returned results if a wave exceeds `FETCHER_TIMEOUT_S`).
+
+Skipping any of these seven in a Task prompt is a process violation.
 
 ---
 
@@ -207,10 +243,11 @@ Context compaction may eat parts of this conversation. If you're unsure what ste
    - Step 11.5: `research/temp/citation-verify-actions.json` (citation-verifier dispositions; full only)
    - Step 12: `research/critic-findings-{dialectic,depth,width,instruction}.json`
    - Step 13: `research/temp/post-critic-fetch-log.md`
+   - Step 12.5: `research/grader-log.json` (grader-loop convergence; full only) + `research/critic-findings-grader.json`
    - Step 14: `research/patch-log.json` (and edited final_report.md)
    - Step 14.5: `research/temp/fresh-review.json` (fresh-context reviewer findings; full only)
    - Step 15: `research/polish-log.json` (and edited final_report.md)
-   - Step 16: `research/readability-recommendations.json`, `research/readability-decisions.json`, the `bad uncited-gate` pass (and edited final_report.md)
+   - Step 16: `research/readability-recommendations.json`, `research/readability-decisions.json`, the `bad uncited-gate` pass + the `bad recitation-gate` pass (and edited final_report.md)
 3. **Find the highest-numbered step whose artifact exists.** Resume from the next step.
 4. **Re-invoke this entry skill** if you've lost track entirely: `Skill(skill: "bad-research")`. It loads fresh.
 

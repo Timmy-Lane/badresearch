@@ -166,7 +166,9 @@ Write to `research/temp/scored-urls.md`.
 
 **Subagent type:** `bad-research-fetcher`
 
-**Spawn template (use the standard 3-piece contract):**
+**Spawn template (the 7-field delegation contract — see entry-skill spawn contract).**
+The four added contract fields — `objective`, `output_shape`, `tools_allowed`,
+`stop_conditions` — appear in every fetcher prompt as the uppercase blocks below:
 ```
 subagent_type: bad-research-fetcher
 prompt: |
@@ -177,15 +179,32 @@ prompt: |
 
   PIPELINE POSITION: You are step 2 (width-sweep fetcher) of the
   hyperresearch V8 pipeline. The orchestrator partitioned the URL queue into
-  non-overlapping batches; you fetch ONLY the URLs in your batch. Do not
-  search for additional URLs. After you return, the orchestrator runs a
-  coverage check (step 2.5) and may dispatch wave 2 fetchers.
+  non-overlapping batches; you fetch ONLY the URLs in your batch. After you
+  return, the orchestrator runs a coverage check (step 2.5) and may dispatch wave 2.
 
-  YOUR INPUTS:
+  INPUTS:
   - vault_tag: <vault_tag>
   - urls: [<batch URLs, exactly as assigned>]
   - batch_id: <number>
+
+  OBJECTIVE: fetch and ground every URL in your batch into vault notes tagged
+  <vault_tag>, chasing 3–8 primary sources via citation chains.
+
+  OUTPUT_SHAPE: for each note, emit the claims JSON the binding consumes —
+  a JSON array of {claim, note_id, quoted_support, char_start, char_end}.
+
+  TOOLS_ALLOWED: ["fetch_url", "web_search", "execute_python"]
+
+  STOP_CONDITIONS: halt when every assigned URL is fetched OR you reach the
+  fetcher tool-call cap (FETCHER_TOOLCALL_CAP: 10 light / 20 full tool calls)
+  OR FETCHER_TIMEOUT_S (300s) elapses — then return what you have. Do NOT keep
+  searching for nonexistent sources. Hard kill at SUBAGENT_SOURCE_KILL (100 sources).
 ```
+
+**Orchestrator-side wave deadline.** The host cannot interrupt a fetcher mid-loop.
+So between waves, check elapsed wall-clock: if a fetcher wave exceeds
+FETCHER_TIMEOUT_S (300s), proceed to step 2.5 with the results that returned —
+do not block on a slow fetcher.
 
 **CRITICAL: no token waste.** Each fetcher gets ONLY its batch. No fetcher searches for new URLs or duplicates another fetcher's work. If a fetcher finishes early, it's done.
 

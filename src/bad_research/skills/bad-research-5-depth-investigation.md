@@ -31,7 +31,9 @@ Read these inputs:
 
 1. **Spawn K `bad-research-depth-investigator` subagents in parallel** (ONE message, all Task calls). One per locus with `source_budget > 0`, capped at 6.
 
-   **Spawn template:**
+   **Spawn template** (carries the 7-field delegation contract — the four added
+   fields `objective`, `output_shape`, `tools_allowed`, `stop_conditions` appear
+   as the uppercase blocks below):
    ```
    subagent_type: bad-research-depth-investigator
    prompt: |
@@ -56,6 +58,19 @@ Read these inputs:
      - corpus_tag: <vault_tag>
      - locus_name: <locus name>
      - source_budget: <hard cap on additional sources you can fetch>
+
+     OBJECTIVE: investigate the assigned locus to a committed position, grounding
+     every claim in primary sources.
+
+     OUTPUT_SHAPE: an interim note ending in `## Committed position`, plus a claims
+     JSON array of {claim, note_id, quoted_support, char_start, char_end}.
+
+     TOOLS_ALLOWED: ["fetch_url", "web_search", "Read", "Write", "execute_python"]
+
+     STOP_CONDITIONS: halt when the locus is investigated to a committed position OR
+     you reach the fetcher tool-call cap (FETCHER_TOOLCALL_CAP) OR INVESTIGATOR_TIMEOUT_S
+     (900s) elapses — then return your committed position with the evidence gathered so
+     far. Do not keep searching for nonexistent sources. Hard kill at SUBAGENT_SOURCE_KILL (100).
 
      CRITICAL: Read the full source text of relevant vault notes (via
      `hyperresearch note show <id1> <id2> ... -j`) BEFORE writing your

@@ -172,6 +172,39 @@ non-zero exit code surfaces the block to the orchestrator.
 
 ---
 
+## Step 16.7 — Recitation overlap gate (major finding, NOT a ship-block)
+
+After the uncited gate passes, run the deterministic ($0) recitation gate. It
+flags any report sentence that reproduces a cited note's body too closely (a
+verbatim run > 12 words, or > 50% of the sentence lifted contiguously) — Gemini's
+RECITATION *output* guarantee without its decoder machinery. Unlike the uncited
+gate, recitation is a **major** finding, **not a ship-block** (copying is a
+quality/legal smell, not a correctness failure) — so it never blocks ship.
+
+First build the note-bodies JSON (note_id → body) the gate needs:
+
+```bash
+PYTHONIOENCODING=utf-8 $HPR search "" --tag <vault_tag> --json \
+  | python -c "
+import sys, json
+d = json.load(sys.stdin)
+bodies = {r.get('id',''): (r.get('body') or '') for r in d.get('data',{}).get('results',[])}
+open('research/temp/recitation-bodies.json','w').write(json.dumps(bodies))
+"
+bad recitation-gate --report research/notes/final_report_<vault_tag>.md \
+    --note-bodies research/temp/recitation-bodies.json --json
+```
+
+- Output `{"recitation": []}` → no verbatim copying; done.
+- Output `{"recitation": [{"location": "...", "recommendation": "..."}]}` → for each
+  flagged sentence, apply a surgical Edit that paraphrases the copied span while
+  keeping the `[N]` citation. A sentence whose verbatim run sits inside an explicit
+  `"…"` quotation adjacent to a citation is already exempt (the gate does not flag
+  it). Re-run the gate after paraphrasing to confirm the flag cleared. The gate
+  does not block ship — but a clean report has zero recitation findings.
+
+---
+
 ## Exit criterion
 
 - `research/readability-recommendations.json` exists
@@ -179,6 +212,7 @@ non-zero exit code surfaces the block to the orchestrator.
 - `research/notes/final_report_<vault_tag>.md` reflects the applied recommendations
 - The final report's structure (H2 list, executive summary, conclusion) is unchanged from step 15's output (this step does not restructure)
 - `bad uncited-gate` returned `{"uncited": []}` (exit 0) — the ship-block passed
+- `bad recitation-gate` was run; any flagged sentences were paraphrased (recitation is a major finding, not a ship-block)
 
 ---
 
