@@ -14,6 +14,14 @@ def test_unknown_provider_raises() -> None:
         get_embed_provider("does-not-exist")
 
 
+def test_unknown_provider_rejected_and_no_cohere_branch() -> None:
+    # Cohere is removed in the keyless rebuild — it is no longer a known provider,
+    # so requesting it raises ValueError (never returns an API embedder).
+    with pytest.raises(ValueError) as ei:
+        get_embed_provider("cohere")
+    assert "cohere" in str(ei.value).lower()
+
+
 def test_protocol_is_runtime_checkable() -> None:
     class _Fake:
         name = "fake"
