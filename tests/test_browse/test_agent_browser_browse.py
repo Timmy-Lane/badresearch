@@ -113,3 +113,43 @@ def test_stagehand_prompts_are_verbatim_nonempty() -> None:
     assert "observe" in OBSERVE_SYSTEM_PROMPT.lower()
     assert "agent_browser tool" in AGENT_LOOP_SYSTEM_PROMPT or \
            "agent-browser" in AGENT_LOOP_SYSTEM_PROMPT
+
+
+def test_state_flag_threads_to_open_and_forces_chrome() -> None:
+    # An authed browse (state given) must run on chrome (lightpanda blocks --state).
+    runner = FakeRunner(route={"open": "{}", "wait": "{}", "snapshot": SNAPSHOT_JSON})
+    prov = AgentBrowserProvider(engine="lightpanda", runner=runner)
+    result = prov.browse("https://src.example/article/1", "read it",
+                         state="/auth/src.json")
+    assert result.metadata["engine"] == "chrome"   # forced
+    open_argv = runner.argvs()[0]
+    assert "--state" in open_argv and "/auth/src.json" in open_argv
+    assert open_argv[2] == "chrome"
+
+
+def test_headers_flag_threads_through() -> None:
+    runner = FakeRunner(route={"open": "{}", "wait": "{}", "snapshot": SNAPSHOT_JSON})
+    prov = AgentBrowserProvider(engine="chrome", runner=runner)
+    prov.browse("https://api.example/", "read",
+                headers='{"Authorization":"Bearer t"}')
+    open_argv = runner.argvs()[0]
+    assert "--headers" in open_argv
+    assert '{"Authorization":"Bearer t"}' in open_argv
+
+
+def test_save_state_builds_state_save_argv() -> None:
+    runner = FakeRunner(replies=["{}"])
+    prov = AgentBrowserProvider(engine="chrome", runner=runner)
+    prov.save_state("/auth/src.json")
+    assert runner.last() == [
+        "agent-browser", "--engine", "chrome", "state", "save", "/auth/src.json",
+    ]
+
+
+def test_cookies_set_curl_builds_argv() -> None:
+    runner = FakeRunner(replies=["{}"])
+    prov = AgentBrowserProvider(engine="chrome", runner=runner)
+    prov.cookies_set_curl("/auth/src.curl")
+    assert runner.last() == [
+        "agent-browser", "--engine", "chrome", "cookies", "set", "--curl", "/auth/src.curl",
+    ]
