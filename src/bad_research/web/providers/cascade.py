@@ -109,6 +109,22 @@ class _RerankerLike(Protocol):
     def rerank(self, query: str, docs: list[str]) -> list[tuple[int, float]]: ...
 
 
+class _SearcherLike(Protocol):
+    """Structural type for anything the cascade can fan a SearchQuery out to."""
+
+    name: str
+
+    def search_ex(self, q: SearchQuery) -> list[WebResult]: ...
+
+    def fetch(self, url: str) -> WebResult: ...
+
+
+class _FetcherLike(Protocol):
+    """Structural type for the Stage-3 extractor (single-URL deep fetch)."""
+
+    def fetch(self, url: str) -> WebResult: ...
+
+
 _MIN_CONTENT_CHARS = 300  # below this a SERP row is content-less -> Stage-3 extract
 
 
@@ -157,9 +173,9 @@ class CascadeProvider:
 
     def __init__(
         self,
-        keyword_providers: list,
-        neural_provider=None,
-        extractor=None,
+        keyword_providers: list[_SearcherLike],
+        neural_provider: _SearcherLike | None = None,
+        extractor: _FetcherLike | None = None,
         reranker: _RerankerLike | None = None,
         extract_top_n: int = 0,
     ):
@@ -173,7 +189,7 @@ class CascadeProvider:
     def _stage1(self, q: SearchQuery) -> list[WebResult]:
         by_provider: dict[str, list[WebResult]] = {}
 
-        def _run(provider) -> tuple[str, list[WebResult]]:
+        def _run(provider: _SearcherLike) -> tuple[str, list[WebResult]]:
             try:
                 return provider.name, provider.search_ex(q)
             except ProviderError:
@@ -198,6 +214,8 @@ class CascadeProvider:
         return (passing / len(stage1)) < THIN_PASS_FRACTION
 
     def _stage2(self, q: SearchQuery, stage1: list[WebResult]) -> list[WebResult]:
+        if self._neural is None:  # never reached (gated by _should_fire_neural)
+            return stage1
         try:
             neural_results = self._neural.search_ex(q)
         except ProviderError:
@@ -256,9 +274,9 @@ class CascadeProvider:
 def cascade_search(
     q: SearchQuery,
     *,
-    keyword_providers: list,
-    neural_provider=None,
-    extractor=None,
+    keyword_providers: list[_SearcherLike],
+    neural_provider: _SearcherLike | None = None,
+    extractor: _FetcherLike | None = None,
     reranker: _RerankerLike | None = None,
     extract_top_n: int = 0,
 ) -> list[WebResult]:

@@ -127,12 +127,19 @@ class ExaProvider:
         return [_to_web_result(r) for r in response.results]
 
     def find_similar(self, url: str, max_results: int = 5) -> list[WebResult]:
-        """Find pages similar to a seed URL (citation expansion). dossier 02 §2.6."""
+        """Find pages similar to a seed URL (citation expansion). dossier 02 §2.6.
+
+        [CORRECTION 2026-05-26] exa-py 2.13 `find_similar_and_contents` overloads
+        accept `text`/`summary` but NOT a top-level `highlights` kwarg (it would
+        only be honored inside `contents`, and the method is itself deprecated in
+        favor of `search()`). Dropped the invalid `highlights=True` arg; `text`
+        contents already give us the body. The cascade calls this rarely (citation
+        expansion only), so the deprecated method is acceptable here.
+        """
         response = self._client.find_similar_and_contents(
             url,
             num_results=max_results,
             text={"max_characters": self._text_max_characters},
-            highlights=True,
         )
         return [_to_web_result(r) for r in response.results]
 
