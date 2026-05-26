@@ -36,7 +36,7 @@ class BadResearchConfig:
             "heavy": "claude-opus-4-7",
         }
     )
-    embed_model: str = "embed-v3"          # Cohere
+    embed_model: str = "embed-english-v3.0"  # Cohere
     rerank_model: str = "rerank-v3.5"      # Cohere; "bge-reranker-v2-m3" offline
     budget_usd: float | None = None        # None = uncapped
     cheap: bool = False                    # demote heavy->work

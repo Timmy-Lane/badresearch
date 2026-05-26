@@ -18,7 +18,7 @@ def test_defaults_match_interfaces() -> None:
         "work": "claude-sonnet-4-6",
         "heavy": "claude-opus-4-7",
     }
-    assert cfg.embed_model == "embed-v3"
+    assert cfg.embed_model == "embed-english-v3.0"
     assert cfg.rerank_model == "rerank-v3.5"
     assert cfg.budget_usd is None
     assert cfg.cheap is False
@@ -28,7 +28,7 @@ def test_load_returns_defaults_when_no_env_no_toml(tmp_path: Path) -> None:
     cfg = BadResearchConfig.load(config_path=tmp_path / "missing.toml")
     assert cfg.budget_usd is None
     assert cfg.cheap is False
-    assert cfg.embed_model == "embed-v3"
+    assert cfg.embed_model == "embed-english-v3.0"
 
 
 def test_env_overrides_default(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
