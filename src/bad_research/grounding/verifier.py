@@ -118,6 +118,17 @@ class VerifyResult:
 # A piece made up only of citation tokens -- it trails a sentence, not its own.
 _CITES_ONLY = re.compile(r"^\s*(?:\[\[[^\]]+\]\]|\[\d+\])(?:\s*(?:\[\[[^\]]+\]\]|\[\d+\]))*\s*[.;,]?\s*$")
 
+# Any citation token (numeric [N] or [[note-id]] wiki-link) -- stripped from the
+# report sentence before it is used as the NLI/judge hypothesis so the entailment
+# check sees the prose claim, not the citation markup.
+_CITE_TOKEN = re.compile(r"\[\[[^\]]+\]\]|\[\d+\]")
+
+
+def _sentence_text(sent: str) -> str:
+    """The report sentence with its citation tokens removed and whitespace
+    collapsed -- the hypothesis the verifier checks against the cited support."""
+    return re.sub(r"\s+", " ", _CITE_TOKEN.sub("", sent)).strip()
+
 
 def _split_sentences(text: str) -> list[str]:
     # Shared shape with the gate; deterministic. Split on terminal punctuation
@@ -158,6 +169,11 @@ class CitationVerifier:
         findings: list[CitationFinding] = []
 
         for sent in _split_sentences(report_md):
+            # The hypothesis is the report sentence AS WRITTEN (citation markup
+            # stripped), not the stored anchor.claim. This catches a synthesizer
+            # sentence that drifted from the claim it cites: the support is judged
+            # against what the report actually says (dossier §2.2).
+            hypothesis = _sentence_text(sent)
             for token in extract_citations(sent):
                 anchor = store.get(token)
                 if anchor is None:
@@ -167,8 +183,8 @@ class CitationVerifier:
                 if not tier_a_byte_identity(anchor, body):
                     findings.append(CitationFinding(anchor.anchor_id, sent, VerifyVerdict.UNSUPPORTED, 0.0))
                     continue
-                # Tier B -- local NLI ($0). premise=quote, hypothesis=claim sentence.
-                scores = self.nli.predict(anchor.quoted_support, anchor.claim)
+                # Tier B -- local NLI ($0). premise=quoted_support, hypothesis=report sentence.
+                scores = self.nli.predict(anchor.quoted_support, hypothesis)
                 label = classify_nli(scores)
                 if label is NLILabel.ENTAILMENT:
                     findings.append(CitationFinding(anchor.anchor_id, sent, VerifyVerdict.SUPPORTED, scores["entailment"]))
@@ -176,7 +192,8 @@ class CitationVerifier:
                     findings.append(CitationFinding(anchor.anchor_id, sent, VerifyVerdict.CONTRADICTED, scores["contradiction"]))
                 else:
                     stub = CitationFinding(anchor.anchor_id, sent, VerifyVerdict.UNSUPPORTED, 0.0)
-                    pending.append((stub, anchor.claim, anchor.quoted_support))
+                    # Tier C judges the report sentence (claim) vs the quoted support.
+                    pending.append((stub, hypothesis, anchor.quoted_support))
 
         # Pass 2: Tier C -- judge the neutral band only, batched.
         if pending:

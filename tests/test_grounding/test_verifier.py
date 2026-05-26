@@ -137,3 +137,40 @@ def test_verify_neutral_band_escalates_to_tier_c(fake_llm):
     result = verifier.verify(report, store, {"nA": body})
     assert result.findings[0].verdict is VerifyVerdict.PARTIAL
     assert len(fake_llm.calls) == 1  # only the neutral band paid for an LLM call
+
+
+class HypothesisAwareNLI:
+    """NLI stub that decides from the HYPOTHESIS (report sentence), proving the
+    verifier checks the sentence as written -- not the stored anchor.claim."""
+
+    def predict(self, premise, hypothesis):
+        if "DECLINED" in hypothesis or "fell" in hypothesis:
+            return {"entailment": 0.02, "neutral": 0.05, "contradiction": 0.93}
+        return {"entailment": 0.95, "neutral": 0.04, "contradiction": 0.01}
+
+
+def test_verify_checks_report_sentence_not_stored_claim(fake_llm):
+    # The anchor's stored claim is FAITHFUL to the support, but the report
+    # SENTENCE that cites it says the opposite. The verifier must judge the
+    # sentence as written -> CONTRADICTED (the drift is caught).
+    body = "GMV grew 12.4% year over year across the region."
+    quote = "GMV grew 12.4% year over year across the region"
+    drifted = ClaimAnchor("nA", 0, len(quote), "GMV grew 12.4% YoY.", quote)  # faithful stored claim
+    body_b = "Revenue rose by 12.4% over the prior year."
+    quote_b = "Revenue rose by 12.4% over the prior year"
+    faithful = ClaimAnchor("nB", 0, len(quote_b), "Revenue rose 12.4%.", quote_b)
+    store = _store_with([drifted, faithful])
+    nli = HypothesisAwareNLI()
+    report = (
+        # sentence DRIFTS to the opposite of its cited support -> caught
+        f"Regional GMV DECLINED that year. [[{drifted.anchor_id}]]\n"
+        # sentence stays faithful to its cited support -> supported
+        f"Revenue rose by 12.4%. [[{faithful.anchor_id}]]\n"
+    )
+    verifier = CitationVerifier(nli=nli, llm=fake_llm)
+    result = verifier.verify(report, store, {"nA": body, "nB": body_b})
+    by_anchor = {r.anchor_id: r for r in result.findings}
+    assert by_anchor[drifted.anchor_id].verdict is VerifyVerdict.CONTRADICTED
+    assert by_anchor[faithful.anchor_id].verdict is VerifyVerdict.SUPPORTED
+    assert store.get(drifted.anchor_id).verified == 0
+    assert store.get(faithful.anchor_id).verified == 1

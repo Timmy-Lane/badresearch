@@ -134,9 +134,16 @@ def build_from_claims(
         if span is None:
             continue  # drop: hallucinated quote
         start, end = span
+        # Store the ACTUAL matched body substring as quoted_support, not the
+        # (possibly normalized) input quote. For an exact find these are equal;
+        # for a fuzzy-located span they differ, and storing the input quote would
+        # make Tier-A byte-identity (body[start:end] == quoted_support) ALWAYS
+        # fail -> the rescued anchor would be permanently unverifiable. Anchoring
+        # to the body slice guarantees the Tier-A round-trip holds (dossier §1.1).
+        located = body[start:end]
         store.upsert(ClaimAnchor(
             note_id=note_id, char_start=start, char_end=end,
-            claim=claim_text, quoted_support=quote,
+            claim=claim_text, quoted_support=located,
         ))
         count += 1
     return count

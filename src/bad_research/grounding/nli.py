@@ -56,21 +56,36 @@ class CrossEncoderNLI:
                 repo = f"cross-encoder/{repo}"
             self._model = CrossEncoder(repo)
 
+    def _label_index(self, name: str) -> int:
+        """Resolve a label NAME (entailment/contradiction/neutral) to its logit
+        index by reading the model's own config.id2label map ({index: name}).
+
+        This is the anti-silent-inversion fix: we never assume the checkpoint
+        orders its logits [contradiction, entailment, neutral]. If a checkpoint
+        orders them differently, indexing by position would flip every verdict
+        (a contradiction would read as entailment). Indexing by NAME makes the
+        physical logit order irrelevant."""
+        id2label = self._model.config.id2label  # {0: "CONTRADICTION", ...}
+        for idx, label in id2label.items():
+            if str(label).lower() == name:
+                return int(idx)
+        raise ValueError(
+            f"label {name!r} not in model id2label={id2label!r}; "
+            "the checkpoint does not look like a 3-way NLI model"
+        )
+
     def predict(self, premise: str, hypothesis: str) -> dict[str, float]:
         self._ensure()
         import numpy as np
 
         logits = self._model.predict([(premise, hypothesis)])[0]
-        # cross-encoder/nli-deberta-v3-base label order: [contradiction, entailment, neutral].
-        # NEEDS-LIVE-VERIFICATION: this index mapping is taken from the model card's
-        # documented order; it was NOT verified against a live model load here (torch +
-        # the ~400MB checkpoint are intentionally not installed for tests). If a live
-        # check ever shows a different order, fix the three indices below (the rest of
-        # the pipeline keys off the {entailment,contradiction,neutral} dict, not the order).
         exp = np.exp(logits - np.max(logits))
         probs = exp / exp.sum()
+        # Index the logits by LABEL NAME, not by hardcoded position, so the
+        # name-keyed dict the pipeline consumes is correct regardless of how the
+        # checkpoint internally orders contradiction/entailment/neutral.
         return {
-            "contradiction": float(probs[0]),
-            "entailment": float(probs[1]),
-            "neutral": float(probs[2]),
+            "entailment": float(probs[self._label_index("entailment")]),
+            "contradiction": float(probs[self._label_index("contradiction")]),
+            "neutral": float(probs[self._label_index("neutral")]),
         }

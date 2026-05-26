@@ -101,3 +101,35 @@ def test_build_from_claims_upserts_located_drops_unlocatable():
     # Round-trip: the stored offsets slice the body back to the quote.
     body = NOTE_BODIES[a.note_id]
     assert body[a.char_start:a.char_end] == a.quoted_support
+
+
+def test_build_from_claims_fuzzy_located_anchor_round_trips_tier_a():
+    # A slightly-reworded quote (curly apostrophe + collapsed whitespace in the
+    # body) only matches via the rapidfuzz fallback. The anchor MUST still store
+    # offsets whose body slice equals quoted_support, so Tier-A byte-identity
+    # would accept it (otherwise the rescued anchor is permanently unverifiable).
+    store = _store()
+    bodies = {
+        "source-note-7": (
+            "Researchers wrote: the model’s   accuracy reached 91% on the held-out set "  # noqa: RUF001 -- curly apostrophe is the fixture
+            "after the second fine-tuning pass."
+        ),
+    }
+    claims = [
+        {
+            "claim": "Accuracy hit 91% on the held-out set.",
+            # straight apostrophe + single spaces -> NOT a byte-exact substring
+            "quoted_support": "the model's accuracy reached 91% on the held-out set",
+            "source_note_id": "source-note-7",
+        },
+    ]
+    n = build_from_claims(store, claims, bodies)
+    assert n == 1  # rescued by the fuzzy fallback, not dropped
+    a = next(iter(store.all()))
+    body = bodies[a.note_id]
+    # Tier-A invariant: the stored quote IS the actual body slice (not the input).
+    assert body[a.char_start:a.char_end] == a.quoted_support
+    # anchor_id is the SHA of the stored (body-slice) quote, so quote_sha matches too.
+    assert a.anchor_id == quote_sha(a.quoted_support)
+    # The rescued quote covers the same evidence as the (normalized) input.
+    assert "91%" in a.quoted_support
