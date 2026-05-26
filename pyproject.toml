@@ -48,7 +48,8 @@ crawl4ai = ["crawl4ai>=0.4"]                       # Tier 1 (JS render)
 browser-use = ["browser-use>=0.1"]                 # Tier 3 self-host agentic browse
 browserbase = ["stagehand>=0.1"]                   # Tier 3b anti-bot (paid; key-gated)
 browse = ["crawl4ai>=0.4", "browser-use>=0.1"]     # the self-host ladder, no paid keys
-all = ["bad-research[cohere,exa,mcp,web,browse]"]
+quality = ["langdetect>=1.0.9"]                    # Stage-2 language gate (graceful when absent)
+all = ["bad-research[cohere,exa,mcp,web,browse,quality]"]
 dev = [
     "pytest>=7.4",
     "pytest-cov>=4.1",
