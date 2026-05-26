@@ -76,6 +76,8 @@ def _fetch_pdf(url: str) -> WebResult | None:
 
     import httpx
 
+    from bad_research.core.fetcher import safe_redirect_get
+
     try:
         # Convert arXiv abs links to PDF links
         if "arxiv.org/abs/" in url:
@@ -83,9 +85,14 @@ def _fetch_pdf(url: str) -> WebResult | None:
             if not url.endswith(".pdf"):
                 url += ".pdf"
 
-        resp = httpx.get(url, follow_redirects=True, timeout=30, verify=False, headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        })
+        # follow_redirects=False + manual SSRF-checked hop-following: a PDF URL that
+        # 302s to an internal host (e.g. 169.254.169.254 metadata) is refused.
+        # verify=False kept for academic PDF hosts with stale certs; redirect hops
+        # are SSRF-checked via safe_redirect_get.
+        with httpx.Client(follow_redirects=False, timeout=30, verify=False) as client:
+            resp = safe_redirect_get(client, url, headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            })
         if resp.status_code != 200:
             return None
 

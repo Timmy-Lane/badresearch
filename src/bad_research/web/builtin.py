@@ -70,12 +70,23 @@ class BuiltinProvider:
         )
 
     def _download(self, url: str) -> tuple[str, str]:
-        """Download URL, return (html, final_url). Tries httpx first, falls back to urllib."""
+        """Download URL, return (html, final_url). Tries httpx first, falls back to urllib.
+
+        Redirects are followed MANUALLY (follow_redirects=False) so each hop is
+        re-validated against the SSRF guard — a public URL that 302s to an internal
+        host (e.g. cloud metadata at 169.254.169.254) is refused, not followed.
+        """
         try:
             import httpx
 
-            with httpx.Client(follow_redirects=True, timeout=30) as client:
-                resp = client.get(url, headers={"User-Agent": "hyperresearch/0.1"})
+            from bad_research.core.fetcher import safe_redirect_get
+
+            # follow_redirects=False: safe_redirect_get walks the chain, calling
+            # assert_url_safe on every hop BEFORE the request goes out.
+            with httpx.Client(follow_redirects=False, timeout=30) as client:
+                resp = safe_redirect_get(
+                    client, url, headers={"User-Agent": "hyperresearch/0.1"}
+                )
                 resp.raise_for_status()
                 return resp.text, str(resp.url)
         except ImportError:
@@ -83,8 +94,13 @@ class BuiltinProvider:
 
         import urllib.request
 
+        from bad_research.core.fetcher import assert_url_safe
+
+        # urllib follows redirects internally; re-validate the input host here. (The
+        # httpx path above is the production fetcher with full per-hop checking.)
+        assert_url_safe(url)
         req = urllib.request.Request(url, headers={"User-Agent": "hyperresearch/0.1"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:  # host SSRF-checked above
             html = resp.read().decode("utf-8", errors="replace")
             return html, resp.url or url
 

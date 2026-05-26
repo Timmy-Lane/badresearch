@@ -102,3 +102,130 @@ def test_fetch_and_save_blocks_metadata_url(tmp_path, monkeypatch):
     with pytest.raises(SSRFError):
         fetch_and_save(vault, "http://169.254.169.254/latest/meta-data/")
     assert fetched["n"] == 0  # blocked before any fetch
+
+
+# ── redirect-to-internal SSRF bypass (fix #4) ────────────────────────────────
+class _Resp:
+    """Minimal httpx.Response stand-in: a redirect (is_redirect=True + Location) or
+    a terminal 200."""
+
+    def __init__(self, *, status_code=200, location=None, text="ok", url="http://x/"):
+        self.status_code = status_code
+        self.is_redirect = location is not None
+        self.headers = {"location": location} if location else {}
+        self.text = text
+        self.url = url
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(f"status {self.status_code}")
+
+
+class _FakeClient:
+    """Fake httpx.Client that returns a scripted sequence of responses (one per
+    .get) and records every URL it was asked to GET."""
+
+    def __init__(self, responses):
+        self._responses = list(responses)
+        self.requested: list[str] = []
+
+    def get(self, url, headers=None):
+        self.requested.append(url)
+        return self._responses.pop(0)
+
+
+def test_safe_redirect_get_refuses_redirect_to_metadata():
+    # A public URL whose 302 Location points at the cloud-metadata IP must be
+    # REFUSED on the 2nd hop — assert_url_safe runs before the redirect is followed.
+    from bad_research.core.fetcher import safe_redirect_get
+
+    client = _FakeClient([
+        _Resp(status_code=302, location="http://169.254.169.254/latest/meta-data/"),
+        _Resp(status_code=200, text="SECRET CREDS"),  # must never be returned
+    ])
+    with pytest.raises(SSRFError):
+        safe_redirect_get(client, "https://public.example.com/redirector")
+    # Only the first (public) URL was actually GET — the internal hop was blocked
+    # before its request went out.
+    assert client.requested == ["https://public.example.com/redirector"]
+
+
+def test_safe_redirect_get_follows_safe_public_redirect():
+    # A public->public redirect chain is followed and returns the terminal response.
+    from bad_research.core.fetcher import safe_redirect_get
+
+    client = _FakeClient([
+        _Resp(status_code=302, location="https://other.example.com/final"),
+        _Resp(status_code=200, text="hello world"),
+    ])
+    resp = safe_redirect_get(client, "https://public.example.com/start")
+    assert resp.status_code == 200
+    assert resp.text == "hello world"
+    assert client.requested == [
+        "https://public.example.com/start",
+        "https://other.example.com/final",
+    ]
+
+
+def test_safe_redirect_get_relative_redirect_revalidated():
+    # A relative Location is resolved against the current URL before re-validation.
+    from bad_research.core.fetcher import safe_redirect_get
+
+    client = _FakeClient([
+        _Resp(status_code=302, location="/next"),
+        _Resp(status_code=200, text="done"),
+    ])
+    resp = safe_redirect_get(client, "https://public.example.com/a/b")
+    assert resp.text == "done"
+    assert client.requested == [
+        "https://public.example.com/a/b",
+        "https://public.example.com/next",
+    ]
+
+
+def test_safe_redirect_get_caps_hops():
+    from bad_research.core.fetcher import safe_redirect_get
+
+    # An endless redirect loop (always 302 to another public URL) is capped.
+    loop = [_Resp(status_code=302, location=f"https://public.example.com/{i}") for i in range(20)]
+    client = _FakeClient(loop)
+    with pytest.raises(RuntimeError, match="too many redirects"):
+        safe_redirect_get(client, "https://public.example.com/start", max_hops=3)
+
+
+def test_builtin_provider_refuses_redirect_to_internal(monkeypatch):
+    # End-to-end through BuiltinProvider._download: a public URL that 302s to an
+    # internal host must raise SSRFError, not be followed. This exercises the REAL
+    # fetch path with follow_redirects=False + safe_redirect_get.
+    import httpx
+
+    from bad_research.web.builtin import BuiltinProvider
+
+    captured = {}
+
+    def _fake_client(*, follow_redirects, timeout):
+        # The provider MUST disable httpx's own redirect following, else the per-hop
+        # SSRF check would be bypassed.
+        captured["follow_redirects"] = follow_redirects
+        return _FakeClientCtx(_FakeClient([
+            _Resp(status_code=302, location="http://169.254.169.254/latest/meta-data/"),
+            _Resp(status_code=200, text="SECRET"),
+        ]))
+
+    monkeypatch.setattr(httpx, "Client", _fake_client)
+    with pytest.raises(SSRFError):
+        BuiltinProvider()._download("https://public.example.com/redirector")
+    assert captured["follow_redirects"] is False
+
+
+class _FakeClientCtx:
+    """Context-manager wrapper so `with httpx.Client(...) as client:` works."""
+
+    def __init__(self, client):
+        self._client = client
+
+    def __enter__(self):
+        return self._client
+
+    def __exit__(self, *exc):
+        return False

@@ -86,6 +86,47 @@ def assert_url_safe(url: str) -> None:
             raise SSRFError(f"host {host!r} resolves to blocked address {addr}")
 
 
+_MAX_REDIRECT_HOPS = 5
+
+
+def safe_redirect_get(
+    client,
+    url: str,
+    *,
+    headers: dict | None = None,
+    max_hops: int = _MAX_REDIRECT_HOPS,
+):
+    """GET `url` with `client`, following redirects MANUALLY and re-validating each
+    hop with `assert_url_safe` BEFORE the request is sent.
+
+    `assert_url_safe(url)` only checks the *input* URL once. When a fetch provider
+    uses `httpx.Client(follow_redirects=True)`, a public URL that 302-redirects to
+    `http://169.254.169.254/` (cloud metadata) or another internal host is followed
+    with no further check — an SSRF bypass. This helper closes that gap: it requires
+    the caller's client to have redirect-following DISABLED, then walks the redirect
+    chain itself, calling `assert_url_safe` on every `Location` target.
+
+    The supplied `client` MUST be constructed with `follow_redirects=False`. Returns
+    the final non-redirect `httpx.Response`. Raises `SSRFError` if any hop targets a
+    blocked address, or `RuntimeError` if the redirect chain exceeds `max_hops`.
+    """
+    from urllib.parse import urljoin
+
+    current = url
+    for _ in range(max_hops + 1):
+        assert_url_safe(current)
+        resp = client.get(current, headers=headers)
+        # httpx exposes is_redirect for 3xx with a Location header.
+        if not getattr(resp, "is_redirect", False):
+            return resp
+        location = resp.headers.get("location") or resp.headers.get("Location")
+        if not location:
+            return resp
+        # Resolve relative redirects against the current URL before re-validating.
+        current = urljoin(current, location)
+    raise RuntimeError(f"too many redirects (> {max_hops}) starting from {url!r}")
+
+
 def fetch_and_save(
     vault,
     url: str,

@@ -147,15 +147,19 @@ def _build_engine(cfg: object, vault: object) -> object:
 
 
 def _build_embedder(cfg: object) -> object:
-    from bad_research.embed.base import get_embedder
+    from bad_research.embed.base import get_embed_provider
 
-    return get_embedder(getattr(cfg, "embed_model", "embed-english-v3.0"))
+    # get_embed_provider(name, **kwargs) forwards kwargs to CohereEmbedProvider,
+    # whose `model` kwarg selects the embedder. The model comes from config.
+    return get_embed_provider("cohere", model=getattr(cfg, "embed_model", "embed-english-v3.0"))
 
 
 def _build_reranker(cfg: object) -> object:
     from bad_research.retrieval.rerank import get_reranker
 
-    return get_reranker(getattr(cfg, "rerank_model", "rerank-v3.5"))
+    # get_reranker(config, *, client=None, bge_scorer=None) reads rerank_model off
+    # the config object itself — pass the config, not a model-name string.
+    return get_reranker(cfg)
 
 
 def retrieve_cmd(
@@ -205,9 +209,11 @@ def _verify_report(report_path: str, vault_tag: str) -> list[dict]:
         for f in notes_dir.glob("*.md"):
             note_bodies[f.stem] = f.read_text(encoding="utf-8")
 
-    from bad_research.llm.base import get_llm
+    from bad_research.llm.base import get_llm_provider
 
-    verifier = CitationVerifier(nli=CrossEncoderNLI(), llm=get_llm(cfg))
+    # get_llm_provider(name, **kwargs) forwards kwargs to AnthropicProvider, whose
+    # signature is AnthropicProvider(api_key=None, config=None) — pass cfg via config=.
+    verifier = CitationVerifier(nli=CrossEncoderNLI(), llm=get_llm_provider("anthropic", config=cfg))
     result = verifier.verify(report_md, store, note_bodies)
     findings = getattr(result, "findings", result)
     out = []
@@ -243,7 +249,7 @@ def _uncited_gate(report_path: str, vault_tag: str) -> list[dict]:
     store = AnchorStore(conn)
     findings = no_uncited_claim_gate(report_md, store)
     return [
-        {"sentence": getattr(f, "sentence", ""), "reason": getattr(f, "failure_mode", "uncited")}
+        {"sentence": getattr(f, "location", ""), "reason": getattr(f, "failure_mode", "uncited")}
         for f in findings
     ]
 
