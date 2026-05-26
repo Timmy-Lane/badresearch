@@ -44,7 +44,11 @@ mcp = ["mcp>=1.6"]
 rerank = ["cohere>=5.13"]
 rerank-local = ["FlagEmbedding>=1.3"]
 web = ["exa-py>=2.0.0"]            # tavily/sonar/searxng/firecrawl need only httpx (core dep)
-all = ["bad-research[cohere,exa,mcp,web]"]
+crawl4ai = ["crawl4ai>=0.4"]                       # Tier 1 (JS render)
+browser-use = ["browser-use>=0.1"]                 # Tier 3 self-host agentic browse
+browserbase = ["stagehand>=0.1"]                   # Tier 3b anti-bot (paid; key-gated)
+browse = ["crawl4ai>=0.4", "browser-use>=0.1"]     # the self-host ladder, no paid keys
+all = ["bad-research[cohere,exa,mcp,web,browse]"]
 dev = [
     "pytest>=7.4",
     "pytest-cov>=4.1",
