@@ -205,17 +205,23 @@ def get_provider(
     magic: bool = False,
     headless: bool = True,
 ) -> WebProvider:
-    """Keyless web provider factory. Default = the host WebSearch tool adapter.
+    """Keyless web provider factory (INTERFACES_KEYLESS §3.1). Default = the host
+    WebSearch tool adapter. Every branch is keyless (host tool / local lib /
+    self-host / free API). No env var, no key."""
+    if name is None or name == "websearch":
+        from bad_research.web.search.base import WebSearchToolProvider
 
-    Every branch is keyless (host tool / local lib / self-host / local render).
-    No env var, no API key. `websearch`/`ddgs`/`searxng` are KR-2 stubs until the
-    `web/search/` package lands; `builtin` (httpx Tier-0) and `crawl4ai` (local JS
-    render) are real today.
-    """
-    if name in (None, "websearch", "ddgs", "searxng"):
-        from bad_research.web.search.base import get_keyless_provider
+        return WebSearchToolProvider()
 
-        return get_keyless_provider(name or "websearch")
+    if name == "ddgs":
+        from bad_research.web.search.base import DdgsProvider
+
+        return DdgsProvider()
+
+    if name == "searxng":
+        from bad_research.web.search.base import SearxngProvider
+
+        return SearxngProvider()
 
     if name == "builtin":
         from bad_research.web.builtin import BuiltinProvider
@@ -227,10 +233,24 @@ def get_provider(
             from bad_research.web.crawl4ai_provider import Crawl4AIProvider
 
             return Crawl4AIProvider(profile=profile or None, magic=magic, headless=headless)
-        except ImportError:
-            raise ImportError("crawl4ai provider requires: pip install bad-research[browse]")
+        except ImportError as e:
+            raise ImportError("crawl4ai provider requires: pip install bad-research[browse]") from e
+
+    # keyless scholarly verticals (INTERFACES_KEYLESS §3.3)
+    _verticals = {
+        "arxiv": "ArxivProvider", "openalex": "OpenAlexProvider",
+        "crossref": "CrossrefProvider", "semantic_scholar": "SemanticScholarProvider",
+        "s2": "SemanticScholarProvider", "europe_pmc": "EuropePMCProvider",
+        "europepmc": "EuropePMCProvider", "pubmed": "PubMedProvider",
+        "wikipedia": "WikipediaProvider",
+    }
+    if name in _verticals:
+        import bad_research.web.search.verticals as v
+
+        return getattr(v, _verticals[name])()
 
     raise ValueError(
-        f"Unknown web provider: {name!r}. Available (all keyless): "
-        f"websearch, ddgs, searxng, builtin, crawl4ai"
+        f"Unknown keyless web provider: {name!r}. Available: websearch (default), "
+        f"ddgs, searxng, builtin, crawl4ai, arxiv, openalex, crossref, "
+        f"semantic_scholar, europepmc, pubmed, wikipedia"
     )
