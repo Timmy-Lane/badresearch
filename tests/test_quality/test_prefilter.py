@@ -139,3 +139,42 @@ def test_candidate_dataclass_fields():
     assert c.provider == "tavily"
     assert c.engagement == 42
     assert c.published_days_ago is None
+
+
+from bad_research.quality.prefilter import prefetch_filter
+
+
+def test_prefetch_filter_drops_farms_blocklist_and_dups_orders_by_priority():
+    cands = [
+        # farm (listicle + money path) -> dropped
+        Candidate(url="https://deals.example/best-vpn-2026-review",
+                  snippet="The 12 best VPNs in 2026 — top deals ranked"),
+        # blocklisted -> dropped
+        Candidate(url="https://www.pinterest.com/pin/1", snippet="image wall"),
+        # duplicate of the next (tracking-param twin) -> collapsed
+        Candidate(url="https://docs.python.org/3/library/asyncio.html?utm_source=x",
+                  snippet="asyncio — Asynchronous I/O"),
+        Candidate(url="https://docs.python.org/3/library/asyncio.html",
+                  snippet="asyncio — Asynchronous I/O"),
+        # primary (lower prefetch_priority) should sort first
+        Candidate(url="https://www.sec.gov/edgar/filing",
+                  snippet="Quarterly report under the Securities Exchange Act"),
+    ]
+    kept = prefetch_filter(cands, query="vpn", max_age_days=None)
+    urls = [c.url for c in kept]
+
+    # farm + pinterest dropped
+    assert not any("best-vpn" in u for u in urls)
+    assert not any("pinterest" in u for u in urls)
+    # asyncio collapsed to a single survivor (canonical)
+    assert sum("asyncio" in u for u in urls) == 1
+    # primary fetched first (prefetch_priority 0 < docs 1)
+    assert urls[0] == "https://www.sec.gov/edgar/filing"
+
+
+def test_prefetch_filter_exempts_primary_from_seo_gate():
+    # a .gov URL with a number-in-title snippet must NOT be SEO-dropped
+    cands = [Candidate(url="https://www.nist.gov/best-practices-2026-top-10",
+                       snippet="Top 10 best practices for 2026 cybersecurity guidance")]
+    kept = prefetch_filter(cands, query="cybersecurity", max_age_days=None)
+    assert len(kept) == 1

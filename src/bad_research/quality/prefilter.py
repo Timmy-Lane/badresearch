@@ -220,3 +220,49 @@ def passes_engagement_floor(url: str, engagement: int | None) -> bool:
                 return True            # social url but provider didn't expose count -> keep
             return engagement >= floor
     return True                        # not a gated social source
+
+
+# --- Stage-1 orchestrator (dossier 07 §7.1) ---
+
+_SEO_EXEMPT_TIERS = {"primary", "docs", "reference"}
+
+
+def prefetch_filter(candidates: list[Candidate], *, query: str = "",
+                    max_age_days: int | None = None) -> list[Candidate]:
+    """Stage 1 orchestrator (dossier 07 §7.1, steps 1a-1f).
+
+    Order: canonical collapse -> blocklist -> seo_farm (tier-exempt) -> tier assign
+           -> recency (primary-exempt) -> engagement floor -> sort by prefetch_priority.
+    Each surviving Candidate is stamped with its TierInfo in metadata via the returned
+    order; callers read domain_tier(c.url) downstream. Pure, no network.
+    """
+    seen_canonical: set[str] = set()
+    survivors: list[tuple[int, Candidate]] = []
+
+    for c in candidates:
+        # 1a. canonical collapse (drop tracking-param / amp twins)
+        canon = canonical_url(c.url)
+        if canon in seen_canonical:
+            continue
+        # 1b. blocklist
+        if is_blocklisted(c.url):
+            continue
+        # 1d. tier (needed before the seo gate so we can exempt authority tiers)
+        tier = domain_tier(c.url)
+        # 1c. seo_farm gate (skipped for primary/docs/reference)
+        if tier.name not in _SEO_EXEMPT_TIERS:
+            if seo_farm_score(c.url, c.snippet, query) >= SEO_FARM_BLOCK_THRESHOLD:
+                continue
+        # 1e. recency (primary-exempt, handled inside)
+        if not passes_recency_gate(c.published_days_ago, tier.name, max_age_days):
+            continue
+        # 1f. engagement floor (social only)
+        if not passes_engagement_floor(c.url, c.engagement):
+            continue
+
+        seen_canonical.add(canon)
+        survivors.append((tier.prefetch_priority, c))
+
+    # stable sort by prefetch_priority (0 first) — primaries before blogs under budget
+    survivors.sort(key=lambda t: t[0])
+    return [c for _, c in survivors]
