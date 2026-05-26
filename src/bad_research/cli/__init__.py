@@ -56,9 +56,11 @@ app.command("retrieve")(retrieve_cmd)
 app.command("verify-citations")(verify_citations_cmd)
 app.command("uncited-gate")(uncited_gate_cmd)
 
-# ── doctor command (Plan 09 — network-free active-provider report) ───────────
+# ── doctor + calibrate commands (Plan 09) ────────────────────────────────────
+from bad_research.cli.calibrate import calibrate as _calibrate_cmd
 from bad_research.cli.doctor import doctor as _doctor_cmd
 
 app.command("doctor")(_doctor_cmd)
+app.command("calibrate")(_calibrate_cmd)
 
 __all__ = ["app"]
