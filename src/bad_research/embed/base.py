@@ -1,9 +1,9 @@
-"""Base Protocol and factory for the EmbedProvider seam.
+"""Base Protocol + keyless factory for the EmbedProvider seam.
 
-API providers only (no self-hosted GPU — SPEC decision #5: an idle GPU doesn't
-amortize at single-user scale). Default impl: CohereEmbedProvider (embed-english-v3.0,
-dim 1024). Asymmetric input_type: documents embedded at index time, queries at
-retrieval time.
+The neural recall lane is OPTIONAL ([local] extra). Default impl:
+BgeLocalEmbedProvider (bge-small-en-v1.5, dim 384) — built in KR-5
+(embed/bge_local.py). KR-1 leaves the Protocol + an import-guarded factory.
+Cohere (the old API embedder) is removed — pure keyless.
 """
 
 from __future__ import annotations
@@ -24,11 +24,20 @@ class EmbedProvider(Protocol):
     ) -> list[list[float]]: ...
 
 
-def get_embed_provider(name: str = "cohere", **kwargs) -> EmbedProvider:
-    """Load an embed provider by name. Defaults to Cohere (the GA embedder)."""
-    if name == "cohere":
-        from bad_research.embed.cohere import CohereEmbedProvider
+def get_embed_provider(name: str = "bge-local", **kwargs) -> EmbedProvider:
+    """Load an embed provider by name. Default = the local BGE bi-encoder ([local]).
 
-        return CohereEmbedProvider(**kwargs)
+    Keyless: no API embedder. The dense lane is opt-in — installed via
+    `pip install bad-research[local]` and built in KR-5 (embed/bge_local.py).
+    """
+    if name == "bge-local":
+        try:
+            from bad_research.embed.bge_local import BgeLocalEmbedProvider
+        except ImportError as exc:
+            raise ImportError(
+                'bge-local requires the local neural stack: '
+                'pip install "bad-research[local]" (built in KR-5)'
+            ) from exc
+        return BgeLocalEmbedProvider(**kwargs)
 
-    raise ValueError(f"Unknown embed provider: {name!r}. Available: cohere")
+    raise ValueError(f"Unknown embed provider: {name!r}. Available: bge-local")

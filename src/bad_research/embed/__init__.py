@@ -1,4 +1,4 @@
-"""EmbedProvider seam — API embedders only, asymmetric document/query (SPEC §3, §7)."""
+"""EmbedProvider seam — keyless; the local bi-encoder lane is opt-in ([local])."""
 
 from __future__ import annotations
 
