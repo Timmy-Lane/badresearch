@@ -1,5 +1,18 @@
 """Calibration harness — run a query through bad-research, judge it, compare to
 baselines, emit a CalibrationReport. OFFLINE (SPEC §14): never a per-run gate.
+
+Deferred grounding-calibration items (Plan 06 hardening — to MEASURE in the live
+calibration run, NOT change here):
+  - `is_factual_claim` coverage: fraction of report sentences the claim-extractor
+    actually classifies as factual (vs missed) — surfaces under-extraction.
+  - NLI hypothesis construction: whether the entailment hypothesis is the claim
+    sentence vs a templated paraphrase — affects SUPPORTED/CONTRADICTED accuracy.
+  - fuzzy-anchor verifiability: how often `extract_spans` finds a quote anchor by
+    fuzzy match vs exact, and the false-anchor rate that implies.
+  - NLI label-order: confirm the model's (entailment/neutral/contradiction) index
+    order maps correctly to VerifyVerdict (a silent swap inverts every verdict).
+These feed the `factual` + `citation` judge axes; the live run should log them as
+calibration diagnostics so the separate grounding-hardening pass has targets.
 """
 
 from __future__ import annotations
