@@ -192,3 +192,63 @@ class _AgentBrowserCLI:
 
     def cookies_set_curl(self, curl_file: str) -> str:
         return self._run("cookies", "set", "--curl", curl_file)
+
+
+# ============================================================ Snapshot (@eN tree)
+def normalize_ref(ref: str) -> str:
+    """Accept `@e1`, `ref=e1`, or bare `e1` → canonical `e1` (dossier 14 §2.3 parse_ref)."""
+    r = ref.strip()
+    if r.startswith("@"):
+        r = r[1:]
+    if r.startswith("ref="):
+        r = r[len("ref="):]
+    return r
+
+
+@dataclass
+class Snapshot:
+    """A parsed agent-browser accessibility snapshot. `refs` is the grounding source:
+    a ref is valid iff its normalized id is a key here (dossier 14 §6.3 / §10B)."""
+
+    text: str = ""
+    refs: dict[str, dict] = field(default_factory=dict)
+    title: str = ""
+    url: str = ""
+
+    @property
+    def is_empty(self) -> bool:
+        """Implausibly empty → triggers the lightpanda→chrome fallback (dossier 14 §12.5)."""
+        return len(self.refs) < MIN_REFS_FOR_NONEMPTY
+
+    def has_ref(self, ref: str) -> bool:
+        return normalize_ref(ref) in self.refs
+
+    def find_refs_by_role(self, role: str) -> list[str]:
+        return [f"@{rid}" for rid, meta in self.refs.items() if meta.get("role") == role]
+
+
+_TITLE_RE = re.compile(r"^Page:\s*(.+)$", re.MULTILINE)
+_URL_RE = re.compile(r"^URL:\s*(\S+)$", re.MULTILINE)
+
+
+def parse_snapshot(stdout: str) -> Snapshot:
+    """Parse `snapshot -i --json` stdout into a Snapshot. Tolerant: malformed JSON or
+    success:false → empty Snapshot (never raises) so the loop/ladder can degrade."""
+    try:
+        payload = json.loads(stdout)
+    except (json.JSONDecodeError, TypeError):
+        return Snapshot()
+    if not isinstance(payload, dict) or not payload.get("success"):
+        return Snapshot()
+    data = payload.get("data") or {}
+    text = data.get("snapshot") or ""
+    raw_refs = data.get("refs") or {}
+    refs = {normalize_ref(k): v for k, v in raw_refs.items() if isinstance(v, dict)}
+    title_m = _TITLE_RE.search(text)
+    url_m = _URL_RE.search(text)
+    return Snapshot(
+        text=text,
+        refs=refs,
+        title=title_m.group(1).strip() if title_m else "",
+        url=url_m.group(1).strip() if url_m else "",
+    )
