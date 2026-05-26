@@ -29,6 +29,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Literal
 
+from bad_research.web.base import WebResult
+
 # ---- frozen constants (INTERFACES_KEYLESS §8 + dossier 14) ----
 DEFAULT_MAX_STEPS = 12             # INTERFACES_KEYLESS §4.3 Protocol default
 WAIT_TIMEOUT_MS = 25_000           # dossier 14 §3.5 (below the 30s IPC read timeout)
@@ -252,3 +254,193 @@ def parse_snapshot(stdout: str) -> Snapshot:
         title=title_m.group(1).strip() if title_m else "",
         url=url_m.group(1).strip() if url_m else "",
     )
+
+
+# ============================================================ Verbatim prompts
+# Stagehand act/extract/observe system prompts (dossier 14 §5, BROWSERBASE_PRODUCT_CODE.md
+# :4279-4367). Shipped as constants for the Bad Research skill to embed when it reasons
+# over the snapshot text — the LLM call is Claude Code itself, not a paid network call.
+
+ACT_SYSTEM_PROMPT = (
+    "You are helping the user automate the browser by finding elements based on what "
+    "action the user wants to take on the page. You will be given: 1. a user defined "
+    "instruction about what action to take on the page 2. a hierarchical accessibility "
+    "tree showing the semantic structure of the page. The tree is a hybrid of the DOM and "
+    "the accessibility tree. Return the element that matches the instruction if it exists. "
+    "Otherwise, return an empty object."
+)
+
+EXTRACT_SYSTEM_PROMPT = (
+    "You are extracting content on behalf of a user. If a user asks you to extract a "
+    "'list' of information, or 'all' information, YOU MUST EXTRACT ALL OF THE INFORMATION "
+    "THAT THE USER REQUESTS. You will be given: 1. An instruction 2. A list of DOM "
+    "elements to extract from. Print the exact text from the DOM elements with all "
+    "symbols, characters, and endlines as is. Print null or an empty string if no new "
+    "information is found. ONLY print the content using the print_extracted_data tool "
+    "provided. If a user is attempting to extract links or URLs, you MUST respond with "
+    "ONLY the IDs of the link elements. Do not attempt to extract links directly from the "
+    "text unless absolutely necessary."
+)
+
+OBSERVE_SYSTEM_PROMPT = (
+    "You are helping the user automate the browser by finding elements based on what the "
+    "user wants to observe in the page. You will be given: 1. a instruction of elements to "
+    "observe 2. a hierarchical accessibility tree showing the semantic structure of the "
+    "page. Return an array of elements that match the instruction if they exist, otherwise "
+    "return an empty array. When returning elements, include the appropriate method from "
+    "the supported actions list."
+)
+
+# The agent-loop system-prompt seed (dossier 14 §4.1, stream/chat.rs:124-153). The skill
+# embeds these rules; we DROP the --json-ban and command-allowlist (those exist because
+# Vercel doesn't trust its LLM; Claude Code is trusted and --json is useful — dossier 14 §10F).
+AGENT_LOOP_SYSTEM_PROMPT = (
+    "You control a browser through the agent-browser CLI. You have an active browser "
+    "session.\n"
+    "RULES:\n"
+    "- You MUST run the agent-browser command for every browser action. NEVER claim you "
+    "performed an action without running it.\n"
+    "- If a request is outside your capabilities, say so honestly. Do not improvise.\n"
+    "- One command, read the output, then decide the next.\n"
+    "- Re-snapshot after ANY page change (navigate, submit, re-render, dialog) — refs go "
+    "stale.\n"
+    "- Pick a @eN ref only from the most recent snapshot's refs map; never invent one."
+)
+
+
+@dataclass
+class BrowseStep:
+    """One action in the ReAct loop. `kind` ∈ {click, fill, type, press, select, eval,
+    wait_text, wait_url}. `target` is a @eN ref (or a key/text/url for press/wait). `value`
+    is the fill/type text (variable VALUES never go through the cache key — see cache.py)."""
+
+    kind: str
+    target: str = ""
+    value: str = ""
+
+
+# kinds that change the page → re-snapshot afterward (dossier 14 §10A)
+_PAGE_CHANGING = {"click", "press", "select"}
+
+
+class AgentBrowserProvider:
+    """Keyless agentic browse on the local agent-browser CLI (dossier 14 §4.2 ReAct loop).
+    Claude Code is the brain: it supplies `steps`; this driver executes + re-snapshots."""
+
+    name = "agent-browser"
+
+    def __init__(
+        self,
+        *,
+        engine: Literal["lightpanda", "chrome"] = DEFAULT_ENGINE,
+        runner: Runner | None = None,
+        program: str = AB_PROGRAM,
+    ) -> None:
+        self.engine = engine
+        self._runner = runner
+        self.program = program
+
+    def _cli(self, engine: str, *, session=None, state=None, headers=None) -> _AgentBrowserCLI:
+        return _AgentBrowserCLI(
+            engine=engine, runner=self._runner, program=self.program,
+            session=session, state=state, headers=headers,
+        )
+
+    def snapshot(self, *, interactive: bool = True, engine: str | None = None) -> Snapshot:
+        cli = self._cli(engine or self.engine)
+        return parse_snapshot(cli.snapshot(interactive=interactive))
+
+    def browse(
+        self,
+        url: str,
+        instruction: str,
+        *,
+        max_steps: int = DEFAULT_MAX_STEPS,
+        variables: dict | None = None,
+        replay_key: str | None = None,
+        steps: list[BrowseStep] | None = None,
+        state: str | None = None,
+        headers: str | None = None,
+    ) -> WebResult:
+        """Run the keyless ReAct loop. `steps` (host-model-supplied) drives interaction;
+        with no steps, returns the initial snapshot as content (the 'observe' case)."""
+        if not is_available(self.program):
+            return WebResult(url=url, title="", content="",
+                             metadata={"unavailable": True, "provider": self.name})
+
+        # ---- authed browse is chrome-only: lightpanda blocks --state/--profile (dossier 14 §12.4) ----
+        if state is not None or headers is not None:
+            engine = "chrome"
+        else:
+            engine = self.engine
+
+        # ---- rung-2.5 lightpanda first; fall back to chrome on an empty snapshot ----
+        snap = self._open_and_snapshot(url, engine, state=state, headers=headers)
+        if engine == "lightpanda" and snap.is_empty:
+            engine = "chrome"  # dossier 14 §12.5: same command surface, swap engine
+            snap = self._open_and_snapshot(url, engine, state=state, headers=headers)
+
+        cli = self._cli(engine, state=state, headers=headers)
+        executed = 0
+        for step in (steps or []):
+            if executed >= max_steps:
+                break
+            # ---- grounding: a @eN target must exist in the current snapshot refs ----
+            if step.target.startswith("@") and not snap.has_ref(step.target):
+                continue  # ungrounded ref → skip (dossier 14 §6.3 grounding)
+            self._dispatch(cli, step)
+            executed += 1
+            if step.kind in _PAGE_CHANGING:
+                cli.wait_load("networkidle")
+                snap = parse_snapshot(cli.snapshot(interactive=True))  # re-snapshot
+
+        content = snap.text
+        return WebResult(
+            url=snap.url or url,
+            title=snap.title,
+            content=content,
+            metadata={
+                "engine": engine,
+                "provider": self.name,
+                "refs": list(snap.refs.keys()),
+                "steps_executed": executed,
+                "replay_key": replay_key,
+            },
+        )
+
+    def _open_and_snapshot(self, url, engine, *, state=None, headers=None) -> Snapshot:
+        cli = self._cli(engine, state=state, headers=headers)
+        cli.open(url)
+        cli.wait_load("networkidle")
+        return parse_snapshot(cli.snapshot(interactive=True))
+
+    @staticmethod
+    def _dispatch(cli: _AgentBrowserCLI, step: BrowseStep) -> None:
+        k = step.kind
+        if k == "click":
+            cli.click(step.target)
+        elif k == "fill":
+            cli.fill(step.target, step.value)
+        elif k == "type":
+            cli.type_text(step.target, step.value)
+        elif k == "press":
+            cli.press(step.target)
+        elif k == "select":
+            cli.select(step.target, step.value)
+        elif k == "eval":
+            cli.eval_js(step.value)
+        elif k == "wait_text":
+            cli.wait_text(step.target)
+        elif k == "wait_url":
+            cli.wait_url(step.target)
+        # unknown kind → no-op (graceful)
+
+    def save_state(self, path: str, *, session: str | None = None) -> None:
+        """Persist cookies + localStorage + sessionStorage to a Playwright-compatible
+        StorageState JSON (dossier 14 §13.1). Chrome-only."""
+        self._cli("chrome", session=session).state_save(path)
+
+    def cookies_set_curl(self, curl_file: str, *, session: str | None = None) -> None:
+        """Replay a Copy-as-cURL dump's cookies (the no-automation auth path, dossier 14
+        §13.1). The model never sees the password — only the resulting cookies."""
+        self._cli("chrome", session=session).cookies_set_curl(curl_file)
