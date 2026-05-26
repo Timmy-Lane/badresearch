@@ -5,8 +5,8 @@ Walk tiers in order; escalate only when a cheaper tier's WebResult trips a gate
 controls the ceiling with tier_max, and opts into typed output (schema) or interaction
 (instruction). Every optional tier degrades gracefully: a missing provider/lib/key means
 that rung is skipped and the best lower-tier result is returned. Providers are injectable
-for testing (the `_tier0` / `_tier1_factory` / `_extractor` / `_browseruse` / `_browserbase`
-keyword args); production uses the real factories by default.
+for testing (the `_tier0` / `_tier1_factory` / `_extractor` / `_browse` keyword args);
+production uses the real factories by default.
 """
 
 from __future__ import annotations
@@ -37,8 +37,7 @@ def fetch_tiered(
     _tier0: Any | None = None,
     _tier1_factory: Callable[[], Any | None] | None = None,
     _extractor: Any | None = None,
-    _browseruse: Any | None = None,
-    _browserbase: Any | None = None,
+    _browse: Any | None = None,
     _llm: Any | None = None,
 ) -> WebResult:
     # ---------- Tier 0: HTTP ----------
@@ -75,7 +74,7 @@ def fetch_tiered(
         browse_result = _do_browse(
             url, instruction or "Read the main content of this page.",
             anti_bot=want_anti_bot, replay_key=replay_key, variables=variables,
-            browseruse=_browseruse, browserbase=_browserbase,
+            browse=_browse,
         )
         if browse_result is not None and browse_result.content.strip():
             result = browse_result
@@ -100,26 +99,19 @@ def fetch_tiered(
     return result
 
 
-def _do_browse(url, instruction, *, anti_bot, replay_key, variables,
-               browseruse, browserbase) -> WebResult | None:
-    """Pick a browse provider. Anti-bot -> Browserbase first; else Browser-Use first.
-    Returns None if no provider is available (caller keeps the lower-tier result)."""
-    primary, secondary = (browserbase, browseruse) if anti_bot else (browseruse, browserbase)
-
-    if primary is None and secondary is None:
-        # Lazy-resolve from real factories.
+def _do_browse(url, instruction, *, anti_bot, replay_key, variables, browse) -> WebResult | None:
+    """Resolve the single keyless browse provider (agent-browser, KR-4) and run it.
+    Returns None if no provider is available (caller keeps the lower-tier result).
+    `anti_bot` is accepted for signature stability but no longer routes to a
+    separate cloud backend — the keyless agent-browser handles every case."""
+    prov = browse
+    if prov is None:
         from bad_research.browse.base import get_browse_provider
 
-        if anti_bot:
-            primary = get_browse_provider("browserbase") or get_browse_provider("browser-use")
-        else:
-            primary = get_browse_provider("browser-use") or get_browse_provider("browserbase")
-
-    for prov in (primary, secondary):
-        if prov is None:
-            continue
-        try:
-            return prov.browse(url, instruction, replay_key=replay_key, variables=variables)
-        except Exception:
-            continue
-    return None
+        prov = get_browse_provider()
+    if prov is None:
+        return None
+    try:
+        return prov.browse(url, instruction, replay_key=replay_key, variables=variables)
+    except Exception:
+        return None

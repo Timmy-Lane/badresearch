@@ -4,41 +4,32 @@ from __future__ import annotations
 
 import builtins
 
-import pytest
-
 from bad_research.browse.base import get_browse_provider, get_extract_provider
 from bad_research.browse.ladder import fetch_tiered
 from tests.test_browse.conftest import make_result
 
 
 def _no_optional_imports(monkeypatch):
-    """Force crawl4ai / browser_use / stagehand to look uninstalled."""
+    """Force crawl4ai to look uninstalled."""
     real = builtins.__import__
 
     def fake(name, *a, **k):
-        if name in ("crawl4ai", "browser_use", "stagehand") or \
-           name.startswith(("crawl4ai.", "browser_use.", "stagehand.")):
+        if name == "crawl4ai" or name.startswith("crawl4ai."):
             raise ImportError(f"No module named {name!r}")
         return real(name, *a, **k)
 
     monkeypatch.setattr(builtins, "__import__", fake)
 
 
-def test_no_keys_no_libs_factories_return_none(monkeypatch):
-    monkeypatch.delenv("AGENTQL_API_KEY", raising=False)
-    monkeypatch.delenv("BROWSERBASE_API_KEY", raising=False)
+def test_no_libs_factories_return_none(monkeypatch):
     _no_optional_imports(monkeypatch)
-    assert get_browse_provider("browser-use") is None
-    assert get_browse_provider("browserbase") is None
-    assert get_extract_provider("agentql") is None
-    # LLM extractor is always constructible (it just no-ops without an LLM).
-    assert get_extract_provider("llm") is not None
+    assert get_browse_provider() is None          # agent-browser wrapper not built (KR-4)
+    assert get_extract_provider("aql") is None
+    assert get_extract_provider("llm") is not None  # host-model extractor always constructible
 
 
 def test_ladder_with_only_tier0_returns_result(monkeypatch):
     """Empty Tier-0 + no crawl4ai + no browse + no extract -> returns the Tier-0 result."""
-    monkeypatch.delenv("AGENTQL_API_KEY", raising=False)
-    monkeypatch.delenv("BROWSERBASE_API_KEY", raising=False)
     _no_optional_imports(monkeypatch)
 
     class _T0:

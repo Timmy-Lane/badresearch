@@ -4,10 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
-
 from bad_research.browse.ladder import fetch_tiered
-from bad_research.web.base import WebResult
 from tests.test_browse.conftest import make_result
 
 
@@ -67,25 +64,24 @@ def test_tier_max_caps_escalation() -> None:
     t1.fetch.assert_not_called()
 
 
-def test_bot_wall_escalates_to_browserbase() -> None:
-    """Tier-1 bot-detection page + tier_max>=3 -> Tier-3b Browserbase browse."""
+def test_bot_wall_escalates_to_keyless_browse() -> None:
+    """Tier-1 bot-detection page + tier_max>=3 -> keyless agent-browser browse."""
     t0 = MagicMock(); t0.fetch.return_value = _empty()
     t1 = MagicMock(); t1.fetch.return_value = _bot()
-    bb = MagicMock(); bb.browse.return_value = make_result("Recovered behind cloudflare. " * 20)
+    br = MagicMock(); br.browse.return_value = make_result("Recovered behind cloudflare. " * 20)
     r = fetch_tiered("https://x.test", tier_max=3,
-                     _tier0=t0, _tier1_factory=lambda: t1,
-                     _browserbase=bb, _browseruse=None)
+                     _tier0=t0, _tier1_factory=lambda: t1, _browse=br)
     assert "Recovered behind cloudflare" in r.content
-    bb.browse.assert_called_once()
+    br.browse.assert_called_once()
 
 
 def test_login_wall_escalates_to_agentic_browse() -> None:
-    """Tier-1 login wall + tier_max>=3 -> Tier-3 agentic (Browser-Use) browse."""
+    """Tier-1 login wall + tier_max>=3 -> Tier-3 keyless agent-browser browse."""
     t0 = MagicMock(); t0.fetch.return_value = _empty("https://x.test/login")
     t1 = MagicMock(); t1.fetch.return_value = _login()
     bu = MagicMock(); bu.browse.return_value = make_result("Logged-in dashboard content. " * 20)
     r = fetch_tiered("https://x.test/login", tier_max=3, instruction="log in",
-                     _tier0=t0, _tier1_factory=lambda: t1, _browseruse=bu)
+                     _tier0=t0, _tier1_factory=lambda: t1, _browse=bu)
     assert "Logged-in dashboard" in r.content
     bu.browse.assert_called_once()
 
@@ -119,7 +115,7 @@ def test_instruction_triggers_tier3_browse() -> None:
     t1 = MagicMock(); t1.fetch.return_value = _good()  # JS render works...
     bu = MagicMock(); bu.browse.return_value = make_result("Paginated, all 50 reviews loaded. " * 10)
     r = fetch_tiered("https://x.test", tier_max=3, instruction="load all reviews",
-                     _tier0=t0, _tier1_factory=lambda: t1, _browseruse=bu)
+                     _tier0=t0, _tier1_factory=lambda: t1, _browse=bu)
     assert "all 50 reviews" in r.content
     bu.browse.assert_called_once()
 
@@ -129,7 +125,7 @@ def test_no_browse_provider_stays_on_lower_tier() -> None:
     t0 = MagicMock(); t0.fetch.return_value = _good()
     r = fetch_tiered("https://x.test", tier_max=3, instruction="paginate",
                      _tier0=t0, _tier1_factory=lambda: MagicMock(),
-                     _browseruse=None, _browserbase=None)
+                     _browse=None)
     assert r.content.startswith("Substantial real")
 
 
@@ -140,6 +136,6 @@ def test_replay_key_threaded_to_browse() -> None:
     bu = MagicMock(); bu.browse.return_value = make_result("dashboard " * 60)
     fetch_tiered("https://x.test/login", tier_max=3, instruction="log in",
                  replay_key="rk-123",
-                 _tier0=t0, _tier1_factory=lambda: t1, _browseruse=bu)
+                 _tier0=t0, _tier1_factory=lambda: t1, _browse=bu)
     _, kwargs = bu.browse.call_args
     assert kwargs["replay_key"] == "rk-123"

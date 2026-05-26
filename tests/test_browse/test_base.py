@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 import pytest
 
 from bad_research.browse.base import (
@@ -61,26 +59,11 @@ def test_get_browse_provider_unknown_returns_none() -> None:
     assert get_browse_provider("does-not-exist") is None
 
 
-def test_get_browse_provider_browseruse_none_when_lib_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    """browser-use not installed -> factory returns None, never raises ImportError."""
-    import builtins
-
-    real_import = builtins.__import__
-
-    def fake_import(name: str, *args: Any, **kwargs: Any) -> Any:
-        if name == "browser_use" or name.startswith("browser_use."):
-            raise ImportError("No module named 'browser_use'")
-        return real_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", fake_import)
-    assert get_browse_provider("browser-use") is None
+def test_get_browse_provider_default_none_until_kr4() -> None:
+    """agent-browser CLI wrapper not built yet (KR-4) -> None, never raises."""
+    assert get_browse_provider() is None
+    assert get_browse_provider("agent-browser") is None
 
 
-def test_get_browse_provider_browserbase_none_without_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("BROWSERBASE_API_KEY", raising=False)
-    assert get_browse_provider("browserbase") is None
-
-
-def test_get_extract_provider_agentql_none_without_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("AGENTQL_API_KEY", raising=False)
-    assert get_extract_provider("agentql") is None
+def test_get_extract_provider_aql_none_until_kr4() -> None:
+    assert get_extract_provider("aql") is None
