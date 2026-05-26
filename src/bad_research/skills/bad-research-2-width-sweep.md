@@ -90,7 +90,44 @@ Before spawning any fetchers, produce a **search plan** that maps the decomposit
 
 ---
 
-## Step 2.2 — Execute searches and build URL queue
+## Step 2.2 — Run the scraper funnel (PREFERRED)
+
+The width-sweep no longer hand-dispatches fetcher batches. It hands the search
+plan to the deterministic six-stage funnel (fan-out → dedup → rank → read
+Tier 0→3 → filter junk → chunk+store → rerank). The model reads ONLY the
+funnel's `top_chunks` — never raw pages. This is the "disk is memory, context
+is scratchpad" invariant: sources scale (45→80) while context stays flat.
+
+```bash
+bad funnel-gather --query-file research/query-<vault_tag>.md \
+    --search-plan research/temp/search-plan.md \
+    --mode <light|full> --vault-tag <vault_tag> \
+    --reasoning-effort <minimal|low|medium|high> --json
+```
+
+Returns `FunnelEnvelope` JSON: `{note_ids, top_chunks, n_read}`.
+- `note_ids` — sources written to the vault this run.
+- `top_chunks` — the reranked chunks (≤ TOP_CHUNKS for the mode) the model may
+  read. Read these; do NOT re-read full pages.
+- `n_read` ≤ 80 (the load-bearing read ceiling — the funnel enforces it
+  internally; reading past it degrades synthesis).
+
+**Fan-out constants are indexed by mode** (the funnel applies them internally
+via its `FunnelConfig`): `light` = 12–20 queries / 1–2 providers / read top
+12–20; `full` = 40–100 queries / 2–4 providers / read top 60–80.
+
+After the funnel returns, jump to **Step 2.5** (coverage check) — the funnel
+already executed the search/fetch/dedup/filter/store waves that the legacy
+hand-dispatch steps 2.2(legacy)–2.4 describe.
+
+---
+
+## Step 2.2 (legacy) — Execute searches and build URL queue
+
+> Kept as a fallback for runs where the funnel CLI is unavailable. Prefer the
+> `bad funnel-gather` path above; this hand-dispatch procedure is the same
+> work done manually.
+
 
 1. **Academic APIs first.** For topics with a research literature, hit Semantic Scholar / arXiv / OpenAlex / PubMed BEFORE web search. Academic APIs return citation-ranked canonical papers.
 
@@ -174,9 +211,13 @@ The wave is done when the vault note count is ≥80% of total URLs queued.
 
 ## Step 2.5 — Coverage check (MANDATORY)
 
-After Wave 1 returns, run the coverage check before proceeding:
+After the funnel (Step 2.2) returns its `FunnelEnvelope`, run the coverage check
+before proceeding. The funnel returns reranked chunks, NOT a coverage map, so
+the orchestrator computes coverage by mapping the returned `note_ids` → atomic
+items (same well/adequate/thin/uncovered logic as before):
 
-1. **List fetched sources:** `$HPR search "" --tag <vault_tag> --json` — count substantive (non-deprecated) notes.
+1. **List fetched sources:** use the funnel envelope's `note_ids` (or
+   `bad search "" --tag <vault_tag> --json`) — count substantive (non-deprecated) notes.
 
 2. **Map sources → atomic items.** For each atomic item in the decomposition, identify which fetched sources serve it. Mark each item as:
    - **Well-covered** (4+ relevant sources)
@@ -184,10 +225,16 @@ After Wave 1 returns, run the coverage check before proceeding:
    - **Thin** (1 source)
    - **Uncovered** (0 sources)
 
-3. **Wave 2 fetch for gaps.** For every `thin` or `uncovered` item:
-   - Run 2–3 targeted searches specifically for that item
-   - Spawn 3–5 fetchers with gap-filling URLs (non-overlapping batches)
-   - This wave is smaller (typically 20–40 URLs) but surgically targeted
+3. **Gap fetch — a second, smaller funnel call for gaps.** For every `thin` or
+   `uncovered` item, fire one more, gap-targeted `funnel-gather` (do NOT
+   hand-dispatch fetchers):
+   ```bash
+   bad funnel-gather --query-file research/query-<vault_tag>.md \
+       --search-plan research/temp/gap-search-plan.md \
+       --mode <light|full> --vault-tag <vault_tag> --json
+   ```
+   This wave is smaller (a gap-targeted query plan) but surgically targeted at
+   the thin/uncovered items.
 
 4. **Write coverage report** to `research/temp/coverage-gaps.md`:
    - List every atomic item with its coverage status and source count

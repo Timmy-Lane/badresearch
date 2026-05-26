@@ -42,9 +42,18 @@ Read these inputs:
 
    If 0 fetch-worthy gaps: log "no gaps to fill" and proceed directly to step 14.
 
-4. **Run targeted fetch wave.** For each gap, generate 2-3 search queries and collect URLs. Spawn **2-4 fetchers** with the gap-filling URLs.
+4. **Run targeted fetch wave.** For each gap, generate 2-3 search queries and collect URLs, then fetch each gap URL through the Tier 0→3 browse ladder (hard sources escalate; cheap sources stop at Tier 0):
 
-   **Spawn template:**
+   ```bash
+   bad fetch "<gap-url>" --tier-max 3 --tag <vault_tag> --json
+   ```
+
+   For a batch of easy gap URLs you may still spawn **2-4 `bad-research-fetcher`
+   subagents**; route any URL that returns junk or a login wall through
+   `bad fetch --tier-max 3` instead of dropping it. The SSRF guard refuses
+   private/loopback/metadata URLs before any fetch runs.
+
+   **Spawn template (for the easy batch):**
    ```
    subagent_type: bad-research-fetcher
    prompt: |

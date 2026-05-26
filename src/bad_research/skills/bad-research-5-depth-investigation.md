@@ -73,6 +73,21 @@ Read these inputs:
 
    Each investigator's hard cap is `locus.source_budget`, not a flat number.
 
+   **Hard sources (JS-heavy, login-walled, anti-bot):** when a load-bearing
+   source fails a Tier-0/1 fetch (returns junk or a login wall), escalate it
+   through the Tier 0→3 browse ladder instead of giving up:
+
+   ```bash
+   bad fetch "<url>" --tier-max 3 --tag <vault_tag> \
+       --instruction "extract the section about <topic>" --json
+   ```
+
+   Tier 0 = HTTP, Tier 1 = crawl4ai (JS render), Tier 2 = typed extract
+   (AgentQL / LLM-extract), Tier 3 = agentic browse (Browser-Use self-host).
+   Escalation is gated by `looks_like_junk()` / `looks_like_login_wall()` — only
+   hard pages climb the ladder; cheap pages stop at Tier 0. The SSRF guard
+   refuses any private/loopback/metadata URL before the fetch runs.
+
 2. **Each investigator writes ONE interim note** into the vault with `type: interim` and tags `<vault_tag>` + `locus-<locus-name>`. Return value is the note id.
 
 3. **Wait for all K to complete.** Investigators can fail independently. Proceed with whichever succeeded. If >50% failed, stop and reassess loci quality with the user.

@@ -131,6 +131,30 @@ The outline is short (50-200 words total). It's the structural anchor that preve
 
 ---
 
+## Step 11.4b — Pull grounded evidence for the synthesizer
+
+The synthesizer writes only from evidence, never from the orchestrator's
+reasoning (the Perplexity planner→writer split). Before spawning it, pull the
+top-ranked grounded chunks for each planned section so the synthesizer cites
+against `claim_anchors`, not its own recall:
+
+```bash
+bad retrieve "<section topic / sub-question>" --mode full --top-k 20 --json
+```
+
+For each returned chunk, the `note_id` + `char_start`/`char_end` are the
+citation anchor. Write the section→chunks map to
+`research/temp/synthesis-evidence.md`; pass its path to the synthesizer.
+
+**Grounded citation rendering** (added to the synthesizer's spawn instructions):
+- Every `[[note-id]]` / `[N]` the synthesizer emits MUST correspond to a chunk
+  in `synthesis-evidence.md` whose `quoted_support` is in the `claim_anchors`
+  table. A claim with no locatable anchor is NOT written (forward binding).
+- The CitationVerifier (step 11.5) will check every cite byte-for-byte after —
+  fabricated cites are caught and dropped, so emit only anchored ones.
+
+---
+
 ## Step 11.5 — VERIFICATION GATE
 
 Before spawning the synthesizer, verify these files exist with non-trivial content:
@@ -170,6 +194,7 @@ prompt: |
   - synthesis_plan_path: research/temp/synthesis-plan.md
   - synthesis_outline_path: research/temp/synthesis-outline.md
   - synthesis_conflicts_path: research/temp/synthesis-conflicts.md
+  - synthesis_evidence_path: research/temp/synthesis-evidence.md
   - decomposition_path: research/prompt-decomposition.json
   - comparisons_path: research/comparisons.md
   - source_tensions_path: research/temp/source-tensions.json

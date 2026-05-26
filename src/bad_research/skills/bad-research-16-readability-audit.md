@@ -148,17 +148,42 @@ This is the audit trail. If a future review finds a readability problem we shoul
 
 ---
 
+## Step 16.6 — No-uncited-claim hard gate (deterministic ship-block)
+
+After readability edits, run the deterministic ($0) grounding gate. It is a
+**ship-block** for ALL routes (agentic-fast / light / full): the report does
+NOT ship if any non-trivial factual claim lacks a verifiable citation resolving
+to a `claim_anchors` row.
+
+```bash
+bad uncited-gate --report research/notes/final_report_<vault_tag>.md \
+    --vault-tag <vault_tag> --json
+```
+
+- Output `{"uncited": []}` (exit 0) → PASS, ship.
+- Output `{"uncited": [{"sentence": "...", "reason": "..."}]}` (exit 1) → BLOCK.
+  For each uncited non-trivial claim, either (a) add a citation via a surgical
+  Edit if a supporting note exists, (b) run one targeted `bad fetch
+  --tier-max 3` to ground it, or (c) soften the claim to a non-assertion.
+  Re-run the gate until `uncited == []`.
+
+This is deterministic, so it is a hard pass/fail — never "good enough." The
+non-zero exit code surfaces the block to the orchestrator.
+
+---
+
 ## Exit criterion
 
 - `research/readability-recommendations.json` exists
 - `research/readability-decisions.json` exists with at least one entry in `applied` or all `skipped`
 - `research/notes/final_report_<vault_tag>.md` reflects the applied recommendations
 - The final report's structure (H2 list, executive summary, conclusion) is unchanged from step 15's output (this step does not restructure)
+- `bad uncited-gate` returned `{"uncited": []}` (exit 0) — the ship-block passed
 
 ---
 
 ## Pipeline complete
 
-Return to the entry skill (`hyperresearch`). Mark all todos complete. Tell the user the final report path.
+Return to the entry skill (`bad-research`). Mark all todos complete. Tell the user the final report path.
 
 You're done.
