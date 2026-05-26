@@ -4,3 +4,27 @@ Forward: DSS span extraction + claim_anchors. Backward: CitationVerifier
 (byte-identity -> local NLI -> triage-LLM judge) + the deterministic Stage-16
 no-uncited-claim gate.
 """
+
+from .anchors import AnchorStore, ClaimAnchor, build_from_claims, quote_sha
+from .extract import extract_spans
+from .gate import Finding, gate_blocks_ship, is_factual_claim, no_uncited_claim_gate
+from .nli import NLI_MODEL_NAME, CrossEncoderNLI, NLILabel, classify_nli
+from .render import extract_citations, render_citation
+from .verifier import (
+    CitationFinding,
+    CitationVerifier,
+    VerifyResult,
+    VerifyVerdict,
+    tier_a_byte_identity,
+    tier_c_judge,
+)
+
+__all__ = [
+    "AnchorStore", "ClaimAnchor", "build_from_claims", "quote_sha",
+    "extract_spans",
+    "Finding", "gate_blocks_ship", "is_factual_claim", "no_uncited_claim_gate",
+    "NLI_MODEL_NAME", "CrossEncoderNLI", "NLILabel", "classify_nli",
+    "extract_citations", "render_citation",
+    "CitationFinding", "CitationVerifier", "VerifyResult", "VerifyVerdict",
+    "tier_a_byte_identity", "tier_c_judge",
+]
