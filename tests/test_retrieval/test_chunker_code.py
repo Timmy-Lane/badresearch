@@ -56,3 +56,49 @@ def test_non_call_file_omits_calls_line_but_keeps_path_and_controlflow():
     assert lines[0] == "o/r/c.py"
     assert not any(line.startswith("Calls:") for line in lines)
     assert any(line.startswith("Control flow:") for line in lines)
+
+
+# A body large enough (>= CHUNK_BYTE_MIN = 2500 bytes) to take the MULTI-DEF
+# code path (not the whole-file fallback). Padding lives inside each def so the
+# AST still yields two top-level function_definition nodes.
+_PAD = ("    # filler line to push past the chunk-size floor "
+        "and exercise the multi-def code path\n") * 24
+
+
+def _multibyte_multidef_note(prefix: str):
+    body = (
+        prefix
+        + "def first(x):\n"
+        + "    if x:\n"
+        + "        return dequeue(x)\n"
+        + _PAD
+        + "\n"
+        + "def second():\n"
+        + "    return first(1)\n"
+        + _PAD
+    )
+    assert len(body.encode("utf-8")) >= 2500, "body must exceed CHUNK_BYTE_MIN"
+    meta = NoteMeta(title="q.py", id="qpy",
+                    source="https://github.com/o/r/blob/main/q.py", content_type="code")
+    return Note(meta=meta, body=body, path="research/qpy.md")
+
+
+def test_multidef_code_chunk_char_offsets_survive_multibyte_prefix():
+    """Regression: the multi-def code path must store CHARACTER offsets, not
+    tree-sitter BYTE offsets. With a multibyte prefix the two diverge, so
+    note.body[char_start:char_end] != chunk.text if byte offsets leak through
+    (breaks Plan 06 grounding/citation verification)."""
+    note = _multibyte_multidef_note("# café ☕ banner\n")
+    chunks = chunk_code_note(note)
+    assert len(chunks) >= 2, "expected the multi-def path to yield >=2 chunks"
+    for c in chunks:
+        assert note.body[c.char_start:c.char_end] == c.text
+
+
+def test_multidef_code_chunk_char_offsets_ascii_still_correct():
+    """The ASCII case (byte == char) must keep passing on the multi-def path."""
+    note = _multibyte_multidef_note("# ascii banner\n")
+    chunks = chunk_code_note(note)
+    assert len(chunks) >= 2
+    for c in chunks:
+        assert note.body[c.char_start:c.char_end] == c.text

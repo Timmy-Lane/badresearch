@@ -57,6 +57,15 @@ def _call_or_value(obj: Any) -> Any:
     return obj() if callable(obj) else obj
 
 
+def _byte_to_char(src_bytes: bytes, byte_off: int) -> int:
+    """Convert a tree-sitter UTF-8 *byte* offset into a *character* index into
+    the decoded source. `Chunk.char_start`/`char_end` are char indices into
+    `note.body` (INTERFACES.md), so the grounding verifier can slice
+    `note.body[char_start:char_end] == chunk.text`. For multibyte source the
+    byte offset is shifted vs the char index — decode the prefix to recover it."""
+    return len(src_bytes[:byte_off].decode("utf-8", "replace"))
+
+
 class _NodeView:
     """Uniform read-only view over a tree-sitter node regardless of binding."""
 
@@ -189,15 +198,18 @@ def chunk_code_note(note: Note) -> list[Chunk]:
                       score=0.0, source_id="")]
     chunks: list[Chunk] = []
     for idx, d in enumerate(defs):
-        start, end = d.start_byte, d.end_byte
-        text = src[start:end].decode("utf-8", "replace")
+        bstart, bend = d.start_byte, d.end_byte
+        # Slice `.text` from BYTE offsets (correct), but store CHARACTER offsets
+        # so `note.body[char_start:char_end] == text` holds for multibyte source.
+        text = src[bstart:bend].decode("utf-8", "replace")
         name = ""
         nm = d.field("name")
         if nm is not None:
             name = src[nm.start_byte:nm.end_byte].decode("utf-8", "replace")
         cid = make_chunk_id(url, name or f"_{idx}")
         chunks.append(Chunk(chunk_id=cid, note_id=note.meta.id, text=text,
-                            char_start=start, char_end=end, score=0.0, source_id=""))
+                            char_start=_byte_to_char(src, bstart),
+                            char_end=_byte_to_char(src, bend), score=0.0, source_id=""))
     return chunks
 
 
