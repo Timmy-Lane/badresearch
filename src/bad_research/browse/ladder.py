@@ -21,7 +21,7 @@ provider reports (Snapshot.url → WebResult.url) and discard the result if it i
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Literal
 
 from bad_research.web.base import WebResult
 
@@ -154,3 +154,62 @@ def _do_browse(
     if landed is not None and is_blocked_url(landed.url):
         return None
     return landed
+
+
+class TieredFetcher:
+    """Object wrapper over the module-level keyless `fetch_tiered` ladder, with the
+    configured browse engine bound for the rung-2.5/3 agent-browser rungs.
+
+    The funnel (`FunnelDeps.fetcher`) and the skill CLI hold a `TieredFetcher` and
+    call `.fetch_tiered(url, tier_max=...)`. The wrapper threads `engine` (lightpanda
+    by default → chrome fallback inside `AgentBrowserProvider.browse`) into the
+    browse rung by lazily constructing an engine-configured `AgentBrowserProvider`
+    and injecting it as the `_browse` seam — so the rung uses the configured engine
+    rather than `get_browse_provider`'s default. Constructing the wrapper does NOT
+    touch the CLI/network: the provider is built only on first browse-rung use, and
+    a missing CLI degrades to None (the ladder keeps the best lower-tier result).
+    """
+
+    def __init__(self, engine: Literal["lightpanda", "chrome"] = "lightpanda") -> None:
+        self.engine = engine
+        self._browse_provider: Any | None = None
+        self._browse_resolved = False
+
+    def _browse_seam(self) -> Any | None:
+        """Lazily build the engine-configured AgentBrowserProvider (keyless, local
+        Chrome/lightpanda over CDP). Returns None when the agent-browser CLI is
+        absent — the ladder then degrades to crawl4ai/httpx (graceful)."""
+        if not self._browse_resolved:
+            self._browse_resolved = True
+            try:
+                from bad_research.browse.base import is_available
+
+                if is_available():
+                    from bad_research.browse.agent_browser import AgentBrowserProvider
+
+                    self._browse_provider = AgentBrowserProvider(engine=self.engine)
+            except Exception:
+                self._browse_provider = None
+        return self._browse_provider
+
+    def fetch_tiered(
+        self,
+        url: str,
+        *,
+        tier_max: int,
+        instruction: str | None = None,
+        schema: dict[str, Any] | str | None = None,
+        replay_key: str | None = None,
+        variables: dict[str, Any] | None = None,
+    ) -> WebResult:
+        """Run the 4-rung keyless ladder for `url` up to `tier_max`, using the
+        configured browse engine for the agent-browser rungs."""
+        return fetch_tiered(
+            url,
+            tier_max=tier_max,
+            instruction=instruction,
+            schema=schema,
+            replay_key=replay_key,
+            variables=variables,
+            _browse=self._browse_seam(),
+        )

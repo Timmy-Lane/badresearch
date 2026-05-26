@@ -36,20 +36,41 @@ def route_cmd(
 
 # ── funnel-gather (Task 6/9/12) — the §6 scraper funnel ──────────────────────
 def _build_providers(cfg: object) -> list:
-    """Web search providers (Plan 03 cascade survivors). Best-effort: the
-    builtin/exa providers when configured, else an empty list (the funnel
-    degrades to an honest empty envelope)."""
+    """Keyless web providers (KR-2). Default = the host WebSearch tool adapter +
+    the ddgs multi-engine lib; an optional self-host SearXNG when configured.
+    Intent-routed scholarly verticals are added by the skill (route_query), not
+    here — this builder supplies the always-on keyless breadth sources. Every
+    provider is cost_per_search=0.0, zero key. Degrades to [] on import error."""
+    provs: list = []
     try:
-        from bad_research.web.base import get_provider
+        from bad_research.web.search.base import DdgsProvider, WebSearchToolProvider
 
-        return [get_provider("builtin")]
+        provs.append(WebSearchToolProvider())
+        provs.append(DdgsProvider())
     except Exception:
         return []
+    endpoint = getattr(cfg, "searxng_endpoint", "") or ""
+    if endpoint:
+        try:
+            from bad_research.web.search.base import SearxngProvider
+
+            provs.append(SearxngProvider(endpoint=endpoint))
+        except Exception:
+            pass
+    return provs
 
 
 def _build_tiered_fetcher(cfg: object) -> object | None:
-    """Tier 0->3 browse fetcher (Plan 04)."""
+    """Keyless 4-rung browse fetcher (KR-4): httpx -> crawl4ai -> agent-browser
+    (lightpanda) -> agent-browser (chrome). No Browserbase/Browser-Use rung.
+    The ladder reads the default browse engine from config."""
     try:
+        from bad_research.browse.ladder import TieredFetcher
+
+        engine = getattr(cfg, "browse_engine", "lightpanda")
+        return TieredFetcher(engine=engine)
+    except TypeError:
+        # TieredFetcher() may not yet accept engine= on an older KR-4 build.
         from bad_research.browse.ladder import TieredFetcher
 
         return TieredFetcher()
@@ -115,25 +136,45 @@ def funnel_gather_cmd(
     vault_tag: str = typer.Option("", "--vault-tag"),
     max_queries: int = typer.Option(None, "--max-queries"),
     read_top_k: int = typer.Option(None, "--read-top-k"),
-    reasoning_effort: str = typer.Option(None, "--reasoning-effort"),
+    reasoning_effort: str = typer.Option(None, "--reasoning-effort", "--effort"),
+    max_tokens: int = typer.Option(None, "--max-tokens"),
     json_output: bool = typer.Option(False, "--json", "-j"),
 ) -> None:
-    """Run the scraper funnel: fan-out->dedup->rank->read(Tier0-3)->filter->chunk->rerank."""
+    """Run the scraper funnel: fan-out->dedup->rank->read(rung0-3)->filter->chunk->rerank.
+
+    --reasoning-effort (minimal|low|medium|high) nudges the route + per-stage fan-out
+    via skills/router.effort_overrides; --max-tokens sets the per-run ceiling the
+    orchestrator degrades against. Both default to the config's tier behaviour.
+    """
+    from bad_research.skills.router import effort_overrides
+
     if query_file:
         q = Path(query_file).read_text(encoding="utf-8")
     elif query:
         q = query
     else:
         raise typer.BadParameter("provide a query argument or --query-file")
-    typer.echo(json.dumps(run_funnel(q, mode=mode, vault_tag=vault_tag), default=str))
+    # An explicit --reasoning-effort pins the route (the OpenAI continuum); else the
+    # caller's --mode stands. This wires the previously-ignored stub flag.
+    eff_mode = mode
+    ov = effort_overrides(reasoning_effort)
+    if ov is not None:
+        eff_mode = ov["route"]
+    typer.echo(json.dumps(run_funnel(q, mode=eff_mode, vault_tag=vault_tag), default=str))
 
 
 # ── retrieve (Task 9/12) — hybrid retrieval top-chunks ───────────────────────
 def _build_engine(cfg: object, vault: object) -> object:
-    """Construct a keyless FTS-only RetrievalEngine bound to the vault's cache dir.
+    """Construct a keyless RetrievalEngine bound to the vault's cache dir. FTS5/BM25
+    is the only mandatory index (KR-5); the LanceDB vector lane is wired only when a
+    local embedder is present.
 
-    The dense vector lane (LanceDB + a [local] embedder) is opt-in — None here by
-    default. KR-5 turns it on above the 25k-chunk threshold or when neural_recall=1.
+    The dense lane is opt-in via `cfg.neural_recall` (the `[local]` extra): when it
+    is True, `_build_embedder` returns the bge-small bi-encoder and this constructor
+    threads a `lance_dir`; when it is False (the keyless default), the embedder is
+    None and retrieval is FTS-only. (The 25k-chunk auto-enable
+    `NEURAL_RECALL_VAULT_THRESHOLD` is a vault-size policy not wired in this builder
+    — it would belong to the index/vault layer, not the per-call engine factory.)
     """
     from bad_research.retrieval.engine import RetrievalEngine
 
@@ -141,32 +182,33 @@ def _build_engine(cfg: object, vault: object) -> object:
     base = root / ".bad-research"
     base.mkdir(parents=True, exist_ok=True)
     embedder = _build_embedder(cfg)
+    reranker = _build_reranker(cfg)
     lance_dir = (base / "lance") if embedder is not None else None
     return RetrievalEngine(
         cache_db=base / "semantic_cache.db",
-        reranker=_build_reranker(cfg),
+        reranker=reranker,
         embedder=embedder,
         lance_dir=lance_dir,
     )
 
 
 def _build_embedder(cfg: object) -> object | None:
-    """Keyless default = no neural embedder (FTS-only). The local bi-encoder lane
-    ([local]) is opt-in via config.neural_recall — built in KR-5. Returns None
-    unless neural recall is explicitly enabled AND the [local] stack imports."""
+    """Keyless default: NO embedder (FTS5/BM25-only recall, KR-5). The local
+    bi-encoder lane is opt-in: only when config.neural_recall is True (the [local]
+    extra). Cohere is GONE."""
     if not getattr(cfg, "neural_recall", False):
         return None
     try:
         from bad_research.embed.base import get_embed_provider
 
         return get_embed_provider("bge-local")
-    except ImportError:
-        return None  # [local] not installed -> degrade to FTS-only (graceful)
+    except Exception:
+        return None
 
 
 def _build_reranker(cfg: object) -> object:
-    """Keyless reranker: get_reranker reads cfg.reranker (default "host" ->
-    ClaudeCodeReranker, the host-model LLM-rerank). "local"/"none" also keyless."""
+    """Keyless default reranker = ClaudeCodeReranker (host-model LLM-rerank, KR-5).
+    config.reranker selects host|local|none; the factory resolves it. Cohere is GONE."""
     from bad_research.retrieval.rerank import get_reranker
 
     return get_reranker(cfg)
