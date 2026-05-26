@@ -40,6 +40,12 @@ class BadResearchConfig:
     rerank_model: str = "rerank-v3.5"      # Cohere; "bge-reranker-v2-m3" offline
     budget_usd: float | None = None        # None = uncapped
     cheap: bool = False                    # demote heavy->work
+    # Retrieval knobs (Plan 02; default to the frozen constants). The engine
+    # reads these (not the constants module directly) so config overrides apply.
+    retrieval_alpha: float = 0.7
+    relevance_gate: float = 0.70
+    semantic_cache_threshold: float = 0.92
+    top_k_retrieve: int = 30
     # provider keys read from env / ~/.config/bad-research/config.toml at call sites
 
     @classmethod
