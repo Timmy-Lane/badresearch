@@ -12,7 +12,7 @@ from bad_research.web.base import WebResult
 
 # Re-export the verbatim hyperresearch gates so callers import one module (dossier 07 §8).
 # (They live as WebResult methods; we expose function aliases for symmetry.)
-__all__ = ["looks_like_paywall", "postfetch_filter", "looks_like_junk", "looks_like_login_wall"]
+__all__ = ["looks_like_junk", "looks_like_login_wall", "looks_like_paywall", "postfetch_filter"]
 
 
 def looks_like_login_wall(result: WebResult, original_url: str | None = None) -> bool:

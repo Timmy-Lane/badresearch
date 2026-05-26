@@ -29,7 +29,7 @@ from bad_research.quality.relevance import (
 )
 from bad_research.quality.sources import build_source_row, source_id, upsert_source
 
-__all__ = [
+__all__ = [  # noqa: RUF022 — grouped by pipeline stage (the 5-stage contract), not alphabetical
     # Stage 1
     "seo_farm_score", "DOMAIN_TIER", "domain_tier", "TierInfo", "Candidate",
     "canonical_url", "is_blocklisted", "prefetch_filter",

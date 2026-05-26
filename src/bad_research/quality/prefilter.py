@@ -250,9 +250,9 @@ def prefetch_filter(candidates: list[Candidate], *, query: str = "",
         # 1d. tier (needed before the seo gate so we can exempt authority tiers)
         tier = domain_tier(c.url)
         # 1c. seo_farm gate (skipped for primary/docs/reference)
-        if tier.name not in _SEO_EXEMPT_TIERS:
-            if seo_farm_score(c.url, c.snippet, query) >= SEO_FARM_BLOCK_THRESHOLD:
-                continue
+        if (tier.name not in _SEO_EXEMPT_TIERS
+                and seo_farm_score(c.url, c.snippet, query) >= SEO_FARM_BLOCK_THRESHOLD):
+            continue
         # 1e. recency (primary-exempt, handled inside)
         if not passes_recency_gate(c.published_days_ago, tier.name, max_age_days):
             continue
