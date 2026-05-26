@@ -2,7 +2,27 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
+
+# Keys that mark a "live" run as possible. A `live`-marked test runs only when
+# one of these is set AND BAD_RUN_LIVE=1; otherwise it is auto-skipped so the
+# default suite is offline + key-free.
+_LIVE_KEYS = ("ANTHROPIC_API_KEY", "TAVILY_API_KEY", "EXA_API_KEY", "COHERE_API_KEY")
+
+
+def pytest_collection_modifyitems(config, items):
+    """Auto-skip `live` tests unless a provider key is set AND BAD_RUN_LIVE=1."""
+    have_any_key = any(os.environ.get(k) for k in _LIVE_KEYS)
+    if have_any_key and os.environ.get("BAD_RUN_LIVE") == "1":
+        return  # opted into live tests
+    skip_live = pytest.mark.skip(
+        reason="live test: set a provider key + BAD_RUN_LIVE=1 to run"
+    )
+    for item in items:
+        if "live" in item.keywords:
+            item.add_marker(skip_live)
 
 
 @pytest.fixture(autouse=True)
