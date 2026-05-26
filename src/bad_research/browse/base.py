@@ -1,8 +1,11 @@
-"""BrowseProvider / ExtractProvider Protocols + availability-gated factories.
+"""BrowseProvider / ExtractProvider Protocols + keyless availability-gated factories.
 
-Both Protocols match ultimate-research/INTERFACES.md verbatim. Factories return None
-(never raise) when an optional backend's dependency or API key is unavailable — the
-ladder treats None as "this tier is not available" and stops at the highest tier it can.
+Both Protocols match docs/INTERFACES_KEYLESS.md §4.3 verbatim (KEPT). The factories are
+100% keyless: get_browse_provider returns the local AgentBrowserProvider iff the
+agent-browser CLI is on PATH (no API key, local Chrome over CDP); get_extract_provider
+returns the host-model LLM extractor ('llm', default) or the ported AQL resolver ('aql').
+Factories return None (never raise) when the CLI/backend is absent — the ladder treats
+None as "this tier is not available" and keeps the best lower-tier result.
 """
 
 from __future__ import annotations
@@ -45,34 +48,29 @@ class ExtractProvider(Protocol):
     ) -> dict: ...
 
 
+from bad_research.browse.agent_browser import is_available  # re-export for test monkeypatch
+
+
 def get_extract_provider(name: str | None = None) -> ExtractProvider | None:
-    """Resolve an ExtractProvider. Default = the zero-dep LLM extractor (host model,
-    always constructible). `aql` is built in KR-4; unknown/unavailable -> None."""
+    """Resolve an ExtractProvider. Default 'llm' = the zero-dep host-model extractor
+    (always constructible; no-ops to {} without an LLM). 'aql' = the AQL resolver.
+    Unknown / removed keyed names → None (graceful)."""
     if name in (None, "llm"):
         from bad_research.browse.extract_llm import LLMExtractProvider
-
         return LLMExtractProvider()
-
     if name == "aql":
-        # KR-4 ships browse/aql.py::AqlExtractProvider (ported AgentQL parser +
-        # host-model resolver). Until then this rung is simply unavailable.
-        return None
-
-    return None
+        from bad_research.browse.aql import AqlExtractProvider
+        return AqlExtractProvider()
+    return None  # 'agentql'/'stagehand' (keyed) are gone → None
 
 
 def get_browse_provider(name: str | None = None) -> BrowseProvider | None:
-    """Resolve a keyless BrowseProvider. Default = the local agent-browser CLI
-    (built in KR-4: browse/agent_browser.py::AgentBrowserProvider). Until KR-4
-    lands, the backend is unavailable -> return None (graceful: the ladder keeps
-    the best lower-tier result). No API key, no cloud SDK — keyless only."""
+    """Resolve a BrowseProvider. Default = the keyless AgentBrowserProvider iff the
+    agent-browser CLI is installed; else None (the ladder degrades to crawl4ai/httpx).
+    No env var, no API key — agent-browser drives a LOCAL Chrome over CDP (dossier 14 §1)."""
     if name in (None, "agent-browser"):
-        try:
-            from bad_research.browse.agent_browser import (  # type: ignore[import-not-found]
-                AgentBrowserProvider,
-            )
-        except ImportError:
+        if not is_available():
             return None
+        from bad_research.browse.agent_browser import AgentBrowserProvider
         return AgentBrowserProvider()
-
-    return None
+    return None  # 'browserbase'/'browser-use' (keyed) are gone → None
