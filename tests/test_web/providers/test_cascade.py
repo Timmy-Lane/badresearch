@@ -71,10 +71,9 @@ def test_rrf_fuse_formula() -> None:
 
 # --- Task 8: CascadeProvider routing -------------------------------------------
 
-import pytest  # noqa: E402
 
-from bad_research.web.base import ProviderError, QuotaExceeded, SearchQuery  # noqa: E402
-from bad_research.web.providers.cascade import CascadeProvider, cascade_search  # noqa: E402
+from bad_research.web.base import ProviderError, QuotaExceeded, SearchQuery
+from bad_research.web.providers.cascade import CascadeProvider, cascade_search
 
 
 class _StubProvider:

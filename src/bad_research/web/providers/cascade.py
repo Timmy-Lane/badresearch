@@ -99,10 +99,10 @@ def _rrf_fuse(ranked_lists: list[list[WebResult]]) -> list[WebResult]:
 
 # --- Stage 0-3 routing (Task 8) ------------------------------------------------
 
-from concurrent.futures import ThreadPoolExecutor  # noqa: E402
-from typing import Protocol  # noqa: E402
+from concurrent.futures import ThreadPoolExecutor
+from typing import Protocol
 
-from bad_research.web.base import ProviderError, SearchQuery  # noqa: E402
+from bad_research.web.base import ProviderError, SearchQuery
 
 
 class _RerankerLike(Protocol):
