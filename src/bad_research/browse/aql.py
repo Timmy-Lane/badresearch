@@ -21,9 +21,13 @@ host-model LLMProvider seam by injection, or falls back to deterministic name-ma
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import TYPE_CHECKING, Any, Optional
+
+if TYPE_CHECKING:  # avoid a hard import cycle; Snapshot is a plain dataclass
+    from bad_research.browse.agent_browser import Snapshot
 
 
 # ============================================================ Token Types
@@ -333,3 +337,137 @@ class QueryParser:
 def parse_aql(query: str) -> ContainerNode:
     """Public entry: validate + parse an AQL string into its root ContainerNode AST."""
     return QueryParser(query).parse()
+
+
+# ============================================================ Host-model resolver + grounding
+# Verbatim AQL resolver system prompt (DESIGNED from dossier 14 §6.3 — Claude Code is the
+# resolver; this is the prompt the skill embeds when it maps AQL leaves to snapshot refs).
+AQL_RESOLVER_SYSTEM_PROMPT = (
+    "You map fields of an AgentQL query to elements in a page's accessibility snapshot. "
+    "You will be given: 1) an AgentQL query (field names are the keys you must fill; `[]` "
+    "marks a list; `{}` marks a nested group; `(description)` disambiguates a field), and "
+    "2) an accessibility snapshot with @eN refs (each ref has a role and an accessible "
+    "name). For each leaf field, return the @eN ref of the element that best matches the "
+    "field name and its description. For a `[]` list field, return an array of @eN refs "
+    "(one per repeated element). Use ONLY refs that appear in the snapshot — never invent "
+    "a ref. Respond with a single JSON object mapping field names to refs (or arrays of "
+    "refs). Do not fabricate values."
+)
+
+AQL_SNAPSHOT_TRUNC = 60_000  # keep the snapshot inside the host model's context (dossier 14 §5.4)
+
+
+def _ground_one(value: Any, snap: "Snapshot") -> Any:
+    """Keep a ref only if it is grounded in snap.refs; lists are filtered; dicts recurse."""
+    from bad_research.browse.agent_browser import normalize_ref
+    if isinstance(value, str) and value.startswith("@"):
+        return value if normalize_ref(value) in snap.refs else None
+    if isinstance(value, list):
+        kept = [v for v in (_ground_one(x, snap) for x in value) if v is not None]
+        return kept or None
+    if isinstance(value, dict):
+        kept = {k: gv for k, v in value.items() if (gv := _ground_one(v, snap)) is not None}
+        return kept or None
+    return value  # non-ref scalars pass through (already-extracted text)
+
+
+def resolve_aql(ast: ContainerNode, snap: "Snapshot", mapping: dict) -> dict:
+    """Ground a field→ref mapping against the snapshot refs. Drops every ref not present
+    in snap.refs (dossier 14 §6.3(3) — a ref is valid iff it round-trips the AX tree)."""
+    out: dict = {}
+    for child in ast.children:
+        if child.name not in mapping:
+            continue
+        grounded = _ground_one(mapping[child.name], snap)
+        if grounded is not None:
+            out[child.name] = grounded
+    return out
+
+
+def _deterministic_match(ast: ContainerNode, snap: "Snapshot") -> dict:
+    """No-LLM fallback: match each leaf field name to a ref whose accessible name matches
+    (case- and underscore-insensitive substring). First match wins."""
+    def norm(s: str) -> str:
+        return s.replace("_", "").replace("-", "").replace(" ", "").lower()
+
+    mapping: dict = {}
+    used: set[str] = set()
+    for child in ast.children:
+        key = norm(child.name)
+        for rid, meta in snap.refs.items():
+            if rid in used:
+                continue
+            name = norm(str(meta.get("name", "")))
+            if name and (key in name or name in key):
+                mapping[child.name] = f"@{rid}"
+                used.add(rid)
+                break
+    return mapping
+
+
+def _parse_json_obj(text: str) -> dict:
+    """Tolerant JSON-object parse (strips ```json fences, finds the first {...})."""
+    t = (text or "").strip()
+    if t.startswith("```"):
+        t = t.split("\n", 1)[-1] if "\n" in t else t
+        t = t.rsplit("```", 1)[0]
+    t = t.strip()
+    try:
+        val = json.loads(t)
+        return val if isinstance(val, dict) else {}
+    except json.JSONDecodeError:
+        start, end = t.find("{"), t.rfind("}")
+        if start != -1 and end > start:
+            try:
+                val = json.loads(t[start : end + 1])
+                return val if isinstance(val, dict) else {}
+            except json.JSONDecodeError:
+                return {}
+        return {}
+
+
+class AqlExtractProvider:
+    """ExtractProvider (name='aql'): AQL string + Snapshot → grounded field→ref dict.
+
+    `schema` is an AQL query string (its field names ARE the output keys). `source` must
+    be a Snapshot (the live tree + refs). Resolution = host-model mapping (injected LLM)
+    grounded against snap.refs, or deterministic name-matching when no LLM. Graceful: a
+    parse error or no resolvable ref → {} (never raises)."""
+
+    name = "aql"
+
+    def __init__(self, llm: Any | None = None) -> None:
+        self._llm = llm
+
+    def extract(self, source, schema, instruction: str = "") -> dict:
+        # source must expose .refs/.text — a Snapshot.
+        snap = source
+        if not hasattr(snap, "refs"):
+            return {}
+        aql_str = schema if isinstance(schema, str) else ""
+        try:
+            ast = parse_aql(aql_str)
+        except (QuerySyntaxError, LexerError):
+            return {}
+
+        if self._llm is None:
+            mapping = _deterministic_match(ast, snap)
+            return resolve_aql(ast, snap, mapping)
+
+        # ---- host-model resolution (Claude Code is the LLM; injected for tests) ----
+        from bad_research.llm.base import LLMMessage
+        user = (
+            f"<agentql_query>{aql_str}</agentql_query>\n"
+            f"<instruction>{instruction or 'Map each field to its element.'}</instruction>\n"
+            f"<accessibility_snapshot>{snap.text[:AQL_SNAPSHOT_TRUNC]}</accessibility_snapshot>"
+        )
+        messages = [
+            LLMMessage(role="system", content=AQL_RESOLVER_SYSTEM_PROMPT),
+            LLMMessage(role="user", content=user),
+        ]
+        try:
+            resp = self._llm.complete(messages, tier="triage", max_tokens=2048, temperature=0.0)
+            mapping = _parse_json_obj(resp.text)
+        except Exception:
+            return {}
+        return resolve_aql(ast, snap, mapping)
