@@ -9,10 +9,17 @@ reimplementation; CALIBRATE = needs the KR-7 eval.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
+import sqlite3
+import time
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin
 
+import platformdirs
 from bs4 import BeautifulSoup
 
 # --- frozen constants (docs/INTERFACES_KEYLESS.md §8 + dossier 12) -------------
@@ -23,6 +30,10 @@ MAIN_CONTENT_FLOOR = 200        # trafilatura fallback when pruning yields < thi
 STATIC_GET_TIMEOUT = 15.0       # static GET timeout, Firecrawl MRT (§1.2)
 HL_WINDOW, HL_STEP, HL_TOPK = 120, 60, 3   # highlights window/step/top-k (§7)
 HL_CHAR_CAP = 500               # highlights passage char cap (§7)
+
+# 14-day sqlite content cache, key = sha256(url) (dossier 12 §0 rung 0 / §9 step 9)
+CACHE_DB_PATH = Path(platformdirs.user_cache_dir("bad-research")) / "content_cache.sqlite"
+UA = {"User-Agent": "Mozilla/5.0 (compatible; bad-research/1.0; +keyless)"}
 
 # KNOWN — the verbatim Firecrawl removeUnwantedElements.ts selector list (§2.1-§2.3)
 STRIP_ALWAYS = ["script", "style", "noscript", "meta", "head"]
@@ -461,7 +472,170 @@ def llm_clean(markdown: str) -> str:
     )
 
 
+def _cache_conn() -> sqlite3.Connection:
+    CACHE_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(CACHE_DB_PATH)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS content_cache "
+        "(url_hash TEXT PRIMARY KEY, payload TEXT, ts INTEGER)"
+    )
+    return conn
+
+
+def cache_get(url: str) -> dict[str, Any] | None:
+    """Return a cached result dict if present and within CACHE_TTL, else None (§0 rung 0)."""
+    conn = _cache_conn()
+    try:
+        row = conn.execute(
+            "SELECT payload, ts FROM content_cache WHERE url_hash = ?",
+            (hashlib.sha256(url.encode()).hexdigest(),),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return None
+    payload, ts = row
+    if time.time() - ts > CACHE_TTL:
+        return None
+    return json.loads(payload)  # type: ignore[no-any-return]
+
+
+def cache_put(url: str, result: dict[str, Any]) -> None:
+    conn = _cache_conn()
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO content_cache (url_hash, payload, ts) VALUES (?,?,?)",
+            (hashlib.sha256(url.encode()).hexdigest(), json.dumps(result), int(time.time())),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def needs_js(html: str) -> bool:
+    """Escalate to JS render if visible text < NEEDS_JS_FLOOR or an empty SPA root (§1.1)."""
+    text = BeautifulSoup(html, "lxml").get_text(strip=True)
+    if len(text) < NEEDS_JS_FLOOR:
+        return True
+    return bool(re.search(r'<div id="(root|__next)">\s*</div>', html))
+
+
+def decode_charset(raw: bytes, content_type: str) -> str:
+    """3-layer charset decode (dossier 12 §1.2): header > <meta charset> > utf-8(replace)."""
+    m = re.search(r"charset=([\w-]+)", content_type or "", re.I)
+    if m:
+        try:
+            return raw.decode(m.group(1), errors="strict")
+        except (LookupError, UnicodeDecodeError):
+            pass
+    m2 = re.search(rb'<meta[^>]+charset=["\']?([\w-]+)', raw[:4096], re.I)
+    if m2:
+        try:
+            return raw.decode(m2.group(1).decode("ascii"), errors="strict")
+        except (LookupError, UnicodeDecodeError):
+            pass
+    return raw.decode("utf-8", errors="replace")
+
+
+def _static_fetch(url: str) -> tuple[str, bytes]:
+    """Rung-1 static GET via httpx with manual-redirect SSRF re-check (KEPT guard).
+
+    Uses safe_redirect_get (core/fetcher) which re-validates every redirect hop. No
+    cookies, TLS verified, 15s timeout (§1.2/§1.3). Returns (content_type, raw_bytes).
+    """
+    import httpx
+
+    from bad_research.core.fetcher import safe_redirect_get
+
+    with httpx.Client(
+        follow_redirects=False, verify=True, timeout=STATIC_GET_TIMEOUT, headers=UA
+    ) as client:
+        resp = safe_redirect_get(client, url, headers=UA)
+        return resp.headers.get("content-type", ""), resp.content
+
+
+def _render_fetch(url: str) -> str:
+    """Rung-2 JS render via the existing crawl4ai provider (dossier 12 §1.1). KNOWN.
+
+    Reuses web/crawl4ai_provider.Crawl4AIProvider — already in the repo, keyless.
+    Returns rendered HTML (or markdown content as a single-block HTML wrapper).
+    """
+    from bad_research.web.crawl4ai_provider import Crawl4AIProvider
+
+    res = Crawl4AIProvider().fetch(url)
+    return res.raw_html or f"<html><body>{res.content}</body></html>"
+
+
+def _project(result: dict[str, Any], formats: tuple[str, ...]) -> dict[str, Any]:
+    """coerceFieldsToFormats (§9 step 19): return only requested keys + url."""
+    keep = set(formats) | {"url"}
+    return {k: v for k, v in result.items() if k in keep}
+
+
 def fetch_clean(url: str, query: str | None = None, *, want_llm_clean: bool = False,
                 formats: tuple[str, ...] = ("markdown", "metadata", "links")
                 ) -> dict[str, Any]:
-    raise NotImplementedError  # Task 10
+    """Keyless URL -> model-ready markdown (dossier 12 §0, §11). The deliverable.
+
+    Pipeline: cache -> SSRF guard -> tiered fetch -> charset -> (PDF branch) -> strip ->
+    main_content -> markdown -> postclean -> (opt llm_clean) -> (opt highlights) ->
+    metadata+date -> cache -> project. Every network call passes the SSRF guard. Keyless.
+    Never raises on fetch failure — a 403/timeout/paywall returns an empty result.
+    """
+    from bad_research.core.fetcher import SSRFError, assert_url_safe
+
+    if (cached := cache_get(url)) is not None:                     # §0 rung 0
+        return _project(cached, formats)
+
+    assert_url_safe(url)                                           # §1.3 SSRF guard (KEPT)
+
+    try:
+        content_type, raw = _static_fetch(url)                     # §1.1 rung 1
+    except SSRFError:
+        raise                                                      # SSRF must surface
+    except Exception:
+        # network/timeout/403/paywall: typed empty result, never crash the run (§11)
+        empty: dict[str, Any] = {"markdown": "", "metadata": {}, "published_date": None,
+                                 "links": [], "highlights": None, "url": url}
+        return _project(empty, formats)
+
+    # PDF branch (§5) — bytes type, skip strip/markdown, rejoin at postclean
+    if url.lower().endswith(".pdf") or content_type.startswith("application/pdf"):
+        md = postclean(pdf_to_markdown(raw))
+        result: dict[str, Any] = {"markdown": md, "metadata": {}, "published_date": None,
+                                  "links": [], "highlights": None, "url": url}
+        cache_put(url, result)
+        return _project(result, formats)
+
+    html = decode_charset(raw, content_type)                       # §1.2
+    if needs_js(html):                                             # §1.1 escalate
+        try:
+            html = _render_fetch(url)                              # gated by SSRF below
+        except Exception:
+            pass  # keep static html; better than crashing
+
+    stripped = strip_boilerplate(html, url, only_main=True)        # §2
+    # metadata + date come from the FULL html: strip_boilerplate drops <head>/<meta>
+    # (STRIP_ALWAYS), so the <title>/og/article:published_time tags only survive pre-strip.
+    meta = extract_metadata(html, url)                             # §8
+    pubdate = extract_published_date(html)                         # §8.1
+    links = [
+        {"href": a.get("href"), "text": a.get_text(strip=True)}
+        for a in BeautifulSoup(stripped, "lxml").select("a[href]")
+    ]                                                              # §8.3
+
+    content_html = main_content(stripped, query)                  # §3
+    md = postclean(html_to_markdown(content_html, base_url=url))   # §4 + §7
+
+    if want_llm_clean and looks_dirty(md):                        # §6 gated
+        md = llm_clean(md)
+
+    hl = highlights(md, query) if query else None                 # §7
+
+    result = {
+        "markdown": md, "metadata": meta, "published_date": pubdate,
+        "links": links, "highlights": hl, "url": url,
+        "fetched_at": datetime.now(UTC).isoformat(),
+    }
+    cache_put(url, result)                                        # §9 step 9
+    return _project(result, formats)
