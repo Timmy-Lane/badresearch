@@ -52,3 +52,14 @@ def test_to_score_converts_cosine_distance_to_similarity():
     assert abs(LanceChunkStore.distance_to_score(0.0) - 1.0) < 1e-9
     assert abs(LanceChunkStore.distance_to_score(1.0) - 0.0) < 1e-9
     assert LanceChunkStore.distance_to_score(2.0) == 0.0
+
+
+def test_pq_sub_vectors_divides_dim(tmp_path):
+    # PQ num_sub_vectors must divide the vector dimension (lance hard constraint).
+    # Production Cohere dim=1024 → 16; off-multiple dims fall back to a divisor.
+    assert LanceChunkStore(tmp_path / "l1024", dim=1024)._pq_sub_vectors() == 16
+    assert LanceChunkStore(tmp_path / "l768", dim=768)._pq_sub_vectors() == 16
+    s8 = LanceChunkStore(tmp_path / "l8", dim=8)._pq_sub_vectors()
+    assert 8 % s8 == 0 and s8 <= 16  # 8 doesn't allow 16; largest divisor <=16 is 8
+    s10 = LanceChunkStore(tmp_path / "l10", dim=10)._pq_sub_vectors()
+    assert 10 % s10 == 0 and s10 <= 16

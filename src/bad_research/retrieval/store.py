@@ -73,6 +73,21 @@ class LanceChunkStore:
     def count(self) -> int:
         return int(self._table.count_rows())
 
+    def _pq_sub_vectors(self) -> int:
+        """PQ num_sub_vectors MUST divide the vector dimension (lance-index
+        hard constraint). The frozen LANCE_PQ_NUM_SUB_VECTORS=16 divides the
+        production Cohere dim (1024) cleanly; for any other dim we fall back to
+        the largest divisor of `dim` that is <= 16 (so e.g. dim=8 → 8, dim=768 →
+        16, dim=384 → 16). [CORRECTION 2026-05-26: lancedb 0.30.2 raises
+        'num_sub_vectors must divide vector dimension' otherwise — the plan's
+        flat constant 16 crashes the index build on non-multiple-of-16 dims.]"""
+        if self.dim % LANCE_PQ_NUM_SUB_VECTORS == 0:
+            return LANCE_PQ_NUM_SUB_VECTORS
+        for k in range(min(LANCE_PQ_NUM_SUB_VECTORS, self.dim), 0, -1):
+            if self.dim % k == 0:
+                return k
+        return 1
+
     def maybe_build_index(self) -> bool:
         """Build a deterministic IVF_HNSW_PQ index iff rows >= threshold.
         Returns True if an index was (or already is) present."""
@@ -86,7 +101,7 @@ class LanceChunkStore:
             vector_column_name="vector",
             index_type="IVF_HNSW_PQ",
             num_partitions=num_partitions,
-            num_sub_vectors=LANCE_PQ_NUM_SUB_VECTORS,
+            num_sub_vectors=self._pq_sub_vectors(),
             m=LANCE_HNSW_M,
             ef_construction=LANCE_HNSW_EF_CONSTRUCTION,
             replace=True,
