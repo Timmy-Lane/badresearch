@@ -8,6 +8,8 @@ import sqlite3
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
+from .extract import extract_spans
+
 
 def quote_sha(quoted_support: str) -> str:
     """8-char SHA-256 of the verbatim quote -- the byte-identity key (frozen)."""
@@ -102,3 +104,34 @@ class AnchorStore:
             (verified, score, anchor_id),
         )
         self.conn.commit()
+
+
+def build_from_claims(
+    store: AnchorStore,
+    claims: Iterable[dict],
+    note_bodies: dict[str, str],
+) -> int:
+    """Materialize claim_anchors from claims-*.json dicts. Returns the count of
+    anchors upserted. A claim whose quoted_support can't be located in its note
+    body is DROPPED (dossier §1.1: an unlocatable quote is a hallucinated quote).
+    """
+    count = 0
+    for c in claims:
+        quote = (c.get("quoted_support") or "").strip()
+        note_id = c.get("source_note_id") or ""
+        claim_text = c.get("claim") or ""
+        if not quote or not note_id:
+            continue
+        body = note_bodies.get(note_id)
+        if body is None:
+            continue
+        span = extract_spans(claim_text, quote, body)
+        if span is None:
+            continue  # drop: hallucinated quote
+        start, end = span
+        store.upsert(ClaimAnchor(
+            note_id=note_id, char_start=start, char_end=end,
+            claim=claim_text, quoted_support=quote,
+        ))
+        count += 1
+    return count

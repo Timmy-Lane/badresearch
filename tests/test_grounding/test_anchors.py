@@ -67,3 +67,37 @@ def test_set_verified_persists_flag_and_score():
     got = store.get(a.anchor_id)
     assert got.verified == 1
     assert abs(got.verify_score - 0.82) < 1e-9
+
+
+from bad_research.grounding.anchors import build_from_claims
+
+NOTE_BODIES = {
+    "source-note-12": (
+        "Southeast Asian e-commerce GMV grew from $89B to $100B between 2023 and 2024, "
+        "a 12.4% YoY expansion. Vietnam led the region."
+    ),
+}
+
+
+def test_build_from_claims_upserts_located_drops_unlocatable():
+    store = _store()
+    claims = [
+        {
+            "claim": "SEA e-commerce GMV grew 12.4% YoY in 2024.",
+            "quoted_support": "a 12.4% YoY expansion",
+            "source_note_id": "source-note-12",
+        },
+        {
+            "claim": "Revenue tripled to $4.2B.",  # quote not in any body -> dropped
+            "quoted_support": "revenue tripled to $4.2B in Q4",
+            "source_note_id": "source-note-12",
+        },
+    ]
+    n = build_from_claims(store, claims, NOTE_BODIES)
+    assert n == 1  # one located, one dropped
+    anchors = list(store.all())
+    assert len(anchors) == 1
+    a = anchors[0]
+    # Round-trip: the stored offsets slice the body back to the quote.
+    body = NOTE_BODIES[a.note_id]
+    assert body[a.char_start:a.char_end] == a.quoted_support
