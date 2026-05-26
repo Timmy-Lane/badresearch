@@ -4,7 +4,7 @@ Default: ClaudeCodeReranker (host-model LLM-rerank; the body lands in KR-5 — K
 ships the typed stub). Local: BGEReranker (ms-marco-MiniLM / bge-reranker) behind
 the [local] extra. None: identity (sort by the engine's initial score).
 
-The old CohereReranker is removed — pure keyless, no COHERE_API_KEY.
+The old API reranker is removed — pure keyless, no third-party key.
 """
 from __future__ import annotations
 

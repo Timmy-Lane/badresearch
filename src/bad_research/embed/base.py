@@ -32,7 +32,9 @@ def get_embed_provider(name: str = "bge-local", **kwargs) -> EmbedProvider:
     """
     if name == "bge-local":
         try:
-            from bad_research.embed.bge_local import BgeLocalEmbedProvider
+            from bad_research.embed.bge_local import (  # type: ignore[import-not-found]
+                BgeLocalEmbedProvider,
+            )
         except ImportError as exc:
             raise ImportError(
                 'bge-local requires the local neural stack: '

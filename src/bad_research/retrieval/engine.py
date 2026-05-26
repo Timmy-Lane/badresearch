@@ -114,7 +114,11 @@ class RetrievalEngine:
             return
         fts_rows: list[dict[str, Any]] = []
         vectors: list[list[float]] = []
+        model_name: str | None = None
+        model_dim: int | None = None
         if self.embedder is not None and self.store is not None:
+            model_name = self.embedder.name
+            model_dim = self.embedder.dim
             for i in range(0, len(embed_texts), EMBED_BATCH_CAP):
                 batch = embed_texts[i:i + EMBED_BATCH_CAP]
                 vectors.extend(self.embedder.embed(batch, input_type="document"))
@@ -123,8 +127,8 @@ class RetrievalEngine:
             if vectors:
                 rows.append({"chunk_id": chunk.chunk_id, "vector": vectors[idx],
                              "note_id": chunk.note_id, "char_start": chunk.char_start,
-                             "char_end": chunk.char_end, "model": self.embedder.name,
-                             "dim": self.embedder.dim})
+                             "char_end": chunk.char_end, "model": model_name,
+                             "dim": model_dim})
             fts_rows.append({"chunk_id": chunk.chunk_id, "body": chunk.text, "note_id": chunk.note_id})
             self._meta[chunk.chunk_id] = _ChunkMeta(chunk, ct)
         if rows and self.store is not None:
@@ -174,7 +178,8 @@ class RetrievalEngine:
             for cid in extra_ids:
                 bm_scores.setdefault(cid, 0.0)
             if bm_scores:
-                lo = min(bm_scores.values()); hi = max(bm_scores.values())
+                lo = min(bm_scores.values())
+                hi = max(bm_scores.values())
                 rng = hi - lo
                 # Degenerate range (single hit / all-equal): every survivor is the
                 # top, so map to initial=1.0 (not 0.0) — they are all the best match.

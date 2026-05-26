@@ -68,7 +68,9 @@ def get_browse_provider(name: str | None = None) -> BrowseProvider | None:
     the best lower-tier result). No API key, no cloud SDK — keyless only."""
     if name in (None, "agent-browser"):
         try:
-            from bad_research.browse.agent_browser import AgentBrowserProvider
+            from bad_research.browse.agent_browser import (  # type: ignore[import-not-found]
+                AgentBrowserProvider,
+            )
         except ImportError:
             return None
         return AgentBrowserProvider()
