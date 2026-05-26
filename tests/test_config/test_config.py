@@ -18,8 +18,12 @@ def test_defaults_match_interfaces() -> None:
         "work": "claude-sonnet-4-6",
         "heavy": "claude-opus-4-7",
     }
-    assert cfg.embed_model == "embed-english-v3.0"
-    assert cfg.rerank_model == "rerank-v3.5"
+    assert cfg.reranker == "host"
+    assert cfg.neural_recall is False
+    assert cfg.searxng_endpoint == "http://localhost:8080"
+    assert cfg.browse_engine == "lightpanda"
+    assert cfg.effort == "medium"
+    assert cfg.max_tokens is None
     assert cfg.budget_usd is None
     assert cfg.cheap is False
 
@@ -28,7 +32,7 @@ def test_load_returns_defaults_when_no_env_no_toml(tmp_path: Path) -> None:
     cfg = BadResearchConfig.load(config_path=tmp_path / "missing.toml")
     assert cfg.budget_usd is None
     assert cfg.cheap is False
-    assert cfg.embed_model == "embed-english-v3.0"
+    assert cfg.reranker == "host"
 
 
 def test_env_overrides_default(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -45,15 +49,17 @@ def test_toml_overrides_default(tmp_path: Path) -> None:
         "[bad-research]\n"
         "budget_usd = 7.0\n"
         "cheap = true\n"
-        'embed_model = "embed-english-v3.0"\n'
-        'rerank_model = "bge-reranker-v2-m3"\n'
+        'reranker = "local"\n'
+        'browse_engine = "chrome"\n'
+        'searxng_endpoint = "http://searx.local:9000"\n'
         'vault_root = "/tmp/custom-vault"\n'
     )
     cfg = BadResearchConfig.load(config_path=toml)
     assert cfg.budget_usd == 7.0
     assert cfg.cheap is True
-    assert cfg.embed_model == "embed-english-v3.0"
-    assert cfg.rerank_model == "bge-reranker-v2-m3"
+    assert cfg.reranker == "local"
+    assert cfg.browse_engine == "chrome"
+    assert cfg.searxng_endpoint == "http://searx.local:9000"
     assert cfg.vault_root == Path("/tmp/custom-vault")
 
 

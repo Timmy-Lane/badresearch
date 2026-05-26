@@ -13,6 +13,7 @@ import os
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 
 
 def default_config_path() -> Path:
@@ -36,10 +37,15 @@ class BadResearchConfig:
             "heavy": "claude-opus-4-7",
         }
     )
-    embed_model: str = "embed-english-v3.0"  # Cohere
-    rerank_model: str = "rerank-v3.5"      # Cohere; "bge-reranker-v2-m3" offline
     budget_usd: float | None = None        # None = uncapped
     cheap: bool = False                    # demote heavy->work
+    # ── Keyless knobs (KR-1; dossier 13/15/16) ──────────────────────────────
+    reranker: Literal["host", "local", "none"] = "host"   # host-model LLM-rerank default
+    neural_recall: bool = False                            # opt-in local bi-encoder lane ([local])
+    searxng_endpoint: str = "http://localhost:8080"        # self-host T1; no key
+    browse_engine: Literal["lightpanda", "chrome"] = "lightpanda"  # rung-2.5 default (dossier 14)
+    effort: Literal["minimal", "low", "medium", "high"] = "medium"  # KR-6 effort continuum
+    max_tokens: int | None = None                          # KR-6 per-run ceiling (opt-in)
     # Retrieval knobs (Plan 02; default to the frozen constants). The engine
     # reads these (not the constants module directly) so config overrides apply.
     retrieval_alpha: float = 0.7
@@ -65,10 +71,18 @@ class BadResearchConfig:
                 cfg.vault_root = Path(section["vault_root"])
             if "model_tiers" in section:
                 cfg.model_tiers = dict(section["model_tiers"])
-            if "embed_model" in section:
-                cfg.embed_model = section["embed_model"]
-            if "rerank_model" in section:
-                cfg.rerank_model = section["rerank_model"]
+            if "reranker" in section:
+                cfg.reranker = section["reranker"]
+            if "neural_recall" in section:
+                cfg.neural_recall = bool(section["neural_recall"])
+            if "searxng_endpoint" in section:
+                cfg.searxng_endpoint = str(section["searxng_endpoint"])
+            if "browse_engine" in section:
+                cfg.browse_engine = section["browse_engine"]
+            if "effort" in section:
+                cfg.effort = section["effort"]
+            if "max_tokens" in section:
+                cfg.max_tokens = int(section["max_tokens"])
             if "budget_usd" in section:
                 cfg.budget_usd = float(section["budget_usd"])
             if "cheap" in section:
@@ -77,10 +91,16 @@ class BadResearchConfig:
         # --- env layer (overrides TOML) ---
         if (v := os.environ.get("BAD_RESEARCH_VAULT_ROOT")) is not None:
             cfg.vault_root = Path(v)
-        if (v := os.environ.get("BAD_RESEARCH_EMBED_MODEL")) is not None:
-            cfg.embed_model = v
-        if (v := os.environ.get("BAD_RESEARCH_RERANK_MODEL")) is not None:
-            cfg.rerank_model = v
+        if (v := os.environ.get("BAD_RESEARCH_RERANKER")) is not None:
+            cfg.reranker = v  # type: ignore[assignment]
+        if (v := os.environ.get("BAD_RESEARCH_NEURAL_RECALL")) is not None:
+            cfg.neural_recall = _parse_bool(v)
+        if (v := os.environ.get("BAD_RESEARCH_SEARXNG_ENDPOINT")) is not None:
+            cfg.searxng_endpoint = v
+        if (v := os.environ.get("BAD_RESEARCH_EFFORT")) is not None:
+            cfg.effort = v  # type: ignore[assignment]
+        if (v := os.environ.get("BAD_RESEARCH_MAX_TOKENS")) is not None:
+            cfg.max_tokens = int(v)
         if (v := os.environ.get("BAD_RESEARCH_BUDGET_USD")) is not None:
             cfg.budget_usd = float(v)
         if (v := os.environ.get("BAD_RESEARCH_CHEAP")) is not None:
