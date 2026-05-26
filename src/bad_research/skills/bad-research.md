@@ -59,14 +59,29 @@ When you invoke a Skill, that skill's full procedure is loaded into your context
 
 ## Tier routing
 
-Step 1 classifies the query into a `pipeline_tier` (`light` / `full`). The tier is written to `research/prompt-decomposition.json`. After step 1, **read that file** to learn the tier, then sequence steps according to:
+Step 1 decomposes the query; the query-router (step 1.5) classifies the
+decomposition into a `route` (`agentic-fast` / `light` / `full`) written to
+`research/prompt-decomposition.json`. After step 1.5, **read that file** for the
+`route`, then sequence steps according to this mode table:
 
-| Tier | Steps that run | Typical cost | Typical time |
-|------|---|---|---|
-| `light` | 1 → 2 → 10 (single draft) → 15 → 16 | ~$5–15 | ~30–40 min |
-| `full` | 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 12 → 13 → 14 → 15 → 16 | ~$60–120 | ~1.5–2.5 hours |
+| Route | Stage sequence | Cost | Time |
+|---|---|---|---|
+| `agentic-fast` | 0.5(skip) → 1 → 1.5 → agentic-fast → 15 → 16(+gate) | ~$1–5 | <3 min |
+| `light` | 0.5 → 1 → 1.5 → 2(funnel) → 10(single draft) → 15 → 16(+gate) | ~$5–15 | ~30–40 min |
+| `full` | 0.5 → 1 → 1.5 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 11.5 → 12 → 13 → 14 → 14.5(fresh-review) → 15 → 16(+gate) | ~$60–120 | ~1.5–2.5 h |
 
-**RESPECT THE TIER GATE.** When step 1 classifies a query as `light`, do NOT run the skipped steps "just to be thorough." The tier classification is a product decision: simple queries should produce fast, right-sized answers. Trust the classification. If you're uncertain, tier up — but never silently upgrade every query to `full`.
+Where the stage numbers map to:
+- 0.5 → `Skill(skill: "bad-research-0.5-clarify")` (triage clarifier; skipped for agentic-fast + --auto)
+- 1.5 → `Skill(skill: "bad-research-query-router")` (the route decision)
+- agentic-fast → `Skill(skill: "bad-research-agentic-fast")` (bounded ReAct; replaces 2–14)
+- 11.5 → `Skill(skill: "bad-research-11.5-citation-verifier")` (backward grounding; full only)
+- 14.5 → `Skill(skill: "bad-research-fresh-review")` (one fresh-context pass; full only)
+
+**RESPECT THE ROUTE.** `agentic-fast` is the cheap bounded ReAct loop, not a
+degraded full run; do NOT add the 16 stages "to be thorough." `full` ALWAYS runs
+11.5 (citation verifier) and 14.5 (fresh-review). The deterministic
+no-uncited-claim gate in step 16 is a **ship-block for ALL routes**. If
+uncertain, route up — but never silently upgrade every query to `full`.
 
 ---
 
@@ -75,10 +90,10 @@ Step 1 classifies the query into a `pipeline_tier` (`light` / `full`). The tier 
 Before you invoke any step skill, do this:
 
 0. **Auto-init if missing.** Two checks for the first-run-after-global-install case:
-   - **Vault check.** If `.hyperresearch/` doesn't exist in the working directory, run `hyperresearch init . --json`. Creates the SQLite vault and `research/` directory.
-   - **Step-skills check.** If `.claude/skills/bad-research-1-decompose/SKILL.md` doesn't exist relative to the working directory, run `hyperresearch install --steps-only . --json`. Installs the 16 step skill files needed by `Skill(skill: "bad-research-N-...")` calls in later steps.
+   - **Vault check.** If `.hyperresearch/` doesn't exist in the working directory, run `bad init . --json`. Creates the SQLite vault and `research/` directory.
+   - **Step-skills check (lazy install).** If `.claude/skills/bad-research-1-decompose/SKILL.md` doesn't exist relative to the working directory, run `bad install --steps-only . --json`. The user-global install ships only the entry skill + agents + PreToolUse hook; the step skills materialize per-project on first `/bad-research` invocation via this command. It installs the step skill files needed by `Skill(skill: "bad-research-N-...")` calls in later steps.
 
-   If either command fails because the binary isn't on PATH, tell the user to run `pip install hyperresearch` first. If both files already exist, both commands no-op cheaply — safe to run unconditionally.
+   If either command fails because the binary isn't on PATH, tell the user to run `pip install bad-research` first. If both files already exist, both commands no-op cheaply — safe to run unconditionally.
 
 0.5. **Archive any prior run's artifacts.** Run `hyperresearch archive-run --json`. If a previous `/hyperresearch` session left a scaffold, loci.json, comparisons.md, critic-findings, patch-log, polish-log, prompt-decomposition, or any `research/temp/*` scratch, this moves the whole set into `research/runs/archive-<prev-tag>-<UTC-timestamp>/` so the new run starts from a clean slate without losing the prior run's audit trail. Final reports (`research/notes/final_report_<tag>.md`) and canonical query files (`research/query-<tag>.md`) are already namespaced and stay in place. The command no-ops cheaply on a fresh vault — safe to run unconditionally. **Caveat:** this protects sequential runs only. Two `/hyperresearch` invocations that overlap in time still race on the new files they both write; if you need true parallel runs, namespace per-run artifacts under `research/runs/<vault_tag>/` instead.
 
@@ -115,16 +130,31 @@ Before you invoke any step skill, do this:
    - Tier rationale (filled in after step 1)
    - Wrapper requirements (save path, citation format, terminal sections)
 
-6. **Seed the TodoWrite list.** Create todos for all 16 step skill invocations using the integer step numbers, e.g.:
+6. **Seed the TodoWrite list.** Create todos for the step skill invocations using the step numbers, e.g.:
+   - `Step 0.5 — Skill: bad-research-0.5-clarify`
    - `Step 1 — Skill: bad-research-1-decompose`
+   - `Step 1.5 — Skill: bad-research-query-router`
    - `Step 2 — Skill: bad-research-2-width-sweep`
-   - ... (through Step 16)
+   - ... (through Step 16; the exact set depends on the route decided at 1.5)
 
    The todo list survives context compaction; it's your durable memory of where you are in the chain.
 
-7. **Invoke step 1:** `Skill(skill: "bad-research-1-decompose")`.
+7. **Invoke the clarifier (step 0.5)** UNLESS this is an `--auto` / wrapped run
+   (`research/wrapper_contract.json` present) — then skip straight to step 1:
+   `Skill(skill: "bad-research-0.5-clarify")`. The clarifier is triage-tier,
+   default-proceed, ≤3 questions; it writes `research/clarify.json`.
 
-After step 1 returns, read `research/prompt-decomposition.json` to learn the tier, then continue invoking step skills per the tier routing table above. After each step's exit criterion is met, mark its todo complete and move to the next.
+8. **Invoke step 1 (decompose):** `Skill(skill: "bad-research-1-decompose")`.
+
+9. **Invoke step 1.5 (the query router):** `Skill(skill: "bad-research-query-router")`.
+   It runs `bad route --apply` over the decomposition and writes the `route`
+   field into `research/prompt-decomposition.json`.
+
+After step 1.5 returns, read `research/prompt-decomposition.json` for the `route`,
+then continue invoking step skills per the mode table above. For `agentic-fast`,
+invoke `Skill(skill: "bad-research-agentic-fast")` then jump to step 15 polish +
+step 16 gate. After each step's exit criterion is met, mark its todo complete and
+move to the next.
 
 ---
 
@@ -160,7 +190,10 @@ Context compaction may eat parts of this conversation. If you're unsure what ste
 
 1. **Check the TodoWrite list.** It carries integer step numbers and survives compaction.
 2. **Check disk artifacts.** Each step writes a canonical artifact:
+   - Step 0.5: `research/clarify.json` (+ `## Brief` in scaffold)
    - Step 1: `research/scaffold.md`, `research/prompt-decomposition.json`, `research/temp/coverage-matrix.md`
+   - Step 1.5: the `route` field inside `research/prompt-decomposition.json` (+ `## Route rationale` in scaffold)
+   - agentic-fast: `research/temp/react-trace.md` (+ `research/notes/final_report_<vault_tag>.md`)
    - Step 2: vault notes tagged with vault_tag (`$HPR search "" --tag <vault_tag> -j`)
    - Step 3: `research/temp/contradiction-graph.json`, `research/temp/consensus-claims.json`
    - Step 4: `research/loci.json`
@@ -170,12 +203,14 @@ Context compaction may eat parts of this conversation. If you're unsure what ste
    - Step 8: `research/corpus-critic-gaps.json`, `research/temp/corpus-critic-results.md`
    - Step 9: `research/temp/evidence-digest.md`
    - Step 10: `research/temp/draft-{a,b,c}.md` (or `research/notes/final_report_<vault_tag>.md` for light tier single-pass)
-   - Step 11: `research/temp/synthesis-plan.md`, `research/temp/synthesis-outline.md`, `research/temp/synthesis-pass1.md`, `research/notes/final_report_<vault_tag>.md`
+   - Step 11: `research/temp/synthesis-plan.md`, `research/temp/synthesis-outline.md`, `research/temp/synthesis-evidence.md`, `research/temp/synthesis-pass1.md`, `research/notes/final_report_<vault_tag>.md`
+   - Step 11.5: `research/temp/citation-verify-actions.json` (citation-verifier dispositions; full only)
    - Step 12: `research/critic-findings-{dialectic,depth,width,instruction}.json`
    - Step 13: `research/temp/post-critic-fetch-log.md`
    - Step 14: `research/patch-log.json` (and edited final_report.md)
+   - Step 14.5: `research/temp/fresh-review.json` (fresh-context reviewer findings; full only)
    - Step 15: `research/polish-log.json` (and edited final_report.md)
-   - Step 16: `research/readability-recommendations.json`, `research/readability-decisions.json` (and edited final_report.md)
+   - Step 16: `research/readability-recommendations.json`, `research/readability-decisions.json`, the `bad uncited-gate` pass (and edited final_report.md)
 3. **Find the highest-numbered step whose artifact exists.** Resume from the next step.
 4. **Re-invoke this entry skill** if you've lost track entirely: `Skill(skill: "bad-research")`. It loads fresh.
 

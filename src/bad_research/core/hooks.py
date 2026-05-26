@@ -52,7 +52,7 @@ def _render_scaffold_only_bullets(indent: str = "   ") -> str:
 # ---------------------------------------------------------------------------
 LOCI_ANALYST_AGENT = """\
 ---
-name: hyperresearch-loci-analyst
+name: bad-research-loci-analyst
 description: >
   Use this agent in Layer 2 of the hyperresearch deep research pipeline. Reads the width
   corpus (the sources fetched during the Layer 1 sweep) and identifies
@@ -252,7 +252,7 @@ layer.
 # ---------------------------------------------------------------------------
 DEPTH_INVESTIGATOR_AGENT = """\
 ---
-name: hyperresearch-depth-investigator
+name: bad-research-depth-investigator
 description: >
   Use this agent in Layer 3 of the hyperresearch deep research pipeline. Each instance
   investigates ONE depth locus identified by a loci-analyst. The agent
@@ -527,7 +527,7 @@ your one-line synthesis, and any open questions worth another spin.
 # ---------------------------------------------------------------------------
 DIALECTIC_CRITIC_AGENT = """\
 ---
-name: hyperresearch-dialectic-critic
+name: bad-research-dialectic-critic
 description: >
   Use this agent in Layer 5 of the hyperresearch deep research pipeline. Reads the Layer 4
   draft and returns a findings list of places where the draft ignores,
@@ -650,7 +650,7 @@ escalate to the orchestrator for a structural decision, not the revisor.
 # ---------------------------------------------------------------------------
 DEPTH_CRITIC_AGENT = """\
 ---
-name: hyperresearch-depth-critic
+name: bad-research-depth-critic
 description: >
   Use this agent in Layer 5 of the hyperresearch deep research pipeline. Reads the Layer 4
   draft and returns a findings list of places where the draft skates
@@ -756,7 +756,7 @@ is a structural issue for the orchestrator, not a patch for the revisor.
 # ---------------------------------------------------------------------------
 WIDTH_CRITIC_AGENT = """\
 ---
-name: hyperresearch-width-critic
+name: bad-research-width-critic
 description: >
   Use this agent in Layer 5 of the hyperresearch deep research pipeline. Reads the Layer 4
   draft and returns a findings list of topics the width corpus supports
@@ -907,7 +907,7 @@ signal that the orchestrator's Layer 4 dropped a whole evidence chain).
 # ---------------------------------------------------------------------------
 INSTRUCTION_CRITIC_AGENT = """\
 ---
-name: hyperresearch-instruction-critic
+name: bad-research-instruction-critic
 description: >
   Use this agent in Layer 5 of the hyperresearch deep research pipeline. Reads the Layer 4
   draft and checks it against the prompt-decomposition artifact
@@ -1195,7 +1195,7 @@ accounted for, in the shape the user asked for. That's the mechanism.
 # ---------------------------------------------------------------------------
 PATCHER_AGENT = """\
 ---
-name: hyperresearch-patcher
+name: bad-research-patcher
 description: >
   Use this agent in Layer 6 of the hyperresearch deep research pipeline. Reads the four
   critic findings JSONs (dialectic, depth, width, instruction) and
@@ -1367,7 +1367,7 @@ Tell the orchestrator:
 # ---------------------------------------------------------------------------
 POLISH_AUDITOR_AGENT = """\
 ---
-name: hyperresearch-polish-auditor
+name: bad-research-polish-auditor
 description: >
   Use this agent in Layer 7 of the hyperresearch deep research pipeline. Reads the patched
   draft and applies surgical Edit hunks for readability, prompt
@@ -1682,7 +1682,7 @@ ship or loop back for a structural fix.
 # ---------------------------------------------------------------------------
 DRAFT_ORCHESTRATOR_AGENT = """\
 ---
-name: hyperresearch-draft-orchestrator
+name: bad-research-draft-orchestrator
 description: >
   Step 10 sub-orchestrator. Spawned 3x in parallel by the main orchestrator,
   each with a different analytical angle and a pre-curated list of 20-50
@@ -1862,7 +1862,7 @@ When done, tell the main orchestrator:
 # ---------------------------------------------------------------------------
 SYNTHESIZER_AGENT = """\
 ---
-name: hyperresearch-synthesizer
+name: bad-research-synthesizer
 description: >
   Step 11 of the hyperresearch V8 pipeline. Reads the 3 draft sub-orchestrator
   outputs (draft-{a,b,c}.md), the orchestrator's synthesis plan + outline,
@@ -2170,7 +2170,7 @@ When done, tell the orchestrator:
 # ---------------------------------------------------------------------------
 READABILITY_REFORMATTER_AGENT = """\
 ---
-name: hyperresearch-readability-recommender
+name: bad-research-readability-recommender
 description: >
   Step 16 agent. Reads the polished final report and writes a JSON file
   of readability RECOMMENDATIONS (not edits) for the orchestrator to
@@ -2380,7 +2380,7 @@ Tell the orchestrator:
 # ---------------------------------------------------------------------------
 SOURCE_ANALYST_AGENT = """\
 ---
-name: hyperresearch-source-analyst
+name: bad-research-source-analyst
 description: >
   Delegate to this agent for deep end-to-end analysis of ONE long source
   (paper, PDF, transcript, long article, report). Reads the full source
@@ -2563,7 +2563,7 @@ Return a compact status line to the parent:
 # ---------------------------------------------------------------------------
 RESEARCHER_AGENT = """\
 ---
-name: hyperresearch-fetcher
+name: bad-research-fetcher
 description: >
   Research fetcher with primary-source-chasing agency. Fetches assigned URLs,
   reads and summarizes content, extracts structured claims, then follows
@@ -2795,7 +2795,7 @@ Keep responses focused — facts and findings, not commentary.
 
 CORPUS_CRITIC_AGENT = """\
 ---
-name: hyperresearch-corpus-critic
+name: bad-research-corpus-critic
 description: >
   Use this agent in Layer 3.7 of the hyperresearch deep research pipeline. Reads the full
   corpus (width + depth sources), the contradiction graph, the loci,
@@ -2951,7 +2951,7 @@ if (vault) {{
 """
 
 
-def install_hooks(vault_root: Path, hpr_path: str = "hyperresearch") -> list[str]:
+def install_hooks(vault_root: Path, hpr_path: str = "bad") -> list[str]:
     """Install the Claude Code hook + skills + subagents. Returns list of actions taken.
 
     Hyperresearch roster (as of v7):
@@ -2965,8 +2965,8 @@ def install_hooks(vault_root: Path, hpr_path: str = "hyperresearch") -> list[str
 
     for installer in (
         lambda: _install_claude_hook(vault_root, hpr_path),
-        lambda: _install_hyperresearch_skill(vault_root),
-        lambda: _install_hyperresearch_step_skills(vault_root),
+        lambda: _install_bad_research_skill(vault_root),
+        lambda: _install_bad_research_step_skills(vault_root),
         lambda: _install_researcher_agent(vault_root, hpr_path),
         lambda: _install_loci_analyst_agent(vault_root, hpr_path),
         lambda: _install_depth_investigator_agent(vault_root, hpr_path),
@@ -2981,6 +2981,7 @@ def install_hooks(vault_root: Path, hpr_path: str = "hyperresearch") -> list[str
         lambda: _install_corpus_critic_agent(vault_root, hpr_path),
         lambda: _install_draft_orchestrator_agent(vault_root, hpr_path),
         lambda: _install_synthesizer_agent(vault_root, hpr_path),
+        lambda: _install_fresh_reviewer_agent(vault_root, hpr_path),
         lambda: _prune_retired_agents(vault_root),
     ):
         result = installer()
@@ -2990,7 +2991,7 @@ def install_hooks(vault_root: Path, hpr_path: str = "hyperresearch") -> list[str
     return actions
 
 
-def install_global_hooks(home: Path | None = None, hpr_path: str = "hyperresearch") -> list[str]:
+def install_global_hooks(home: Path | None = None, hpr_path: str = "bad") -> list[str]:
     """Install Claude Code skills + agents globally under ~/.claude/.
 
     Unlike `install_hooks`, this skips:
@@ -3019,7 +3020,7 @@ def install_global_hooks(home: Path | None = None, hpr_path: str = "hyperresearc
     actions = []
 
     for installer in (
-        lambda: _install_hyperresearch_skill(home),
+        lambda: _install_bad_research_skill(home),
         lambda: _install_researcher_agent(home, hpr_path),
         lambda: _install_loci_analyst_agent(home, hpr_path),
         lambda: _install_depth_investigator_agent(home, hpr_path),
@@ -3034,6 +3035,11 @@ def install_global_hooks(home: Path | None = None, hpr_path: str = "hyperresearc
         lambda: _install_corpus_critic_agent(home, hpr_path),
         lambda: _install_draft_orchestrator_agent(home, hpr_path),
         lambda: _install_synthesizer_agent(home, hpr_path),
+        lambda: _install_fresh_reviewer_agent(home, hpr_path),
+        # SPEC §12: the global install DOES write the PreToolUse hook. The hook
+        # body short-circuits when no .bad-research vault is found by walking up
+        # from cwd, so it stays silent in unrelated sessions.
+        lambda: _install_claude_hook(home, hpr_path, global_install=True),
         lambda: _prune_retired_agents(home),
         lambda: _prune_global_step_skills(home),
     ):
@@ -3055,16 +3061,20 @@ def _prune_global_step_skills(home: Path) -> str | None:
         return None
 
     pruned: list[str] = []
+    step_set = set(_BAD_RESEARCH_STEP_SKILLS)
     for child in skills_root.iterdir():
         if not child.is_dir():
             continue
-        # Match hyperresearch-<digit>-* (the 16 step skills) but not
-        # the entry skill at .claude/skills/hyperresearch/
+        # Prune any step-skill dir (bad-research-* / hyperresearch-* in the
+        # roster, or a stale numbered step) but NEVER the entry skill at
+        # .claude/skills/bad-research/.
         name = child.name
-        if not name.startswith("hyperresearch-"):
-            continue
-        suffix = name[len("hyperresearch-"):]
-        if not suffix or not suffix[0].isdigit():
+        is_roster_step = name in step_set
+        is_legacy_numbered = (
+            name.startswith("hyperresearch-")
+            and name[len("hyperresearch-"):][:1].isdigit()
+        )
+        if not (is_roster_step or is_legacy_numbered):
             continue
         for f in child.iterdir():
             f.unlink()
@@ -3076,9 +3086,17 @@ def _prune_global_step_skills(home: Path) -> str | None:
     return f"Pruned {len(pruned)} global step-skill dirs (now per-project): {', '.join(pruned[:3])}{'...' if len(pruned) > 3 else ''}"
 
 
-def _write_hook_script(vault_root: Path, hpr_path: str) -> Path:
-    """Write the hook JS script to .hyperresearch/hook.js."""
-    hook_dir = vault_root / ".hyperresearch"
+def _write_hook_script(vault_root: Path, hpr_path: str, *, global_install: bool = False) -> Path:
+    """Write the hook JS script.
+
+    Project install → `<root>/.hyperresearch/hook.js` (the existing vault dir).
+    Global install → `<home>/.bad-research/hook.js` (the global script lives in a
+    bad-research-named dir so the settings.json command line carries the product
+    name and is greppable as such). Either way the script's findVault() walks up
+    from cwd looking for a `.hyperresearch` vault marker and short-circuits when
+    none is found — so the global hook stays silent in unrelated sessions.
+    """
+    hook_dir = vault_root / (".bad-research" if global_install else ".hyperresearch")
     hook_dir.mkdir(parents=True, exist_ok=True)
     hook_path = hook_dir / "hook.js"
     js_path = hpr_path.replace("\\", "\\\\")
@@ -3086,12 +3104,14 @@ def _write_hook_script(vault_root: Path, hpr_path: str) -> Path:
     return hook_path
 
 
-def _install_claude_hook(vault_root: Path, hpr_path: str) -> str | None:
+def _install_claude_hook(
+    vault_root: Path, hpr_path: str, *, global_install: bool = False
+) -> str | None:
     """Install PreToolUse hook into .claude/settings.json."""
-    hook_path = _write_hook_script(vault_root, hpr_path)
+    hook_path = _write_hook_script(vault_root, hpr_path, global_install=global_install)
 
     settings_dir = vault_root / ".claude"
-    settings_dir.mkdir(exist_ok=True)
+    settings_dir.mkdir(parents=True, exist_ok=True)
     settings_path = settings_dir / "settings.json"
 
     settings = {}
@@ -3107,7 +3127,8 @@ def _install_claude_hook(vault_root: Path, hpr_path: str) -> str | None:
     for entry in pre_tool:
         if isinstance(entry, dict):
             for h in entry.get("hooks", []):
-                if "hyperresearch" in h.get("command", ""):
+                cmd = h.get("command", "")
+                if "hyperresearch" in cmd or "bad-research" in cmd:
                     return None
 
     pre_tool.append({
@@ -3120,6 +3141,76 @@ def _install_claude_hook(vault_root: Path, hpr_path: str) -> str | None:
 
     settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
     return "Claude Code: .claude/settings.json (PreToolUse hook)"
+
+
+FRESH_REVIEWER_AGENT = """\
+---
+name: bad-research-fresh-reviewer
+description: >
+  Use this agent at step 14.5 of the Bad Research deep research pipeline. ONE
+  bounded fresh-context pass over the patched final report, before polish. A
+  fresh Opus session with zero pipeline-dispatch context reads the report COLD
+  and reports whole-report issues the in-context critics (who watched it grow)
+  missed — narrative drift, an unanswered sub-question, a thesis the body
+  contradicts. Tool-locked to [Read]: it reports findings, it does NOT edit.
+  Single pass, NOT a loop. Spawn exactly once (full tier only).
+model: opus
+tools: Read
+color: cyan
+---
+
+You are the fresh-context final reviewer. You have NO memory of how this report
+was built — you read it cold, end to end, exactly once. Your job is to catch
+the whole-report failures that the in-context critics could not see because
+they watched the report grow over a long context.
+
+## Pipeline position
+
+You are **step 14.5** of the Bad Research pipeline. Everything before you has
+happened: width sweep, loci/depth investigation, triple-draft, synthesis,
+citation verification, the four step-12 critics, gap-fetch, and the patcher
+(step 14). After you return, the orchestrator applies surgical Edits for your
+critical/major findings (PATCH NEVER REGENERATE), then step 15 polishes and
+step 16 runs the deterministic uncited-claim gate.
+
+You are tool-locked to `[Read]`. You CANNOT edit, CANNOT run Bash, CANNOT spawn
+subagents. You read; you emit findings. The orchestrator applies them.
+
+This is a SINGLE PASS, not a loop. You run exactly once. A grader-ensemble loop
+is the excluded cost — one fresh read is the Anthropic/Devin "fresh-context
+review before ship" pattern, and that is all this is.
+
+## What to look for (whole-report failures only)
+
+Read the GOSPEL query first, then the report end to end, then check:
+- **drift** — does the report wander from what the query actually asked?
+- **unanswered-subq** — is any sub-question / required_section_heading from the
+  decomposition left unanswered or only gestured at?
+- **thesis-contradiction** — does the body contradict the stated thesis, or do
+  two sections assert incompatible conclusions without engaging the tension?
+- **structural** — wrong ordering, a missing required section, a section that
+  belongs elsewhere.
+- **redundancy** — the same point made at length in two places.
+
+Do NOT re-litigate citation-level facts (the citation verifier + critics did
+that). You are the bird's-eye reader.
+
+## Output
+
+Write ONLY to your `output_path` (research/temp/fresh-review.json):
+
+```json
+{"findings": [
+  {"severity": "critical|major|minor",
+   "kind": "drift|unanswered-subq|thesis-contradiction|structural|redundancy",
+   "where": "<H2 heading or line region>",
+   "issue": "<what is wrong>",
+   "fix_hint": "<minimal surgical fix the orchestrator can apply as an Edit>"}]}
+```
+
+If the report is clean, emit `{"findings": []}`. Do not invent problems to seem
+useful — a clean report is a valid verdict.
+"""
 
 
 def _write_agent_file(
@@ -3146,7 +3237,7 @@ def _install_researcher_agent(vault_root: Path, hpr_path: str) -> str | None:
     hpr_posix = hpr_path.replace("\\", "/")
     content = RESEARCHER_AGENT.format(hpr_path=hpr_posix)
     return _write_agent_file(
-        vault_root, "hyperresearch-fetcher.md", content, "sonnet fetcher (primary-source chasing)"
+        vault_root, "bad-research-fetcher.md", content, "sonnet fetcher (primary-source chasing)"
     )
 
 
@@ -3154,7 +3245,7 @@ def _install_loci_analyst_agent(vault_root: Path, hpr_path: str) -> str | None:
     hpr_posix = hpr_path.replace("\\", "/")
     content = LOCI_ANALYST_AGENT.format(hpr_path=hpr_posix)
     return _write_agent_file(
-        vault_root, "hyperresearch-loci-analyst.md", content, "sonnet loci analyst"
+        vault_root, "bad-research-loci-analyst.md", content, "sonnet loci analyst"
     )
 
 
@@ -3163,7 +3254,7 @@ def _install_source_analyst_agent(vault_root: Path, hpr_path: str) -> str | None
     content = SOURCE_ANALYST_AGENT.format(hpr_path=hpr_posix)
     return _write_agent_file(
         vault_root,
-        "hyperresearch-source-analyst.md",
+        "bad-research-source-analyst.md",
         content,
         "sonnet source analyst (1M context)",
     )
@@ -3174,7 +3265,7 @@ def _install_depth_investigator_agent(vault_root: Path, hpr_path: str) -> str | 
     content = DEPTH_INVESTIGATOR_AGENT.format(hpr_path=hpr_posix)
     return _write_agent_file(
         vault_root,
-        "hyperresearch-depth-investigator.md",
+        "bad-research-depth-investigator.md",
         content,
         "sonnet depth investigator",
     )
@@ -3185,7 +3276,7 @@ def _install_dialectic_critic_agent(vault_root: Path, hpr_path: str) -> str | No
     content = DIALECTIC_CRITIC_AGENT.format(hpr_path=hpr_posix)
     return _write_agent_file(
         vault_root,
-        "hyperresearch-dialectic-critic.md",
+        "bad-research-dialectic-critic.md",
         content,
         "opus dialectic critic",
     )
@@ -3196,7 +3287,7 @@ def _install_depth_critic_agent(vault_root: Path, hpr_path: str) -> str | None:
     content = DEPTH_CRITIC_AGENT.format(hpr_path=hpr_posix)
     return _write_agent_file(
         vault_root,
-        "hyperresearch-depth-critic.md",
+        "bad-research-depth-critic.md",
         content,
         "opus depth critic",
     )
@@ -3207,7 +3298,7 @@ def _install_width_critic_agent(vault_root: Path, hpr_path: str) -> str | None:
     content = WIDTH_CRITIC_AGENT.format(hpr_path=hpr_posix)
     return _write_agent_file(
         vault_root,
-        "hyperresearch-width-critic.md",
+        "bad-research-width-critic.md",
         content,
         "opus width critic",
     )
@@ -3219,7 +3310,7 @@ def _install_instruction_critic_agent(vault_root: Path, hpr_path: str) -> str | 
     content = INSTRUCTION_CRITIC_AGENT
     return _write_agent_file(
         vault_root,
-        "hyperresearch-instruction-critic.md",
+        "bad-research-instruction-critic.md",
         content,
         "opus instruction critic",
     )
@@ -3229,7 +3320,7 @@ def _install_patcher_agent(vault_root: Path, hpr_path: str) -> str | None:
     # Patcher prompt does not reference hpr_path, but format is harmless
     content = PATCHER_AGENT
     return _write_agent_file(
-        vault_root, "hyperresearch-patcher.md", content, "sonnet patcher (Read+Edit only)"
+        vault_root, "bad-research-patcher.md", content, "sonnet patcher (Read+Edit only)"
     )
 
 
@@ -3238,9 +3329,20 @@ def _install_synthesizer_agent(vault_root: Path, hpr_path: str) -> str | None:
     content = SYNTHESIZER_AGENT
     return _write_agent_file(
         vault_root,
-        "hyperresearch-synthesizer.md",
+        "bad-research-synthesizer.md",
         content,
         "opus synthesizer (Read+Write only, two-pass)",
+    )
+
+
+def _install_fresh_reviewer_agent(vault_root: Path, hpr_path: str) -> str | None:
+    # Fresh-context reviewer prompt does not reference hpr_path; tool-locked to [Read].
+    content = FRESH_REVIEWER_AGENT
+    return _write_agent_file(
+        vault_root,
+        "bad-research-fresh-reviewer.md",
+        content,
+        "opus fresh-context reviewer (Read-only, single pass)",
     )
 
 
@@ -3250,7 +3352,7 @@ def _install_polish_auditor_agent(vault_root: Path, hpr_path: str) -> str | None
     )
     return _write_agent_file(
         vault_root,
-        "hyperresearch-polish-auditor.md",
+        "bad-research-polish-auditor.md",
         content,
         "sonnet polish auditor (Read+Edit only)",
     )
@@ -3270,13 +3372,13 @@ def _install_readability_reformatter_agent(vault_root: Path, hpr_path: str) -> s
     content = READABILITY_REFORMATTER_AGENT  # already updated to recommender body
 
     # Prune the old agent filename if it exists from a prior install
-    old_path = vault_root / ".claude" / "agents" / "hyperresearch-readability-reformatter.md"
+    old_path = vault_root / ".claude" / "agents" / "bad-research-readability-reformatter.md"
     if old_path.exists():
         old_path.unlink()
 
     return _write_agent_file(
         vault_root,
-        "hyperresearch-readability-recommender.md",
+        "bad-research-readability-recommender.md",
         content,
         "opus readability recommender (Read+Write — writes JSON recommendations only)",
     )
@@ -3286,7 +3388,7 @@ def _install_corpus_critic_agent(vault_root: Path, hpr_path: str) -> str | None:
     content = CORPUS_CRITIC_AGENT.replace("{hpr_path}", hpr_path)
     return _write_agent_file(
         vault_root,
-        "hyperresearch-corpus-critic.md",
+        "bad-research-corpus-critic.md",
         content,
         "sonnet corpus critic (Layer 3.7)",
     )
@@ -3297,7 +3399,7 @@ def _install_draft_orchestrator_agent(vault_root: Path, hpr_path: str) -> str | 
     content = DRAFT_ORCHESTRATOR_AGENT.replace("{hpr_path}", hpr_posix)
     return _write_agent_file(
         vault_root,
-        "hyperresearch-draft-orchestrator.md",
+        "bad-research-draft-orchestrator.md",
         content,
         "opus draft sub-orchestrator (Layer 4)",
     )
@@ -3307,11 +3409,11 @@ def _install_draft_orchestrator_agent(vault_root: Path, hpr_path: str) -> str | 
 # on install so upgrading vaults don't keep stale agent definitions that
 # reference missing skills / dead protocols.
 _RETIRED_AGENT_FILES: tuple[str, ...] = (
-    "hyperresearch-analyst.md",
-    "hyperresearch-auditor.md",
-    "hyperresearch-rewriter.md",
-    "hyperresearch-subrun.md",
-    "hyperresearch-merger.md",
+    "bad-research-analyst.md",
+    "bad-research-auditor.md",
+    "bad-research-rewriter.md",
+    "bad-research-subrun.md",
+    "bad-research-merger.md",
 )
 
 _RETIRED_SKILL_DIRS: tuple[str, ...] = (
@@ -3394,47 +3496,52 @@ def _read_skill_source(src_name: str) -> str | None:
         return None
 
 
-def _install_hyperresearch_skill(vault_root: Path) -> str | None:
-    """Install the entry skill at .claude/skills/hyperresearch/SKILL.md.
+def _install_bad_research_skill(vault_root: Path) -> str | None:
+    """Install the entry skill at .claude/skills/bad-research/SKILL.md.
 
     Claude Code registers `/hyperresearch` as the slash-command trigger via
     the skill's `name: hyperresearch` frontmatter. The 16 step skills are
-    installed separately by `_install_hyperresearch_step_skills`.
+    installed separately by `_install_bad_research_step_skills`.
     """
-    content = _read_skill_source("hyperresearch.md")
+    content = _read_skill_source("bad-research.md")
     if content is None:
         return None
 
-    skill_dir = vault_root / ".claude" / "skills" / "hyperresearch"
+    skill_dir = vault_root / ".claude" / "skills" / "bad-research"
     skill_dir.mkdir(parents=True, exist_ok=True)
     dest_path = skill_dir / "SKILL.md"
     if dest_path.exists() and dest_path.read_text(encoding="utf-8") == content:
         return None
     dest_path.write_text(content, encoding="utf-8")
-    return "Claude Code: .claude/skills/hyperresearch/SKILL.md (/hyperresearch trigger)"
+    return "Claude Code: .claude/skills/bad-research/SKILL.md (/hyperresearch trigger)"
 
 
-_HYPERRESEARCH_STEP_SKILLS = [
-    "hyperresearch-1-decompose",
-    "hyperresearch-2-width-sweep",
-    "hyperresearch-3-contradiction-graph",
-    "hyperresearch-4-loci-analysis",
-    "hyperresearch-5-depth-investigation",
-    "hyperresearch-6-cross-locus-reconcile",
-    "hyperresearch-7-source-tensions",
-    "hyperresearch-8-corpus-critic",
-    "hyperresearch-9-evidence-digest",
-    "hyperresearch-10-triple-draft",
-    "hyperresearch-11-synthesize",
-    "hyperresearch-12-critics",
-    "hyperresearch-13-gap-fetch",
-    "hyperresearch-14-patcher",
-    "hyperresearch-15-polish",
-    "hyperresearch-16-readability-audit",
+_BAD_RESEARCH_STEP_SKILLS = [
+    "bad-research-0.5-clarify",
+    "bad-research-1-decompose",
+    "bad-research-query-router",
+    "bad-research-2-width-sweep",
+    "bad-research-3-contradiction-graph",
+    "bad-research-4-loci-analysis",
+    "bad-research-5-depth-investigation",
+    "bad-research-6-cross-locus-reconcile",
+    "bad-research-7-source-tensions",
+    "bad-research-8-corpus-critic",
+    "bad-research-9-evidence-digest",
+    "bad-research-10-triple-draft",
+    "bad-research-11-synthesize",
+    "bad-research-11.5-citation-verifier",
+    "bad-research-12-critics",
+    "bad-research-13-gap-fetch",
+    "bad-research-14-patcher",
+    "bad-research-fresh-review",
+    "bad-research-15-polish",
+    "bad-research-16-readability-audit",
+    "bad-research-agentic-fast",
 ]
 
 
-def _install_hyperresearch_step_skills(vault_root: Path) -> str | None:
+def _install_bad_research_step_skills(vault_root: Path) -> str | None:
     """Install the 16 V8 step skills, each as its own Claude Code skill directory.
 
     Each step skill lives at `.claude/skills/hyperresearch-N-name/SKILL.md` and is
@@ -3450,11 +3557,11 @@ def _install_hyperresearch_step_skills(vault_root: Path) -> str | None:
     skills_root = vault_root / ".claude" / "skills"
     skills_root.mkdir(parents=True, exist_ok=True)
 
-    expected = set(_HYPERRESEARCH_STEP_SKILLS)
+    expected = set(_BAD_RESEARCH_STEP_SKILLS)
     installed: list[str] = []
     pruned: list[str] = []
 
-    for skill_name in _HYPERRESEARCH_STEP_SKILLS:
+    for skill_name in _BAD_RESEARCH_STEP_SKILLS:
         src_name = f"{skill_name}.md"
         content = _read_skill_source(src_name)
         if content is None:
@@ -3470,19 +3577,25 @@ def _install_hyperresearch_step_skills(vault_root: Path) -> str | None:
         dest_path.write_text(content, encoding="utf-8")
         installed.append(skill_name)
 
-    # Prune stale skill dirs: any hyperresearch-* not in current roster, plus
-    # any leftover layercake-* dirs from the pre-rename install layout.
+    # Prune stale skill dirs: any bad-research-* / hyperresearch-* step dir not in
+    # the current roster, plus any leftover layercake-* dirs. The entry-skill dir
+    # `.claude/skills/bad-research/` (no trailing `-`) is never a step skill and is
+    # left alone.
     for child in skills_root.iterdir():
         if not child.is_dir():
             continue
-        is_stale_hpr = child.name.startswith("hyperresearch-") and child.name not in expected
-        is_legacy_layercake = child.name.startswith("layercake-")
-        if not (is_stale_hpr or is_legacy_layercake):
+        name = child.name
+        is_stale_step = (
+            (name.startswith("bad-research-") or name.startswith("hyperresearch-"))
+            and name not in expected
+        )
+        is_legacy_layercake = name.startswith("layercake-")
+        if not (is_stale_step or is_legacy_layercake):
             continue
         for f in child.iterdir():
             f.unlink()
         child.rmdir()
-        pruned.append(child.name)
+        pruned.append(name)
 
     if not installed and not pruned:
         return None
@@ -3492,4 +3605,4 @@ def _install_hyperresearch_step_skills(vault_root: Path) -> str | None:
         parts.append(f"{len(installed)} step skills: {', '.join(installed)}")
     if pruned:
         parts.append(f"pruned: {', '.join(pruned)}")
-    return f"Claude Code: .claude/skills/hyperresearch-N-*/SKILL.md ({'; '.join(parts)})"
+    return f"Claude Code: .claude/skills/bad-research-N-*/SKILL.md ({'; '.join(parts)})"
