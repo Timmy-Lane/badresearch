@@ -119,33 +119,36 @@ Summaries must be specific — "Mamba achieves linear-time sequence modeling via
 
 
 def _resolve_executable() -> str:
-    """Find the absolute path to the hyperresearch executable.
+    """Find the absolute path to the `bad` executable.
 
-    Priority: venv sibling of current python > PATH > bare name.
+    Priority: venv sibling of current python > PATH > bare name. Both `bad` and
+    the `badr` alias resolve to the same Typer app (pyproject [project.scripts]).
     """
     import shutil
     import sys
 
+    names = ("bad", "bad.exe", "badr", "badr.exe")
     # First: find it relative to the current Python interpreter (venv installs).
     # This takes priority over PATH to avoid picking up a system-wide install.
     python_dir = Path(sys.executable).parent
-    for name in ("hyperresearch", "hyperresearch.exe"):
+    for name in names:
         candidate = python_dir / name
         if candidate.exists():
             return str(candidate)
     # Also check Scripts/ subdirectory (Windows venv layout)
-    for name in ("hyperresearch", "hyperresearch.exe"):
+    for name in names:
         candidate = python_dir / "Scripts" / name
         if candidate.exists():
             return str(candidate)
 
     # Second: check PATH
-    which = shutil.which("hyperresearch")
-    if which:
-        return which
+    for name in ("bad", "badr"):
+        which = shutil.which(name)
+        if which:
+            return which
 
     # Fallback — bare name, hope it's on PATH
-    return "hyperresearch"
+    return "bad"
 
 
 def inject_agent_docs(vault_root: Path) -> list[str]:
