@@ -102,6 +102,7 @@ markers = [
     "unit: fast, isolated, no network, no disk beyond tmp_path (default).",
     "integration: touches multiple modules / real SQLite / LanceDB on tmp dirs; still offline.",
     "live: hits a real provider API; auto-skipped unless a key is set AND BAD_RUN_LIVE=1.",
+    "local: requires the [local] extra (torch/sentence-transformers/lancedb) — skipped in keyless CI.",
 ]
 
 [tool.coverage.run]
