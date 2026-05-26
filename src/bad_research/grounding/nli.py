@@ -4,7 +4,7 @@ Local, $0, CPU-fine. dossier 08 §2.2 option 1."""
 from __future__ import annotations
 
 from enum import Enum
-from typing import Protocol
+from typing import Any, Protocol
 
 # INTERFACES.md frozen constant (the bare HF repo name resolves to
 # cross-encoder/nli-deberta-v3-base when loaded).
@@ -44,11 +44,11 @@ class CrossEncoderNLI:
 
     def __init__(self, model_name: str = NLI_MODEL_NAME) -> None:
         self.model_name = model_name
-        self._model = None
+        self._model: Any = None  # the external CrossEncoder is untyped (lazy heavy dep)
 
     def _ensure(self) -> None:
         if self._model is None:
-            from sentence_transformers import CrossEncoder  # heavy; lazy
+            from sentence_transformers import CrossEncoder  # type: ignore  # heavy; lazy
 
             # The cross-encoder/ prefix is the canonical HF path.
             repo = self.model_name

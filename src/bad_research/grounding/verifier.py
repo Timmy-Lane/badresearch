@@ -11,7 +11,7 @@ from enum import Enum
 
 from bad_research.llm.base import LLMMessage, LLMProvider
 
-from .anchors import ClaimAnchor, quote_sha
+from .anchors import AnchorStore, ClaimAnchor, quote_sha
 from .nli import NLILabel, NLIModel, classify_nli
 from .render import extract_citations
 
@@ -149,7 +149,9 @@ class CitationVerifier:
         self.nli = nli
         self.llm = llm
 
-    def verify(self, report_md, store, note_bodies: dict[str, str]) -> VerifyResult:
+    def verify(
+        self, report_md: str, store: AnchorStore, note_bodies: dict[str, str]
+    ) -> VerifyResult:
         # Pass 1: per cited sentence, run Tier A then Tier B; collect the
         # NLI-neutral band for a single batched Tier-C call.
         pending: list[tuple[CitationFinding, str, str]] = []  # (finding-stub, claim, quote)

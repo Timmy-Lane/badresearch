@@ -106,9 +106,14 @@ class AnchorStore:
         self.conn.commit()
 
 
+def _as_str(value: object) -> str:
+    """Coerce a claims-*.json field (str|None) to a plain str ('' for missing)."""
+    return value if isinstance(value, str) else ""
+
+
 def build_from_claims(
     store: AnchorStore,
-    claims: Iterable[dict],
+    claims: Iterable[dict[str, object]],
     note_bodies: dict[str, str],
 ) -> int:
     """Materialize claim_anchors from claims-*.json dicts. Returns the count of
@@ -117,9 +122,9 @@ def build_from_claims(
     """
     count = 0
     for c in claims:
-        quote = (c.get("quoted_support") or "").strip()
-        note_id = c.get("source_note_id") or ""
-        claim_text = c.get("claim") or ""
+        quote = _as_str(c.get("quoted_support")).strip()
+        note_id = _as_str(c.get("source_note_id"))
+        claim_text = _as_str(c.get("claim"))
         if not quote or not note_id:
             continue
         body = note_bodies.get(note_id)
