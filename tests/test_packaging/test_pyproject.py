@@ -33,27 +33,25 @@ def test_wheel_packages(pp):
     assert pkgs == ["src/bad_research"]
 
 
-# ── Task 2: lean base + optional-extras groups ───────────────────────────────
-# Heavy deps that MUST NOT be in the base install (keep zero-key/lean small).
+# Keyed / paid SDKs + the GPU stack that MUST NOT be in the keyless base.
 HEAVY_FORBIDDEN_IN_BASE = {
     "cohere",
     "tavily-python",
     "exa-py",
-    "crawl4ai",
-    "Crawl4AI",
     "browser-use",
+    "agentql",
+    "stagehand",
+    "firecrawl-py",
     "sentence-transformers",
     "torch",
-    "firecrawl-py",
-    "agentql",
+    "lancedb",
+    "pyarrow",
     "playwright",
     "FlagEmbedding",
-    "stagehand",
 }
 
 
 def _names(dep_list: list[str]) -> set[str]:
-    # strip version/extra specifiers: "cohere>=5" -> "cohere"; "x[y]>=1" -> "x"
     out = set()
     for d in dep_list:
         name = d.split(";")[0].strip()
@@ -65,39 +63,41 @@ def _names(dep_list: list[str]) -> set[str]:
 
 def test_base_install_is_lean(pp):
     base = _names(pp["project"]["dependencies"])
-    leaked = base & {n.lower() for n in HEAVY_FORBIDDEN_IN_BASE} | (base & HEAVY_FORBIDDEN_IN_BASE)
-    assert not leaked, f"heavy deps leaked into base: {leaked}"
-    # base must still carry the zero-key essentials
-    assert {"anthropic", "lancedb", "httpx", "typer", "pymupdf"} <= base
+    leaked = (base & {n.lower() for n in HEAVY_FORBIDDEN_IN_BASE}) | (base & HEAVY_FORBIDDEN_IN_BASE)
+    assert not leaked, f"keyed/heavy deps leaked into base: {leaked}"
+    # base carries the keyless essentials (numpy stays: grounding/nli.py imports it directly)
+    assert {"anthropic", "httpx", "typer", "pymupdf", "crawl4ai", "ddgs", "trafilatura", "numpy"} <= base
 
 
-def test_base_has_no_torch_or_playwright(pp):
+def test_base_has_no_torch_lancedb_or_keyed_sdk(pp):
     base = pp["project"]["dependencies"]
-    assert all("torch" not in d and "playwright" not in d for d in base)
+    for forbidden in ("torch", "lancedb", "pyarrow", "cohere", "tavily", "exa-py", "playwright"):
+        assert all(forbidden not in d for d in base), f"{forbidden} leaked into base"
+
+
+def test_search_extra_is_gone(pp):
+    extras = pp["project"]["optional-dependencies"]
+    assert "search" not in extras, "the [search] extra must be deleted (pure keyless)"
 
 
 def test_extras_groups_exist(pp):
     extras = pp["project"]["optional-dependencies"]
-    for group in ("search", "browse", "grounding", "mcp", "all", "dev"):
+    for group in ("browse", "local", "mcp", "all", "dev"):
         assert group in extras, f"missing extras group: {group}"
 
 
-def test_search_extra_contents(pp):
-    search = _names(pp["project"]["optional-dependencies"]["search"])
-    assert {"tavily-python", "exa-py", "cohere"} <= search
-
-
-def test_browse_extra_contents(pp):
+def test_browse_extra_is_playwright_only(pp):
     browse = _names(pp["project"]["optional-dependencies"]["browse"])
-    assert {"crawl4ai", "browser-use"} <= {n.lower() for n in browse}
+    assert "playwright" in browse
+    for gone in ("browser-use", "agentql", "crawl4ai"):
+        assert gone not in {n.lower() for n in browse}
 
 
-def test_grounding_extra_contents(pp):
-    grounding = _names(pp["project"]["optional-dependencies"]["grounding"])
-    assert "sentence-transformers" in grounding  # NLI verifier + BGE reranker
+def test_local_extra_holds_the_neural_stack(pp):
+    local = _names(pp["project"]["optional-dependencies"]["local"])
+    assert {"torch", "sentence-transformers", "lancedb", "pyarrow"} <= local
 
 
 def test_all_composes_extras(pp):
     all_dep = pp["project"]["optional-dependencies"]["all"]
-    # `[all]` references the package's own extras, not a flat re-list.
     assert any("bad-research[" in d for d in all_dep)
