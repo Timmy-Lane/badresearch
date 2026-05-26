@@ -7,28 +7,10 @@ import pytest
 from bad_research.web.base import get_provider
 
 
-def test_factory_tavily(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
-    prov = get_provider("tavily")
-    assert prov.name == "tavily"
-
-
-def test_factory_sonar(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("PERPLEXITY_API_KEY", "pplx-test")
-    prov = get_provider("sonar")
-    assert prov.name == "sonar"
-
-
 def test_factory_searxng(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("SEARXNG_ENDPOINT", raising=False)
     prov = get_provider("searxng")
     assert prov.name == "searxng"
-
-
-def test_factory_firecrawl(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("FIRECRAWL_API_KEY", "fc-test")
-    prov = get_provider("firecrawl")
-    assert prov.name == "firecrawl"
 
 
 def test_factory_cascade_zero_key(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -50,16 +32,7 @@ def test_factory_unknown_raises_with_full_list() -> None:
 
 
 def test_providers_package_reexports() -> None:
-    from bad_research.web.providers import (
-        CascadeProvider,
-        FirecrawlProvider,
-        SearxngProvider,
-        SonarProvider,
-        TavilyProvider,
-    )
+    from bad_research.web.providers import CascadeProvider, SearxngProvider
 
-    assert TavilyProvider.name == "tavily"
-    assert SonarProvider.name == "sonar"
     assert SearxngProvider.name == "searxng"
-    assert FirecrawlProvider.name == "firecrawl"
     assert CascadeProvider.name == "cascade"

@@ -1,16 +1,6 @@
-"""Web search providers + the search cascade (Plan 03)."""
+"""Web search providers (Plan 03) — keyed providers removed in KR-1; dir removed in KR-1 Task 4."""
 
 from bad_research.web.providers.cascade import CascadeProvider, cascade_search
-from bad_research.web.providers.firecrawl_provider import FirecrawlProvider
 from bad_research.web.providers.searxng_provider import SearxngProvider
-from bad_research.web.providers.sonar_provider import SonarProvider
-from bad_research.web.providers.tavily_provider import TavilyProvider
 
-__all__ = [
-    "CascadeProvider",
-    "FirecrawlProvider",
-    "SearxngProvider",
-    "SonarProvider",
-    "TavilyProvider",
-    "cascade_search",
-]
+__all__ = ["CascadeProvider", "SearxngProvider", "cascade_search"]
