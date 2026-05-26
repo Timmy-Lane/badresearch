@@ -272,3 +272,42 @@ Findings from the whole-series self-review across plans 01–09 (18,945 lines). 
 2. **Two distinct `search()` methods, no conflict.** `WebProvider.search(query, max_results=5) -> list[WebResult]` (hyperresearch legacy, lexical fetch) and `RetrievalEngine.search(query, *, mode, top_k) -> list[Chunk]` (Plan 02) are different methods on different classes. Both are correct.
 3. **INTERFACES self-definition rule.** Concurrent edits during planning clobbered some additive type appends here (e.g. `TierInfo`/`RelevanceResult` from Plan 05, the Grounding-API block from Plan 06, the calibration types from Plan 09). Non-fatal: **each plan fully self-defines its own types in its own tasks**, and cross-plan use is by Python module import (`from bad_research.<module> import X`), not by reading this file. Canonical homes: `TierInfo`/`Candidate`/`RelevanceResult` → Plan 05; `FunnelDeps`/`gather` → Plan 07; `CitationVerifier`/`AnchorStore`/anchors → Plan 06; `CostMeter`/judge types/`provider_status` → Plan 09; LLM/Embed/config → Plan 01.
 4. **Build-order gotchas (carry into execution):** Plan 01 must create the `ultimate-research/bad-research/` fork dir first (Plans 02–09 assume it) and carry `core/similarity.py` into the fork (Plans 05/07 import it). Plan 08 owns the real installer + the `bad_research.pipeline.run_query(query, config, cost_meter)` entrypoint that Plan 09's `bad calibrate` bridges to. Verify against installed SDK versions at build time: Anthropic `cache_control` + usage field names (use the `claude-api` skill), Cohere v2 `embed`/`rerank` shapes (`cohere>=5`), `lancedb>=0.13` index API, tree-sitter grammar node-type names.
+
+## Grounding API (Plan 06 — frozen)
+
+```python
+# grounding/__init__.py
+def extract_spans(claim: str, quoted_support: str, note_body: str) -> tuple[int, int] | None: ...
+def quote_sha(quoted_support: str) -> str: ...   # sha256(quote)[:8]
+
+@dataclass
+class ClaimAnchor:
+    note_id: str; char_start: int; char_end: int; claim: str; quoted_support: str
+    verified: int = 0; verify_score: float | None = None; anchor_id: str = ""  # == quote_sha
+
+class AnchorStore:   # claim_anchors table DAL (DDL per INTERFACES vault-schema section)
+    def __init__(self, conn): ...
+    def init_schema(self) -> None: ...
+    def upsert(self, a: ClaimAnchor) -> None: ...
+    def get(self, anchor_id: str) -> ClaimAnchor | None: ...
+    def all(self) -> Iterable[ClaimAnchor]: ...
+    def set_verified(self, anchor_id, *, verified: int, score: float | None) -> None: ...
+def build_from_claims(store, claims: Iterable[dict], note_bodies: dict[str,str]) -> int: ...
+
+class VerifyVerdict(str, Enum): SUPPORTED; PARTIAL; UNSUPPORTED; CONTRADICTED
+@dataclass
+class CitationFinding: anchor_id; sentence; verdict: VerifyVerdict; score: float
+@dataclass
+class VerifyResult: findings: list[CitationFinding]
+class CitationVerifier:                 # Stage 11.5, tool-locked [Read]
+    def __init__(self, *, nli, llm): ...  # nli: NLIModel; llm: LLMProvider (triage tier)
+    def verify(self, report_md, store: AnchorStore, note_bodies: dict[str,str]) -> VerifyResult: ...
+
+@dataclass
+class Finding: failure_mode; severity; location; recommendation
+def no_uncited_claim_gate(report_md: str, anchors: AnchorStore) -> list[Finding]: ...   # Stage 16, $0
+def gate_blocks_ship(findings: list[Finding]) -> bool: ...   # any critical → True (block ship)
+def render_citation(sentence: str, anchor_indices: list[int]) -> str: ...
+```
+
+Pipeline position: verifier after Stage 11 synthesize, before Stage 12 critics; gate at Stage 16 after polish (hard ship-block). NLI model: `nli-deberta-v3-base` (frozen). LLM judge: `triage` tier, batched 20/call.
