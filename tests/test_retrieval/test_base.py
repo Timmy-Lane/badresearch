@@ -1,6 +1,7 @@
 from dataclasses import fields
 
-from bad_research.retrieval.base import Chunk, Reranker, RetrievalEngine
+from bad_research.retrieval import RetrievalEngine  # concrete; canonical home is engine.py
+from bad_research.retrieval.base import Chunk, Reranker
 
 
 def test_chunk_shape_matches_interfaces():
