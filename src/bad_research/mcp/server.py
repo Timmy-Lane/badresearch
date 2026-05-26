@@ -1,7 +1,9 @@
-"""hyperresearch MCP server — thin protocol layer over existing hyperresearch functions.
+"""bad-research MCP server — thin protocol layer over the research backends.
 
-Exposes 8 tools for agents: search, read, read_many, list, backlinks, hubs, status, lint.
-Read-only by design — agents create/edit notes via file operations, hyperresearch auto-syncs.
+Exposes the vault tools (search, read, read_many, list, backlinks, hubs, status,
+lint, fetch_url, create/update) plus 4 research tools (funnel_gather,
+retrieve_chunks, verify_citations, route_query) for agents / any MCP client.
+Notes are markdown; the vault auto-syncs.
 """
 
 from __future__ import annotations
@@ -10,9 +12,10 @@ import json
 
 from mcp.server.fastmcp import FastMCP
 
-server = FastMCP("hyperresearch", instructions=(
-    "hyperresearch is an agent-driven research knowledge base. Use these tools to search, read, "
-    "and navigate research notes with wiki-links, tags, and summaries. Notes live in the research/ "
+server = FastMCP("bad-research", instructions=(
+    "bad-research is an agent-driven deep-research knowledge base. Use these tools to search, read, "
+    "and navigate research notes with wiki-links, tags, and summaries, plus the research backends "
+    "(funnel_gather, retrieve_chunks, verify_citations, route_query). Notes live in the research/ "
     "directory as markdown files with YAML frontmatter. To create or edit notes, write "
     "files directly and they will be auto-indexed."
 ))
@@ -402,3 +405,71 @@ def update_note(note_id: str, status: str = "", add_tags: str = "", remove_tags:
         execute_sync(vault, plan)
 
     return json.dumps({"ok": True, "data": {"note_id": note_id, "changes": changed}})
+
+
+# ── Research backend tools (Plan 08) ─────────────────────────────────────────
+# Each lazy-imports its backend inside the function: a missing optional backend
+# fails only when the tool is CALLED, never at registration. The CLI's run_funnel
+# helper is the shared funnel bridge (builds FunnelDeps, runs async gather()).
+
+
+@server.tool()
+def route_query(decomposition_path: str) -> str:
+    """Classify a Step-1 decomposition into a pipeline route (agentic-fast|light|full).
+
+    Args:
+        decomposition_path: path to research/prompt-decomposition.json
+    """
+    from pathlib import Path
+
+    from bad_research.skills.router import classify_route, route_reason
+    decomp = json.loads(Path(decomposition_path).read_text(encoding="utf-8"))
+    return json.dumps({"route": classify_route(decomp), "reason": route_reason(decomp)})
+
+
+@server.tool()
+def funnel_gather(query: str, mode: str = "light", vault_tag: str = "") -> str:
+    """Run the scraper funnel: fan-out->dedup->rank->read(Tier0-3)->filter->chunk->rerank.
+
+    Returns FunnelEnvelope JSON {note_ids, top_chunks, n_read}. The model reads top_chunks only.
+
+    Args:
+        query: the research query / sub-question
+        mode: "light" or "full" (funnel fan-out is indexed by mode)
+        vault_tag: the run's vault tag
+    """
+    from bad_research.cli.research import run_funnel  # builds FunnelDeps, runs async gather()
+    return json.dumps(run_funnel(query, mode=mode, vault_tag=vault_tag), default=str)
+
+
+@server.tool()
+def retrieve_chunks(query: str, mode: str = "full", top_k: int = 20) -> str:
+    """Hybrid retrieval: vector+BM25 fuse (alpha=0.7) -> rerank -> 0.70 gate. Returns top_k Chunks.
+
+    Args:
+        query: the query to retrieve against
+        mode: "light" or "full"
+        top_k: number of chunks to return
+    """
+    from dataclasses import asdict
+
+    from bad_research.cli.research import _build_engine
+    from bad_research.config import BadResearchConfig
+    from bad_research.core.vault import Vault
+    cfg = BadResearchConfig.load()
+    engine = _build_engine(cfg, Vault.discover())
+    norm_mode = "full" if mode == "full" else "light"
+    chunks = engine.search(query, mode=norm_mode, top_k=top_k)
+    return json.dumps([asdict(c) for c in chunks], default=str)
+
+
+@server.tool()
+def verify_citations(report_path: str, vault_tag: str) -> str:
+    """Run the CitationVerifier over a report. Returns per-sentence dispositions.
+
+    Args:
+        report_path: path to the final report markdown
+        vault_tag: the run's vault tag
+    """
+    from bad_research.cli.research import _verify_report
+    return json.dumps({"results": _verify_report(report_path, vault_tag)}, default=str)
