@@ -245,9 +245,11 @@ def get_provider(
         "wikipedia": "WikipediaProvider",
     }
     if name in _verticals:
+        from typing import cast
+
         import bad_research.web.search.verticals as v
 
-        return getattr(v, _verticals[name])()
+        return cast("WebProvider", getattr(v, _verticals[name])())
 
     raise ValueError(
         f"Unknown keyless web provider: {name!r}. Available: websearch (default), "

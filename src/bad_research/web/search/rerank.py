@@ -62,16 +62,18 @@ def _parse_scores(raw_text: str, *, n: int) -> list[float]:
     for it in items:
         if not isinstance(it, dict):
             continue
-        idx = it.get("i", it.get("id"))
-        val = it.get("s", it.get("score"))
+        raw_idx = it.get("i", it.get("id"))
+        raw_val = it.get("s", it.get("score"))
+        if raw_idx is None:
+            continue
         try:
-            idx = int(idx)
+            idx = int(raw_idx)
         except (TypeError, ValueError):
             continue
         if not (0 <= idx < n):
             continue
         try:
-            scores[idx] = float(val)
+            scores[idx] = float(raw_val) if raw_val is not None else 0.0
         except (TypeError, ValueError):
             scores[idx] = 0.0
     return scores

@@ -45,8 +45,8 @@ class ArxivProvider:
         self._client = client
 
     def search(self, query: str, max_results: int = 10) -> list[WebResult]:
-        params = {"search_query": f"all:{query}", "start": 0,
-                  "max_results": max_results, "sortBy": "relevance"}
+        params: dict[str, str | int] = {"search_query": f"all:{query}", "start": 0,
+                                         "max_results": max_results, "sortBy": "relevance"}
         try:
             resp = _client(self._client).get(self.BASE, params=params,
                                              headers={"User-Agent": _UA.format(mailto="")})
@@ -98,7 +98,7 @@ class OpenAlexProvider:
         self._client = client
 
     def search(self, query: str, max_results: int = 10) -> list[WebResult]:
-        params = {"search": query, "per_page": max_results, "mailto": self._mailto}
+        params: dict[str, str | int] = {"search": query, "per_page": max_results, "mailto": self._mailto}
         try:
             resp = _client(self._client).get(self.BASE, params=params,
                                              headers={"User-Agent": _UA.format(mailto=self._mailto)})
@@ -147,7 +147,7 @@ class CrossrefProvider:
         self._client = client
 
     def search(self, query: str, max_results: int = 10) -> list[WebResult]:
-        params = {"query": query, "rows": max_results, "sort": "relevance"}
+        params: dict[str, str | int] = {"query": query, "rows": max_results, "sort": "relevance"}
         try:
             resp = _client(self._client).get(self.BASE, params=params,
                                              headers={"User-Agent": _UA.format(mailto=self._mailto)})
@@ -200,7 +200,7 @@ class SemanticScholarProvider:
         self._backoff = backoff_base
 
     def search(self, query: str, max_results: int = 10) -> list[WebResult]:
-        params = {"query": query, "limit": max_results, "fields": self.FIELDS}
+        params: dict[str, str | int] = {"query": query, "limit": max_results, "fields": self.FIELDS}
         client = _client(self._client)
         data: dict[str, Any] | None = None
         for attempt in range(self._max_retries):
@@ -256,8 +256,8 @@ class EuropePMCProvider:
         self._client = client
 
     def search(self, query: str, max_results: int = 10) -> list[WebResult]:
-        params = {"query": query, "format": "json", "pageSize": max_results,
-                  "resultType": "core"}
+        params: dict[str, str | int] = {"query": query, "format": "json",
+                                         "pageSize": max_results, "resultType": "core"}
         try:
             resp = _client(self._client).get(self.BASE, params=params,
                                              headers={"User-Agent": _UA.format(mailto="")})

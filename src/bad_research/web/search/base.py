@@ -82,7 +82,8 @@ class WebSearchToolProvider:
             )
         return rows
 
-    def _fetch_links(self, query: str, *, allowed=None, blocked=None) -> Any:
+    def _fetch_links(self, query: str, *, allowed: list[str] | None = None,
+                     blocked: list[str] | None = None) -> Any:
         if self._links_source is None:
             raise NotImplementedError(
                 "WebSearchToolProvider has no links_source — the host WebSearch "
@@ -112,14 +113,17 @@ class WebSearchToolProvider:
 def _fetch_clean_bridge(url: str) -> WebResult:
     """DESIGNED: bridge to KR-3 web/content/fetch_clean.py (frozen signature,
     INTERFACES_KEYLESS §4.1/§4.2). Until KR-3 lands, raise a clear error rather
-    than guess content."""
+    than guess content. Uses importlib so the soft KR-3 dependency is resolved at
+    call time, not import time."""
+    import importlib
+
     try:
-        from bad_research.web.content.fetch_clean import fetch_clean  # KR-3
+        mod = importlib.import_module("bad_research.web.content.fetch_clean")  # KR-3
     except ImportError as e:  # pragma: no cover - exercised once KR-3 lands
         raise NotImplementedError(
             "fetch() needs the KR-3 content layer (web/content/fetch_clean.py)."
         ) from e
-    d = fetch_clean(url)
+    d = mod.fetch_clean(url)
     return WebResult(
         url=d.get("url", url),
         title=(d.get("metadata") or {}).get("title", ""),
@@ -134,9 +138,9 @@ def _fetch_clean_bridge(url: str) -> WebResult:
 # Lazy module-level handle so tests can patch("...base.DDGS") and prod imports
 # the lib only when a DdgsProvider is constructed.
 try:  # pragma: no cover - import shim
-    from ddgs import DDGS  # type: ignore
+    from ddgs import DDGS
 except Exception:  # pragma: no cover
-    DDGS = None  # type: ignore
+    DDGS = None  # type: ignore[assignment, misc]
 
 
 class DdgsProvider:
@@ -202,7 +206,7 @@ class SearxngProvider:
         self.endpoint = endpoint.rstrip("/")
         self._client = client
 
-    def _get(self, params: dict[str, Any]) -> dict:
+    def _get(self, params: dict[str, Any]) -> dict[str, Any]:
         url = f"{self.endpoint}/search"
         if self._client is not None:
             resp = self._client.get(url, params=params, timeout=20.0)
@@ -210,7 +214,8 @@ class SearxngProvider:
             resp = httpx.get(url, params=params, timeout=20.0,
                              headers={"User-Agent": "bad-research/keyless (research tool)"})
         resp.raise_for_status()
-        return resp.json()
+        data: dict[str, Any] = resp.json()
+        return data
 
     def search(self, query: str, max_results: int = 10,
                engines: list[str] | None = None,
