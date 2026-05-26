@@ -21,7 +21,7 @@ def test_parse_extracts_title_and_url() -> None:
     assert snap.url == "https://example.com/login"
 
 
-def test_grounding_has_ref_accepts_eN_and_at_eN_and_bare() -> None:
+def test_grounding_has_ref_accepts_eN_and_at_eN_and_bare() -> None:  # noqa: N802
     snap = parse_snapshot(SNAPSHOT_JSON)
     assert snap.has_ref("@e3") is True
     assert snap.has_ref("e3") is True

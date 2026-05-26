@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from bad_research.browse.cache import ActCache, replay_key_for
 
 

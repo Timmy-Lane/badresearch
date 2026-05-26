@@ -5,9 +5,7 @@ from __future__ import annotations
 import json
 
 from bad_research.browse.extract_llm import LLMExtractProvider
-from bad_research.web.base import WebResult
 from tests.test_browse.conftest import FakeLLM, make_result
-
 
 SCHEMA = {
     "type": "object",

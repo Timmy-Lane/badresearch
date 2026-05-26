@@ -24,7 +24,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # avoid a hard import cycle; Snapshot is a plain dataclass
     from bad_research.browse.agent_browser import Snapshot
@@ -55,17 +55,17 @@ class Token:
     value: str
     line: int
     column: int
-    prev: Optional["Token"] = None
-    next: Optional["Token"] = None
+    prev: Token | None = None
+    next: Token | None = None
 
 
 # ============================================================ AST Node Types
 @dataclass
 class Node:
     name: str
-    description: Optional[str] = None
+    description: str | None = None
 
-    def get_child_by_name(self, name: str) -> Optional["Node"]:
+    def get_child_by_name(self, name: str) -> Node | None:
         return None
 
 
@@ -85,7 +85,7 @@ class ContainerNode(Node):
 
     children: list[Node] = field(default_factory=list)
 
-    def get_child_by_name(self, name: str) -> Optional[Node]:
+    def get_child_by_name(self, name: str) -> Node | None:
         for child in self.children:
             if child.name == name:
                 return child
@@ -98,7 +98,7 @@ class ContainerListNode(Node):
 
     children: list[Node] = field(default_factory=list)
 
-    def get_child_by_name(self, name: str) -> Optional[Node]:
+    def get_child_by_name(self, name: str) -> Node | None:
         for child in self.children:
             if child.name == name:
                 return child
@@ -130,8 +130,8 @@ class Lexer:
         self.pos = 0
         self.line = 1
         self.column = 1
-        self.head: Optional[Token] = None
-        self.tail: Optional[Token] = None
+        self.head: Token | None = None
+        self.tail: Token | None = None
 
     def tokenize(self) -> Token:
         sof = Token(TokenKind.SOF, "", 1, 0)
@@ -177,6 +177,7 @@ class Lexer:
     def _emit(self, kind: TokenKind, value: str) -> None:
         token = Token(kind, value, self.line, self.column)
         token.prev = self.tail
+        assert self.tail is not None  # invariant: tokenize() seeds tail with SOF
         self.tail.next = token
         self.tail = token
 
@@ -197,6 +198,7 @@ class Lexer:
         value = self.source[start : self.pos]
         token = Token(TokenKind.IDENTIFIER, value, self.line, start_col)
         token.prev = self.tail
+        assert self.tail is not None  # invariant: tokenize() seeds tail with SOF
         self.tail.next = token
         self.tail = token
 
@@ -243,7 +245,7 @@ class QueryParser:
     def __init__(self, query: str) -> None:
         self.query = query
         self.lexer = Lexer(query)
-        self.current: Optional[Token] = None
+        self.current: Token | None = None
 
     def parse(self) -> ContainerNode:
         sof = self.lexer.tokenize()
@@ -288,6 +290,7 @@ class QueryParser:
         """Parse: IDENTIFIER Description? (Container | List | epsilon)."""
         self._skip_ignored()
         self._expect(TokenKind.IDENTIFIER)
+        assert self.current is not None  # _expect raises if current is None
         name = self.current.value
         self._advance()
         description = None
@@ -357,24 +360,24 @@ AQL_RESOLVER_SYSTEM_PROMPT = (
 AQL_SNAPSHOT_TRUNC = 60_000  # keep the snapshot inside the host model's context (dossier 14 §5.4)
 
 
-def _ground_one(value: Any, snap: "Snapshot") -> Any:
+def _ground_one(value: Any, snap: Snapshot) -> Any:
     """Keep a ref only if it is grounded in snap.refs; lists are filtered; dicts recurse."""
     from bad_research.browse.agent_browser import normalize_ref
     if isinstance(value, str) and value.startswith("@"):
         return value if normalize_ref(value) in snap.refs else None
     if isinstance(value, list):
-        kept = [v for v in (_ground_one(x, snap) for x in value) if v is not None]
-        return kept or None
+        kept_list = [v for v in (_ground_one(x, snap) for x in value) if v is not None]
+        return kept_list or None
     if isinstance(value, dict):
-        kept = {k: gv for k, v in value.items() if (gv := _ground_one(v, snap)) is not None}
-        return kept or None
+        kept_dict = {k: gv for k, v in value.items() if (gv := _ground_one(v, snap)) is not None}
+        return kept_dict or None
     return value  # non-ref scalars pass through (already-extracted text)
 
 
-def resolve_aql(ast: ContainerNode, snap: "Snapshot", mapping: dict) -> dict:
+def resolve_aql(ast: ContainerNode, snap: Snapshot, mapping: dict[str, Any]) -> dict[str, Any]:
     """Ground a field→ref mapping against the snapshot refs. Drops every ref not present
     in snap.refs (dossier 14 §6.3(3) — a ref is valid iff it round-trips the AX tree)."""
-    out: dict = {}
+    out: dict[str, Any] = {}
     for child in ast.children:
         if child.name not in mapping:
             continue
@@ -384,13 +387,13 @@ def resolve_aql(ast: ContainerNode, snap: "Snapshot", mapping: dict) -> dict:
     return out
 
 
-def _deterministic_match(ast: ContainerNode, snap: "Snapshot") -> dict:
+def _deterministic_match(ast: ContainerNode, snap: Snapshot) -> dict[str, Any]:
     """No-LLM fallback: match each leaf field name to a ref whose accessible name matches
     (case- and underscore-insensitive substring). First match wins."""
     def norm(s: str) -> str:
         return s.replace("_", "").replace("-", "").replace(" ", "").lower()
 
-    mapping: dict = {}
+    mapping: dict[str, Any] = {}
     used: set[str] = set()
     for child in ast.children:
         key = norm(child.name)
@@ -405,7 +408,7 @@ def _deterministic_match(ast: ContainerNode, snap: "Snapshot") -> dict:
     return mapping
 
 
-def _parse_json_obj(text: str) -> dict:
+def _parse_json_obj(text: str) -> dict[str, Any]:
     """Tolerant JSON-object parse (strips ```json fences, finds the first {...})."""
     t = (text or "").strip()
     if t.startswith("```"):
@@ -439,7 +442,7 @@ class AqlExtractProvider:
     def __init__(self, llm: Any | None = None) -> None:
         self._llm = llm
 
-    def extract(self, source, schema, instruction: str = "") -> dict:
+    def extract(self, source: Any, schema: Any, instruction: str = "") -> dict[str, Any]:
         # source must expose .refs/.text — a Snapshot.
         snap = source
         if not hasattr(snap, "refs"):

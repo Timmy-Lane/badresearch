@@ -39,9 +39,9 @@ def fetch_tiered(
     *,
     tier_max: int,
     instruction: str | None = None,
-    schema: dict | str | None = None,
+    schema: dict[str, Any] | str | None = None,
     replay_key: str | None = None,
-    variables: dict | None = None,
+    variables: dict[str, Any] | None = None,
     # ---- injection seams (tests pass mocks; production gets real keyless defaults) ----
     _tier0: Any | None = None,
     _tier1_factory: Callable[[], Any | None] | None = None,
@@ -58,7 +58,7 @@ def fetch_tiered(
     # ---------- Rung 2: crawl4ai local JS render ----------
     if tier_max >= 1 and _is_empty(result):
         if _tier1_factory is None:
-            def _tier1_factory():
+            def _tier1_factory() -> Any | None:
                 try:
                     from bad_research.web.base import get_provider
                     return get_provider("crawl4ai")
@@ -107,7 +107,14 @@ def fetch_tiered(
     return result
 
 
-def _do_browse(url, instruction, *, replay_key, variables, browse) -> WebResult | None:
+def _do_browse(
+    url: str,
+    instruction: str,
+    *,
+    replay_key: str | None,
+    variables: dict[str, Any] | None,
+    browse: Any | None,
+) -> WebResult | None:
     """Drive the keyless AgentBrowserProvider (rung 2.5 lightpanda → 3 chrome inside browse()).
     Returns None if no provider is available (caller keeps the lower-tier result).
 
@@ -137,7 +144,9 @@ def _do_browse(url, instruction, *, replay_key, variables, browse) -> WebResult 
     if prov is None:
         return None
     try:
-        landed = prov.browse(url, instruction, replay_key=replay_key, variables=variables)
+        landed: WebResult | None = prov.browse(
+            url, instruction, replay_key=replay_key, variables=variables
+        )
     except Exception:
         return None
 

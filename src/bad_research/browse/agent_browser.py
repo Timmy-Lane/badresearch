@@ -27,7 +27,7 @@ import shutil
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
 
 from bad_research.web.base import WebResult
 
@@ -45,10 +45,11 @@ Runner = Callable[..., tuple[int, str, str]]
 
 
 def _default_runner(argv: list[str], *, timeout: float | None = None,
-                    env: dict | None = None, stdin: str | None = None) -> tuple[int, str, str]:
+                    env: dict[str, str] | None = None,
+                    stdin: str | None = None) -> tuple[int, str, str]:
     """The production runner: subprocess.run. Captures stdout/stderr text. Never raises on
     non-zero exit (the caller inspects returncode)."""
-    proc = subprocess.run(  # noqa: S603 — argv list, no shell
+    proc = subprocess.run(
         argv, capture_output=True, text=True, timeout=timeout,
         env=env, input=stdin,
     )
@@ -105,7 +106,7 @@ class _AgentBrowserCLI:
             argv += ["--headers", self.headers]
         return argv
 
-    def _env(self) -> dict | None:
+    def _env(self) -> dict[str, str] | None:
         if self.engine == "lightpanda":
             env = dict(os.environ)
             env["LIGHTPANDA_DISABLE_TELEMETRY"] = "true"  # dossier 14 §12.1
@@ -117,9 +118,9 @@ class _AgentBrowserCLI:
         env = self._env()
         # Pass stdin only when the runner accepts it; otherwise fall back to argv-only.
         if _runner_accepts_stdin(self._runner):
-            rc, out, _err = self._runner(argv, timeout=self.timeout_s, env=env, stdin=stdin)
+            _rc, out, _err = self._runner(argv, timeout=self.timeout_s, env=env, stdin=stdin)
         else:
-            rc, out, _err = self._runner(argv, timeout=self.timeout_s, env=env)
+            _rc, out, _err = self._runner(argv, timeout=self.timeout_s, env=env)
         return out
 
     # ---- lifecycle / nav (dossier 14 §3.1) ----
@@ -213,7 +214,7 @@ class Snapshot:
     a ref is valid iff its normalized id is a key here (dossier 14 §6.3 / §10B)."""
 
     text: str = ""
-    refs: dict[str, dict] = field(default_factory=dict)
+    refs: dict[str, dict[str, Any]] = field(default_factory=dict)
     title: str = ""
     url: str = ""
 
@@ -340,13 +341,25 @@ class AgentBrowserProvider:
         self._runner = runner
         self.program = program
 
-    def _cli(self, engine: str, *, session=None, state=None, headers=None) -> _AgentBrowserCLI:
+    def _cli(
+        self,
+        engine: Literal["lightpanda", "chrome"],
+        *,
+        session: str | None = None,
+        state: str | None = None,
+        headers: str | None = None,
+    ) -> _AgentBrowserCLI:
         return _AgentBrowserCLI(
             engine=engine, runner=self._runner, program=self.program,
             session=session, state=state, headers=headers,
         )
 
-    def snapshot(self, *, interactive: bool = True, engine: str | None = None) -> Snapshot:
+    def snapshot(
+        self,
+        *,
+        interactive: bool = True,
+        engine: Literal["lightpanda", "chrome"] | None = None,
+    ) -> Snapshot:
         cli = self._cli(engine or self.engine)
         return parse_snapshot(cli.snapshot(interactive=interactive))
 
@@ -356,7 +369,7 @@ class AgentBrowserProvider:
         instruction: str,
         *,
         max_steps: int = DEFAULT_MAX_STEPS,
-        variables: dict | None = None,
+        variables: dict[str, Any] | None = None,
         replay_key: str | None = None,
         steps: list[BrowseStep] | None = None,
         state: str | None = None,
@@ -369,10 +382,7 @@ class AgentBrowserProvider:
                              metadata={"unavailable": True, "provider": self.name})
 
         # ---- authed browse is chrome-only: lightpanda blocks --state/--profile (dossier 14 §12.4) ----
-        if state is not None or headers is not None:
-            engine = "chrome"
-        else:
-            engine = self.engine
+        engine = "chrome" if (state is not None or headers is not None) else self.engine
 
         # ---- rung-2.5 lightpanda first; fall back to chrome on an empty snapshot ----
         snap = self._open_and_snapshot(url, engine, state=state, headers=headers)
@@ -395,20 +405,28 @@ class AgentBrowserProvider:
                 snap = parse_snapshot(cli.snapshot(interactive=True))  # re-snapshot
 
         content = snap.text
+        metadata: dict[str, Any] = {
+            "engine": engine,
+            "provider": self.name,
+            "refs": list(snap.refs.keys()),
+            "steps_executed": executed,
+            "replay_key": replay_key,
+        }
         return WebResult(
             url=snap.url or url,
             title=snap.title,
             content=content,
-            metadata={
-                "engine": engine,
-                "provider": self.name,
-                "refs": list(snap.refs.keys()),
-                "steps_executed": executed,
-                "replay_key": replay_key,
-            },
+            metadata=metadata,
         )
 
-    def _open_and_snapshot(self, url, engine, *, state=None, headers=None) -> Snapshot:
+    def _open_and_snapshot(
+        self,
+        url: str,
+        engine: Literal["lightpanda", "chrome"],
+        *,
+        state: str | None = None,
+        headers: str | None = None,
+    ) -> Snapshot:
         cli = self._cli(engine, state=state, headers=headers)
         cli.open(url)
         cli.wait_load("networkidle")
