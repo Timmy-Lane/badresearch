@@ -210,7 +210,29 @@ def highlights(markdown: str, query: str, k: int = HL_TOPK) -> list[dict[str, An
 
 
 def pdf_to_markdown(pdf_bytes: bytes) -> str:
-    raise NotImplementedError  # Task 6
+    """PDF bytes -> markdown via pymupdf4llm (dossier 12 §5). KNOWN.
+
+    pymupdf4llm.to_markdown does column-aware reflow, heading detection, GFM tables.
+    On unparseable bytes returns "" (the caller's junk gate handles it). For scanned
+    PDFs (no text layer) the host-model Read-tool vision path is the escape hatch
+    (§5) — wired by the orchestrator, not here.
+    """
+    import pymupdf  # fitz
+    import pymupdf4llm  # type: ignore[import-untyped]
+
+    try:
+        doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")  # type: ignore[no-untyped-call]
+    except Exception:
+        return ""
+    try:
+        return str(pymupdf4llm.to_markdown(doc) or "")
+    except Exception:
+        return ""
+    finally:
+        try:
+            doc.close()  # type: ignore[no-untyped-call]
+        except Exception:
+            pass
 
 
 def llm_clean(markdown: str) -> str:
