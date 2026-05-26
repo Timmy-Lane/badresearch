@@ -1,0 +1,230 @@
+"""Core fetch logic — reusable by CLI and MCP server."""
+
+from __future__ import annotations
+
+import hashlib
+from urllib.parse import urlparse
+
+from bad_research.browse import fetch_tiered  # Tier 0->3 ladder hook
+
+
+def fetch_and_save(
+    vault,
+    url: str,
+    tags: list[str] | None = None,
+    title: str | None = None,
+    parent: str | None = None,
+    provider_name: str | None = None,
+    save_assets: bool = False,
+    visible: bool = False,
+    *,
+    tier_max: int | None = None,
+    instruction: str | None = None,
+    schema: dict | str | None = None,
+) -> dict:
+    """Fetch a URL and save as a research note. Returns result dict.
+
+    With none of `tier_max`/`instruction`/`schema` set (the default), behaviour is
+    byte-for-byte unchanged: a single `prov.fetch(url)` via the configured provider.
+    Setting any of them routes the fetch through the Tier 0->3 escalation ladder
+    (`browse.fetch_tiered`), which may climb to JS-render / typed-extract / agentic browse.
+
+    Raises:
+        ValueError: If URL is already fetched.
+        RuntimeError: If fetch fails.
+    """
+    from bad_research.web.base import get_provider
+
+    tags = tags or []
+    conn = vault.db
+
+    # Check if URL already fetched
+    existing = conn.execute("SELECT note_id FROM sources WHERE url = ?", (url,)).fetchone()
+    if existing:
+        raise ValueError(f"URL already fetched as note '{existing['note_id']}'")
+
+    # Auto-visible for sites that kill headless sessions on first contact
+    if not visible and vault.config.web_profile:
+        from urllib.parse import urlparse as _urlparse
+
+        domain = _urlparse(url).netloc.lower()
+        _auth_aggressive = (
+            "linkedin.com", "twitter.com", "x.com", "facebook.com",
+            "instagram.com", "tiktok.com",
+        )
+        if any(d in domain for d in _auth_aggressive):
+            visible = True
+
+    # Fetch content — opt-in ladder when any tier arg is set, else the unchanged default path.
+    use_ladder = tier_max is not None or instruction is not None or schema is not None
+    if use_ladder:
+        result = fetch_tiered(
+            url,
+            tier_max=tier_max if tier_max is not None else 3,
+            instruction=instruction,
+            schema=schema,
+        )
+        # The ladder already chose a provider; record a synthetic name.
+        prov_name = result.metadata.get("fetch_provider") \
+            or ("browse" if instruction else "tiered")
+
+        class _ProvShim:
+            name = prov_name
+        prov = _ProvShim()
+    else:
+        prov = get_provider(
+            provider_name or vault.config.web_provider,
+            profile=vault.config.web_profile,
+            magic=vault.config.web_magic,
+            headless=not visible,
+        )
+        result = prov.fetch(url)
+
+    # Detect login redirects — abort instead of saving junk
+    if result.looks_like_login_wall(url):
+        raise RuntimeError(
+            f"Redirected to login page ({result.title}). "
+            "Your browser profile session may have expired. "
+            "Run 'bad setup' and create a new login profile."
+        )
+
+    # Detect junk pages — captcha, error pages, binary garbage, empty content
+    junk_reason = result.looks_like_junk()
+    if junk_reason:
+        raise RuntimeError(f"Skipped junk content: {junk_reason}")
+
+    # Write note + sync + record source (stubbable seam for tests)
+    note_title = title or result.title or urlparse(url).path.split("/")[-1] or "Untitled"
+    domain = result.domain
+
+    note_id = _persist_note(
+        vault, url, result, prov, tags, note_title, parent, save_assets
+    )
+    raw_file_path = result.metadata.get("raw_file")
+    note_rel_path = result.metadata.get("_note_path", f"research/notes/{note_id}.md")
+
+    # Save assets if requested
+    saved_assets: list[dict] = []
+    if save_assets:
+        from bad_research.cli.fetch import _save_assets
+
+        assets_dir = vault.root / "research" / "assets" / note_id
+        saved_assets = _save_assets(conn, result, note_id, assets_dir)
+
+    return {
+        "note_id": note_id,
+        "title": note_title,
+        "url": url,
+        "domain": domain,
+        "provider": prov.name,
+        "path": note_rel_path,
+        "word_count": len(result.content.split()),
+        "assets": saved_assets,
+        "raw_file": raw_file_path,
+    }
+
+
+def _persist_note(vault, url, result, prov, tags, note_title, parent, save_assets):
+    """Write the note, persist raw-file / extracted frontmatter, sync, and record source.
+
+    Returns the ``note_id`` string. Any saved raw-file path is stashed on
+    ``result.metadata["raw_file"]`` so the caller can surface it without a tuple return
+    (keeps the stub seam a simple ``-> str``). Isolated from ``fetch_and_save`` so tests can
+    stub it without dragging in the full sync machinery. The logic here is identical to
+    the pre-ladder inline body of ``fetch_and_save`` (plus the new ``extracted`` block).
+    """
+    from bad_research.core.note import write_note
+    from bad_research.core.sync import compute_sync_plan, execute_sync
+
+    conn = vault.db
+    domain = result.domain
+
+    extra_meta = {
+        "source": url,
+        "source_domain": domain,
+        "fetched_at": result.fetched_at.isoformat(),
+        "fetch_provider": prov.name,
+    }
+    if result.metadata.get("author"):
+        extra_meta["author"] = result.metadata["author"]
+
+    note_path = write_note(
+        vault.notes_dir,
+        title=note_title,
+        body=result.content,
+        tags=tags,
+        status="draft",
+        source=url,
+        parent=parent,
+        extra_frontmatter=extra_meta,
+    )
+
+    # Save raw file (PDF, etc.) if present
+    raw_file_path = None
+    if result.raw_bytes and result.raw_content_type:
+        ext_map = {
+            "application/pdf": ".pdf",
+            "image/png": ".png",
+            "image/jpeg": ".jpg",
+            "image/gif": ".gif",
+            "image/webp": ".webp",
+        }
+        ext = ext_map.get(result.raw_content_type, "")
+        if ext:
+            raw_dir = vault.root / "research" / "raw"
+            raw_dir.mkdir(parents=True, exist_ok=True)
+            raw_filename = note_path.stem + ext
+            raw_file = raw_dir / raw_filename
+            raw_file.write_bytes(result.raw_bytes)
+            raw_file_path = f"raw/{raw_filename}"
+
+    # Note: tagging and summarization is the agent's job, not an automatic process.
+
+    # Add raw_file reference to frontmatter AFTER enrich (enrich rewrites frontmatter)
+    if raw_file_path:
+        note_text = note_path.read_text(encoding="utf-8")
+        if note_text.startswith("---") and "raw_file:" not in note_text:
+            end = note_text.find("---", 3)
+            if end != -1:
+                note_text = (
+                    note_text[:end]
+                    + f"raw_file: {raw_file_path}\n"
+                    + note_text[end:]
+                )
+                note_path.write_text(note_text, encoding="utf-8")
+
+    # Persist any typed-extraction dict from the Tier-2 ladder rung into frontmatter.
+    extracted = result.metadata.get("extracted")
+    if extracted:
+        note_text = note_path.read_text(encoding="utf-8")
+        if note_text.startswith("---") and "extracted:" not in note_text:
+            import json as _json
+            end = note_text.find("---", 3)
+            if end != -1:
+                note_text = (
+                    note_text[:end]
+                    + "extracted: " + _json.dumps(extracted, ensure_ascii=False) + "\n"
+                    + note_text[end:]
+                )
+                note_path.write_text(note_text, encoding="utf-8")
+
+    # Sync
+    note_id = note_path.stem
+    plan = compute_sync_plan(vault)
+    if plan.to_add or plan.to_update:
+        execute_sync(vault, plan)
+
+    # Record source
+    content_hash = hashlib.sha256(result.content.encode("utf-8")).hexdigest()[:16]
+    conn.execute(
+        """INSERT INTO sources (url, note_id, domain, fetched_at, provider, content_hash)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (url, note_id, domain, result.fetched_at.isoformat(), prov.name, content_hash),
+    )
+    conn.commit()
+
+    if raw_file_path:
+        result.metadata["raw_file"] = raw_file_path
+    # Preserve the original exact relative path (str(note_path.relative_to(vault.root))).
+    result.metadata["_note_path"] = str(note_path.relative_to(vault.root))
+    return note_id

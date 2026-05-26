@@ -78,6 +78,12 @@ def get_browse_provider(name: str | None = None) -> BrowseProvider | None:
     Returns None for unknown names or unavailable backends.
     """
     if name in (None, "browser-use"):
+        # Probe the optional `browser_use` lib (the wrapper imports it lazily inside
+        # browse(), so the wrapper module alone is not proof the backend is usable).
+        try:
+            import browser_use  # noqa: F401
+        except ImportError:
+            return None
         try:
             from bad_research.browse.browse_browseruse import BrowserUseProvider
         except ImportError:
@@ -86,6 +92,12 @@ def get_browse_provider(name: str | None = None) -> BrowseProvider | None:
 
     if name == "browserbase":
         if not os.environ.get("BROWSERBASE_API_KEY"):
+            return None
+        # Probe the optional `stagehand` SDK (BrowserbaseProvider imports it lazily in
+        # _make_stagehand, so we must probe it here to honour the graceful contract).
+        try:
+            import stagehand  # noqa: F401
+        except ImportError:
             return None
         try:
             from bad_research.browse.browse_browserbase import BrowserbaseProvider
