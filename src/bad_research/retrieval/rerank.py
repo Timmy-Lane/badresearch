@@ -1,40 +1,44 @@
-"""Rerankers behind the Reranker Protocol.
+"""Rerankers behind the Reranker Protocol (keyless).
 
-Default: CohereReranker (rerank-v3.5, reranks the FULL candidate set — NIA §5.4).
-Offline: BGEReranker (bge-reranker-v2-m3) via FlagEmbedding, with a graceful
-sentence-transformers CrossEncoder fallback when FlagEmbedding isn't installed.
+Default: ClaudeCodeReranker (host-model LLM-rerank; the body lands in KR-5 — KR-1
+ships the typed stub). Local: BGEReranker (ms-marco-MiniLM / bge-reranker) behind
+the [local] extra. None: identity (sort by the engine's initial score).
 
-[VERIFIED 2026-05-26] against cohere==7.0.0 (the brief said ~v5/v7.x):
-  ClientV2.rerank(model=, query=, documents=, top_n=) -> V2RerankResponse with
-  `.results[i].index` and `.results[i].relevance_score`. Maps cleanly to
-  Reranker.rerank(query, docs) -> [(idx, score)] desc. `rerank-v3.5` is a valid
-  model id. No [CORRECTION] needed.
+The old CohereReranker is removed — pure keyless, no COHERE_API_KEY.
 """
 from __future__ import annotations
 
-import os
 from collections.abc import Callable
 from typing import Any
+
+from bad_research.retrieval.base import Reranker
 
 # A local cross-encoder scorer: maps [(query, doc)] -> [relevance_score].
 Scorer = Callable[[list[tuple[str, str]]], list[float]]
 
 
-class CohereReranker:
-    def __init__(self, *, model: str = "rerank-v3.5", api_key: str | None = None,
-                 client: Any = None):
-        self.model = model
-        if client is not None:
-            self._client = client
-        else:
-            import cohere  # lazy
-            self._client = cohere.ClientV2(api_key or os.environ["COHERE_API_KEY"])
+class ClaudeCodeReranker:
+    """Host-model LLM-reranker (the keyless DEFAULT). KR-5 fills `rerank` with the
+    verbatim LLM-rerank prompt (pointwise 0..1, temp=0, ~800-char truncate, JSON
+    out, injection preamble). KR-1 ships the typed stub so callers wire cleanly."""
+
+    name = "claude-code"
 
     def rerank(self, query: str, docs: list[str]) -> list[tuple[int, float]]:
-        if not docs:
-            return []
-        resp = self._client.rerank(model=self.model, query=query, documents=docs, top_n=len(docs))
-        return [(r.index, float(r.relevance_score)) for r in resp.results]
+        raise NotImplementedError(
+            "ClaudeCodeReranker.rerank is the host-model LLM-rerank, built in KR-5"
+        )
+
+
+class IdentityReranker:
+    """The `--no-rerank` floor: keep the engine's initial order, descending
+    pseudo-scores, stable by index. Keyless, deterministic, $0."""
+
+    name = "identity"
+
+    def rerank(self, query: str, docs: list[str]) -> list[tuple[int, float]]:
+        n = len(docs)
+        return [(i, float(n - i)) for i in range(n)]
 
 
 def _default_bge_scorer(model: str) -> Scorer:
@@ -78,10 +82,15 @@ class BGEReranker:
 
 
 def get_reranker(config: Any, *, client: Any = None,
-                 bge_scorer: Scorer | None = None) -> CohereReranker | BGEReranker:
-    """Cohere when rerank_model is a 'rerank*' id AND a COHERE_API_KEY exists
-    (or a client is injected); else the offline BGE reranker."""
-    model = getattr(config, "rerank_model", "rerank-v3.5")
-    if model.startswith("rerank") and (client is not None or os.environ.get("COHERE_API_KEY")):
-        return CohereReranker(model=model, client=client)
-    return BGEReranker(model=model, scorer=bge_scorer)
+                 bge_scorer: Scorer | None = None) -> Reranker:
+    """Keyless reranker factory keyed on config.reranker:
+      "host"  -> ClaudeCodeReranker (host-model LLM-rerank; the default; KR-5 body)
+      "local" -> BGEReranker (ms-marco-MiniLM / bge-reranker-v2-m3; [local])
+      "none"  -> IdentityReranker (the --no-rerank floor)
+    Unknown -> "host". The `client` kwarg is accepted for KR-5 test injection."""
+    choice = getattr(config, "reranker", "host")
+    if choice == "none":
+        return IdentityReranker()
+    if choice == "local":
+        return BGEReranker(scorer=bge_scorer)
+    return ClaudeCodeReranker()
