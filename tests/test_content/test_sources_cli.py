@@ -75,7 +75,8 @@ def test_arxiv_source_notes(monkeypatch) -> None:
     class _Resp:
         content = tarball
 
-    monkeypatch.setattr(src.httpx, "get", lambda url, **kw: _Resp())
+    # FIX 2: arxiv now fetches via _safe_get (per-redirect SSRF re-validation).
+    monkeypatch.setattr(src, "_safe_get", lambda url, **kw: _Resp())
     monkeypatch.setattr(src, "assert_url_safe", lambda u: None)
     monkeypatch.setattr(src, "_arxiv_atom_meta",
                         lambda aid: {"title": "Intro Paper", "published": "2024-03-15"})

@@ -22,7 +22,23 @@ from urllib.parse import urlparse
 
 import httpx
 
-from bad_research.core.fetcher import assert_url_safe
+from bad_research.core.fetcher import assert_url_safe, safe_redirect_get
+
+
+def _safe_get(url: str, *, timeout: float, headers: dict[str, str] | None = None) -> httpx.Response:
+    """GET `url` with per-redirect SSRF re-validation (FIX 2).
+
+    Every extractor used `httpx.get(url, follow_redirects=True)`, which httpx follows
+    with NO further SSRF check — a public URL that 302s to `http://169.254.169.254/`
+    (cloud metadata) or another internal host would be fetched silently. This wraps the
+    kept `safe_redirect_get` (core/fetcher): an httpx.Client with redirects DISABLED,
+    walking the chain manually and calling `assert_url_safe` on every hop. The entry
+    `assert_url_safe(url)` checks at the call sites stay (defence-in-depth on the first
+    hop); this closes the redirect bypass exactly as `_static_fetch` already does.
+    """
+    with httpx.Client(follow_redirects=False, timeout=timeout) as client:
+        resp: httpx.Response = safe_redirect_get(client, url, headers=headers)
+        return resp
 
 
 class ExtractorUnavailable(RuntimeError):
@@ -225,12 +241,12 @@ def github_file(owner: str, repo: str, path: str,
     if branch is None:
         meta_url = f"https://api.github.com/repos/{owner}/{repo}"
         assert_url_safe(meta_url)
-        branch = httpx.get(meta_url, follow_redirects=True, timeout=15).json().get(
+        branch = _safe_get(meta_url, timeout=15).json().get(
             "default_branch", "main"
         )
     raw_url = f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}"
     assert_url_safe(raw_url)
-    text = httpx.get(raw_url, follow_redirects=True, timeout=15).text
+    text = _safe_get(raw_url, timeout=15).text
     return {
         "title": f"{owner}/{repo}:{path}",
         "source": f"https://github.com/{owner}/{repo}/blob/{branch}/{path}",
@@ -304,7 +320,7 @@ def arxiv_source_notes(url: str) -> dict[str, Any]:
     aid = m.group(1) if m else url.rstrip("/").split("/")[-1]
     src_url = f"https://export.arxiv.org/e-print/{aid}"
     assert_url_safe(src_url)
-    raw = httpx.get(src_url, follow_redirects=True, timeout=30).content
+    raw = _safe_get(src_url, timeout=30).content
     body = _detex(_extract_tex(raw))
     meta = _arxiv_atom_meta(aid)
     return {
@@ -350,7 +366,7 @@ def _discover_sitemap(host: str) -> str:
     robots_url = f"https://{host}/robots.txt"
     assert_url_safe(robots_url)
     try:
-        r = httpx.get(robots_url, follow_redirects=True, timeout=15)
+        r = _safe_get(robots_url, timeout=15)
         for line in r.text.splitlines():
             if line.lower().startswith("sitemap:"):
                 return line.split(":", 1)[1].strip()
@@ -361,7 +377,7 @@ def _discover_sitemap(host: str) -> str:
 
 def _sitemap_urls_from(sitemap_url: str) -> list[dict[str, Any]]:
     assert_url_safe(sitemap_url)
-    root = ET.fromstring(httpx.get(sitemap_url, follow_redirects=True, timeout=15).content)
+    root = ET.fromstring(_safe_get(sitemap_url, timeout=15).content)
     ns = {"s": "http://www.sitemaps.org/schemas/sitemap/0.9"}
     if root.tag.endswith("sitemapindex"):
         out: list[dict[str, Any]] = []
@@ -396,7 +412,7 @@ def llms_txt_notes(host: str) -> dict[str, Any] | list[dict[str, Any]]:
     """
     full_url = f"https://{host}/llms-full.txt"
     assert_url_safe(full_url)
-    full = httpx.get(full_url, follow_redirects=True, timeout=15)
+    full = _safe_get(full_url, timeout=15)
     if full.status_code == 200 and full.text.strip():
         return {
             "title": f"{host} docs (llms-full)",
@@ -409,7 +425,7 @@ def llms_txt_notes(host: str) -> dict[str, Any] | list[dict[str, Any]]:
         }
     idx_url = f"https://{host}/llms.txt"
     assert_url_safe(idx_url)
-    idx = httpx.get(idx_url, follow_redirects=True, timeout=15)
+    idx = _safe_get(idx_url, timeout=15)
     links = re.findall(r"\[([^\]]+)\]\((https?://[^)]+)\)", idx.text)
     return [
         {

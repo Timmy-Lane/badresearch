@@ -53,12 +53,14 @@ def test_feed_notes(monkeypatch) -> None:
 
 
 def test_sitemap_urls(monkeypatch) -> None:
+    # FIX 2: extractors now fetch via _safe_get (per-redirect SSRF re-validation),
+    # not bare httpx.get — patch the new seam.
     def fake_get(url, **kw):
         if url.endswith("robots.txt"):
             return _Resp(text=ROBOTS)
         return _Resp(content=SITEMAP_XML.encode("utf-8"))
 
-    monkeypatch.setattr(src.httpx, "get", fake_get)
+    monkeypatch.setattr(src, "_safe_get", fake_get)
     monkeypatch.setattr(src, "assert_url_safe", lambda u: None)
     out = sitemap_urls("ex.com")
     assert {u["source"] for u in out} == {"https://ex.com/a", "https://ex.com/b"}
@@ -73,7 +75,7 @@ def test_llms_txt_full(monkeypatch) -> None:
             return _Resp(text=LLMS_FULL)
         return _Resp(text="", status=404)
 
-    monkeypatch.setattr(src.httpx, "get", fake_get)
+    monkeypatch.setattr(src, "_safe_get", fake_get)
     monkeypatch.setattr(src, "assert_url_safe", lambda u: None)
     out = llms_txt_notes("docs.ex.com")
     assert isinstance(out, dict)
@@ -87,7 +89,7 @@ def test_llms_txt_index_harvest(monkeypatch) -> None:
             return _Resp(text="", status=404)
         return _Resp(text=LLMS_INDEX)
 
-    monkeypatch.setattr(src.httpx, "get", fake_get)
+    monkeypatch.setattr(src, "_safe_get", fake_get)
     monkeypatch.setattr(src, "assert_url_safe", lambda u: None)
     out = llms_txt_notes("docs.ex.com")
     assert isinstance(out, list)
