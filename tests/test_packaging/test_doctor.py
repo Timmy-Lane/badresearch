@@ -18,13 +18,13 @@ def test_doctor_runs(monkeypatch):
     assert "anthropic" in result.output.lower()
 
 
-def test_doctor_reports_active_from_env(monkeypatch):
-    monkeypatch.setenv("TAVILY_API_KEY", "tvly-zzz")
+def test_doctor_lists_keyless_providers(monkeypatch):
     result = runner.invoke(app, ["doctor", "--json"])
     assert result.exit_code == 0, result.output
     data = json.loads(result.output)["data"]
     by_name = {p["name"]: p for p in data["providers"]}
-    assert by_name["tavily"]["key_present"] is True
+    assert by_name["websearch"]["requires_key"] is False
+    assert by_name["ddgs"]["requires_key"] is False
 
 
 def test_doctor_searxng_always_keyless(monkeypatch):

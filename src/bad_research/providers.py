@@ -24,17 +24,21 @@ class Provider:
 # The registry. Keys are read from env OR ~/.config/bad-research/config.toml (SPEC §12);
 # this table only knows the env-var name — config.toml merging is the caller's job.
 PROVIDERS: tuple[Provider, ...] = (
-    Provider("anthropic", "ANTHROPIC_API_KEY", "anthropic", "(base)", "llm"),
-    Provider("cohere", "COHERE_API_KEY", "cohere", "search", "embed"),
-    Provider("tavily", "TAVILY_API_KEY", "tavily", "search", "search"),
-    Provider("exa", "EXA_API_KEY", "exa_py", "search", "search"),
-    Provider("sonar", "PPLX_API_KEY", None, "(base)", "search"),
-    Provider("firecrawl", "FIRECRAWL_API_KEY", "firecrawl", "search", "browse"),
-    Provider("agentql", "AGENTQL_API_KEY", "agentql", "browse", "browse"),
-    Provider("browserbase", "BROWSERBASE_API_KEY", "browserbase", "browse", "browse"),
-    Provider("browser_use", None, "browser_use", "browse", "browse"),
-    Provider("crawl4ai", None, "crawl4ai", "browse", "browse"),
-    Provider("searxng", None, None, "(base)", "search"),
+    Provider("anthropic-host", None, "anthropic", "(base)", "llm"),    # host supplies inference; no key
+    Provider("websearch", None, None, "(base)", "search"),             # host WebSearch tool (KR-2)
+    Provider("ddgs", None, "ddgs", "(base)", "search"),                # keyless multi-engine lib (KR-2)
+    Provider("searxng", None, None, "(base)", "search"),               # self-host JSON, no key (KR-2)
+    Provider("crawl4ai", None, "crawl4ai", "browse", "browse"),        # local JS render
+    Provider("agent-browser", None, None, "browse", "browse"),         # local CLI (CDP); KR-4
+    Provider("arxiv", None, None, "(base)", "search"),                 # keyless vertical (httpx); KR-2
+    Provider("openalex", None, None, "(base)", "search"),
+    Provider("crossref", None, None, "(base)", "search"),
+    Provider("europepmc", None, None, "(base)", "search"),
+    Provider("pubmed", None, None, "(base)", "search"),
+    Provider("wikipedia", None, None, "(base)", "search"),
+    Provider("bge-local", None, "sentence_transformers", "local", "embed"),     # [local] opt-in; KR-5
+    Provider("ms-marco-local", None, "sentence_transformers", "local", "rerank"),
+    Provider("nli-deberta", None, "sentence_transformers", "local", "nli"),
 )
 
 
