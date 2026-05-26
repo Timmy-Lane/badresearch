@@ -13,7 +13,13 @@ from pathlib import Path
 from typing import Any
 
 from bad_research.embed.base import EmbedProvider
-from bad_research.retrieval.constants import NEGATION_PATTERN, SEMANTIC_CACHE_THRESHOLD
+from bad_research.retrieval.constants import (
+    LLM_RERANK_STOPWORDS,
+    NEGATION_PATTERN,
+    SEMANTIC_CACHE_THRESHOLD,
+    SEMANTIC_CACHE_THRESHOLD_LEXICAL,
+)
+from bad_research.search.fts import preprocess_query
 
 _NEG_RE = re.compile(NEGATION_PATTERN, re.IGNORECASE)
 
@@ -30,6 +36,15 @@ CREATE TABLE IF NOT EXISTS query_cache (
 
 def has_negation(query: str) -> bool:
     return bool(_NEG_RE.search(query))
+
+
+def negation_markers(query: str) -> frozenset[str]:
+    """The SET of distinct negation markers in a query (lowercased). Comparing
+    marker SETS (not just the has-negation boolean) is what lets the lexical cache
+    distinguish e.g. "...in no_std" (markers {no_std}) from "...NOT ... in no_std"
+    (markers {not, no_std}) — the second adds a negation the first lacked, so it
+    must MISS even though both are "negated" and the token overlap is 1.0."""
+    return frozenset(m.lower() for m in _NEG_RE.findall(query))
 
 
 def _cosine(a: list[float], b: list[float]) -> float:
@@ -85,3 +100,95 @@ class SemanticCache:
             (query, json.dumps(qv), int(has_negation(query)), json.dumps(payload)),
         )
         self.conn.commit()
+
+
+# ── Keyless token-set cache (dossier 15 §6.2) — the FTS-default backend ───────
+
+_LEX_DDL = """
+CREATE TABLE IF NOT EXISTS query_cache_lex (
+    query_text   TEXT PRIMARY KEY,
+    tokens       TEXT NOT NULL,   -- json sorted list[str]
+    has_negation INTEGER NOT NULL,
+    neg_markers  TEXT NOT NULL DEFAULT '[]',  -- json sorted list[str] of negation markers
+    payload      TEXT NOT NULL,   -- json
+    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
+
+def _normalize_tokens(query: str) -> frozenset[str]:
+    """Lowercase, strip FTS markers, drop the tiny stopword set (dossier 15 §6.2)."""
+    raw = preprocess_query(query).replace('"', "").replace("*", "")
+    toks = (w.lower() for w in raw.split())
+    return frozenset(t for t in toks if t and t not in LLM_RERANK_STOPWORDS)
+
+
+def _token_sim(a: frozenset[str], b: frozenset[str]) -> float:
+    """Overlap coefficient: |a∩b| / min(|a|,|b|). Recall-biased so suffix noise
+    on the larger side still scores high (dossier 15 §6.2)."""
+    if not a or not b:
+        return 0.0
+    return len(a & b) / min(len(a), len(b))
+
+
+class LexicalCacheBackend:
+    """Keyless token-set semantic cache (dossier 15 §6.2). HIT at overlap ≥ 0.85
+    with the negation guard. Catches reorder + suffix-noise; misses true
+    paraphrase (which just re-runs — never a wrong answer). Same get/put surface
+    as SemanticCache."""
+
+    def __init__(self, db_path: Path,
+                 *, threshold: float = SEMANTIC_CACHE_THRESHOLD_LEXICAL):
+        self.path = Path(db_path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.threshold = threshold
+        self.conn = sqlite3.connect(str(self.path))
+        self.conn.row_factory = sqlite3.Row
+        self.conn.executescript(_LEX_DDL)
+        self.conn.commit()
+
+    def get(self, query: str) -> dict[str, Any] | None:
+        q_tokens = _normalize_tokens(query)
+        q_markers = negation_markers(query)
+        best = None
+        best_sim = -1.0
+        for row in self.conn.execute(
+            "SELECT query_text, tokens, neg_markers, payload FROM query_cache_lex"
+        ):
+            cached = frozenset(json.loads(row["tokens"]))
+            sim = _token_sim(q_tokens, cached)
+            if sim > best_sim:
+                best_sim, best = sim, row
+        if best is None or best_sim < self.threshold:
+            return None
+        # Negation guard: the new query must not introduce a negation marker the
+        # cached query lacked (and vice-versa). Comparing marker SETS — not the
+        # has-negation boolean — distinguishes "...in no_std" from "...NOT...no_std"
+        # even though both are "negated" and overlap is 1.0 (dossier 15 §6.2).
+        cached_markers = frozenset(json.loads(best["neg_markers"]))
+        if q_markers != cached_markers:
+            return None
+        return {"payload": json.loads(best["payload"]),
+                "cache_similarity": best_sim,
+                "original_query": best["query_text"]}
+
+    def put(self, query: str, payload: dict[str, Any]) -> None:
+        tokens = sorted(_normalize_tokens(query))
+        markers = sorted(negation_markers(query))
+        self.conn.execute(
+            "INSERT OR REPLACE INTO query_cache_lex "
+            "(query_text, tokens, has_negation, neg_markers, payload) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (query, json.dumps(tokens), int(has_negation(query)),
+             json.dumps(markers), json.dumps(payload)),
+        )
+        self.conn.commit()
+
+
+def get_cache(db_path: Path, *, embedder: EmbedProvider | None = None) -> Any:
+    """Select the cache backend (INTERFACES_KEYLESS §5.5): token-set lexical when
+    no embedder (the keyless default), cosine 0.92 when a [local] bi-encoder is
+    resident."""
+    if embedder is None:
+        return LexicalCacheBackend(Path(db_path))
+    return SemanticCache(Path(db_path), embedder)
