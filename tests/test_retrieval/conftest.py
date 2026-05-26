@@ -48,3 +48,31 @@ def make_chunk(chunk_id="c", note_id="n", text="hello world",
 @pytest.fixture
 def chunk_factory():
     return make_chunk
+
+
+from bad_research.llm.base import LLMResponse  # noqa: E402
+
+
+class FakeLLMProvider:
+    """Records the messages sent to complete() and replays a scripted text reply.
+    Implements the bad_research.llm.base.LLMProvider Protocol surface used by
+    ClaudeCodeReranker (only .complete and .name are touched)."""
+
+    name = "fake"
+
+    def __init__(self, reply_text: str = "[]"):
+        self.reply_text = reply_text
+        self.calls: list[dict] = []
+
+    def complete(self, messages, *, tier, tools=None, cache=False,
+                 max_tokens=4096, temperature=0.1):
+        self.calls.append({
+            "messages": messages, "tier": tier, "tools": tools,
+            "cache": cache, "max_tokens": max_tokens, "temperature": temperature,
+        })
+        return LLMResponse(text=self.reply_text, tool_calls=[], usage={}, model="fake")
+
+
+@pytest.fixture
+def fake_llm():
+    return FakeLLMProvider
