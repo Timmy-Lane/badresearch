@@ -5,12 +5,15 @@ Tier A byte-identity ($0) -> Tier B local NLI ($0) -> Tier C triage-LLM judge
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from enum import Enum
 
 from bad_research.llm.base import LLMMessage, LLMProvider
 
 from .anchors import ClaimAnchor, quote_sha
+from .nli import NLILabel, NLIModel, classify_nli
+from .render import extract_citations
 
 
 class VerifyVerdict(str, Enum):
@@ -93,3 +96,92 @@ def tier_c_judge(
         )
         results.extend(_parse_judge_json(resp.text, len(batch)))
     return results
+
+
+# soft/hard score bands for the disposition table (dossier §2.3).
+PARTIAL_LOW, SUPPORTED_FLOOR = 0.40, 0.70
+
+
+@dataclass
+class CitationFinding:
+    anchor_id: str
+    sentence: str
+    verdict: VerifyVerdict
+    score: float
+
+
+@dataclass
+class VerifyResult:
+    findings: list[CitationFinding]
+
+
+def _split_sentences(text: str) -> list[str]:
+    # Shared with the gate; kept simple + deterministic. Split on terminal
+    # punctuation followed by whitespace/newline. Newline-delimited report lines
+    # are each at least one sentence.
+    parts: list[str] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        for piece in re.split(r"(?<=[.!?])\s+", line):
+            piece = piece.strip()
+            if piece:
+                parts.append(piece)
+    return parts
+
+
+class CitationVerifier:
+    """Stage-11.5 re-grounding pass. Tool-locked [Read]: reads the report +
+    anchors + note bodies; writes only the findings + the verified flag (via the
+    AnchorStore DAL) -- it does NOT edit the report. dossier §2.3."""
+
+    def __init__(self, *, nli: NLIModel, llm: LLMProvider) -> None:
+        self.nli = nli
+        self.llm = llm
+
+    def verify(self, report_md, store, note_bodies: dict[str, str]) -> VerifyResult:
+        # Pass 1: per cited sentence, run Tier A then Tier B; collect the
+        # NLI-neutral band for a single batched Tier-C call.
+        pending: list[tuple[CitationFinding, str, str]] = []  # (finding-stub, claim, quote)
+        findings: list[CitationFinding] = []
+
+        for sent in _split_sentences(report_md):
+            for token in extract_citations(sent):
+                anchor = store.get(token)
+                if anchor is None:
+                    continue  # dangling cite -- the gate (Task 11) handles it
+                body = note_bodies.get(anchor.note_id, "")
+                # Tier A -- byte-identity ($0).
+                if not tier_a_byte_identity(anchor, body):
+                    findings.append(CitationFinding(anchor.anchor_id, sent, VerifyVerdict.UNSUPPORTED, 0.0))
+                    continue
+                # Tier B -- local NLI ($0). premise=quote, hypothesis=claim sentence.
+                scores = self.nli.predict(anchor.quoted_support, anchor.claim)
+                label = classify_nli(scores)
+                if label is NLILabel.ENTAILMENT:
+                    findings.append(CitationFinding(anchor.anchor_id, sent, VerifyVerdict.SUPPORTED, scores["entailment"]))
+                elif label is NLILabel.CONTRADICTION:
+                    findings.append(CitationFinding(anchor.anchor_id, sent, VerifyVerdict.CONTRADICTED, scores["contradiction"]))
+                else:
+                    stub = CitationFinding(anchor.anchor_id, sent, VerifyVerdict.UNSUPPORTED, 0.0)
+                    pending.append((stub, anchor.claim, anchor.quoted_support))
+
+        # Pass 2: Tier C -- judge the neutral band only, batched.
+        if pending:
+            pairs = [(claim, quote) for _, claim, quote in pending]
+            judged = tier_c_judge(pairs, self.llm)
+            for (stub, _, _), (verdict, score) in zip(pending, judged, strict=True):
+                stub.verdict = verdict
+                stub.score = score
+                findings.append(stub)
+
+        # Persist dispositions (dossier §2.3): supported->verified=1; partial->keep
+        # but unverified (hedge); unsupported->0; contradicted->0 (flag).
+        for f in findings:
+            if f.verdict is VerifyVerdict.SUPPORTED:
+                store.set_verified(f.anchor_id, verified=1, score=f.score)
+            else:
+                store.set_verified(f.anchor_id, verified=0, score=f.score)
+
+        return VerifyResult(findings=findings)

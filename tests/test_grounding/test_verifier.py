@@ -54,3 +54,86 @@ def test_tier_c_batches_in_chunks_of_20(fake_llm):
     assert len(results) == 25
     assert len(fake_llm.calls) == 2
     assert JUDGE_BATCH_SIZE == 20
+
+
+from bad_research.grounding.anchors import AnchorStore
+from bad_research.grounding.verifier import CitationVerifier
+
+
+class StubNLI:
+    """Deterministic NLI: maps a quote substring -> fixed softmax."""
+
+    def __init__(self, table):
+        self.table = table  # dict[str, dict[str,float]]
+
+    def predict(self, premise, hypothesis):
+        for key, scores in self.table.items():
+            if key in premise:
+                return scores
+        return {"entailment": 0.0, "neutral": 1.0, "contradiction": 0.0}
+
+
+def _store_with(anchors):
+    import sqlite3
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    store = AnchorStore(conn)
+    store.init_schema()
+    for a in anchors:
+        store.upsert(a)
+    return store
+
+
+def test_verify_entailed_claim_supported_non_entailed_unsupported(fake_llm):
+    body_a = "Latency dropped to 12.4 ms under load."
+    body_b = "The author also enjoys hiking on weekends."
+    qa = "Latency dropped to 12.4 ms under load"
+    qb = "The author also enjoys hiking on weekends"
+    aa = ClaimAnchor("nA", 0, len(qa), "Latency fell to 12.4 ms.", qa)
+    ab = ClaimAnchor("nB", 0, len(qb), "Latency fell to 5 ms.", qb)
+    store = _store_with([aa, ab])
+    nli = StubNLI({
+        qa: {"entailment": 0.95, "neutral": 0.04, "contradiction": 0.01},
+        qb: {"entailment": 0.02, "neutral": 0.05, "contradiction": 0.93},
+    })
+    report = (
+        f"Latency fell to 12.4 ms. [[{aa.anchor_id}]]\n"
+        f"Latency fell to 5 ms. [[{ab.anchor_id}]]\n"
+    )
+    verifier = CitationVerifier(nli=nli, llm=fake_llm)
+    result = verifier.verify(report, store, {"nA": body_a, "nB": body_b})
+    by_anchor = {r.anchor_id: r for r in result.findings}
+    assert by_anchor[aa.anchor_id].verdict is VerifyVerdict.SUPPORTED
+    assert by_anchor[ab.anchor_id].verdict is VerifyVerdict.CONTRADICTED
+    # Disposition persisted: supported anchor flagged verified=1.
+    assert store.get(aa.anchor_id).verified == 1
+    assert store.get(ab.anchor_id).verified == 0
+
+
+def test_verify_fabricated_quote_tier_a_fails_unsupported(fake_llm):
+    # Offsets point at body text that is NOT the quote -> Tier A fails -> unsupported.
+    body = "No latency regression was observed in any trial."
+    fabricated = "Latency dropped to 12.4 ms under load"
+    a = ClaimAnchor("nA", 0, 30, "Latency fell.", fabricated)
+    store = _store_with([a])
+    nli = StubNLI({})  # never consulted -- Tier A short-circuits
+    report = f"Latency fell. [[{a.anchor_id}]]\n"
+    verifier = CitationVerifier(nli=nli, llm=fake_llm)
+    result = verifier.verify(report, store, {"nA": body})
+    assert result.findings[0].verdict is VerifyVerdict.UNSUPPORTED
+    assert len(fake_llm.calls) == 0  # no LLM spent on a fabricated quote
+
+
+def test_verify_neutral_band_escalates_to_tier_c(fake_llm):
+    import json
+    body = "Adoption grew over the period across several markets."
+    quote = "Adoption grew over the period across several markets"
+    a = ClaimAnchor("nA", 0, len(quote), "Adoption grew 12.4% in SEA.", quote)
+    store = _store_with([a])
+    nli = StubNLI({quote: {"entailment": 0.55, "neutral": 0.40, "contradiction": 0.05}})  # neutral
+    fake_llm.script = [json.dumps([{"id": 0, "verdict": "partial", "score": 0.5}])]
+    report = f"Adoption grew 12.4% in SEA. [[{a.anchor_id}]]\n"
+    verifier = CitationVerifier(nli=nli, llm=fake_llm)
+    result = verifier.verify(report, store, {"nA": body})
+    assert result.findings[0].verdict is VerifyVerdict.PARTIAL
+    assert len(fake_llm.calls) == 1  # only the neutral band paid for an LLM call
