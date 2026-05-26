@@ -57,3 +57,24 @@ def test_success_false_returns_empty_snapshot() -> None:
     snap = parse_snapshot('{"success": false, "error": "no session"}')
     assert snap.refs == {}
     assert snap.is_empty is True
+
+
+def test_type_divergent_refs_degrade_no_raise() -> None:
+    # real CLI could emit refs as a list (not a dict) — must not AttributeError
+    snap = parse_snapshot('{"success": true, "data": {"snapshot": "Page: X", "refs": [1, 2]}}')
+    assert snap.refs == {}
+    assert snap.text == "Page: X"
+
+
+def test_type_divergent_snapshot_degrade_no_raise() -> None:
+    # real CLI could emit snapshot as a number (not a string) — must not TypeError on regex
+    snap = parse_snapshot('{"success": true, "data": {"snapshot": 123, "refs": {}}}')
+    assert snap.text == ""
+    assert snap.is_empty is True
+
+
+def test_non_dict_data_returns_empty_snapshot_no_raise() -> None:
+    snap = parse_snapshot('{"success": true, "data": [1, 2, 3]}')
+    assert snap.refs == {}
+    assert snap.is_empty is True
+    assert snap.text == ""

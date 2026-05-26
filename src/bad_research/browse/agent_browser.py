@@ -243,9 +243,15 @@ def parse_snapshot(stdout: str) -> Snapshot:
         return Snapshot()
     if not isinstance(payload, dict) or not payload.get("success"):
         return Snapshot()
-    data = payload.get("data") or {}
-    text = data.get("snapshot") or ""
-    raw_refs = data.get("refs") or {}
+    data = payload.get("data")
+    if not isinstance(data, dict):  # type-divergent CLI output → degrade, never raise
+        return Snapshot()
+    text = data.get("snapshot")
+    if not isinstance(text, str):
+        text = ""
+    raw_refs = data.get("refs")
+    if not isinstance(raw_refs, dict):
+        raw_refs = {}
     refs = {normalize_ref(k): v for k, v in raw_refs.items() if isinstance(v, dict)}
     title_m = _TITLE_RE.search(text)
     url_m = _URL_RE.search(text)
