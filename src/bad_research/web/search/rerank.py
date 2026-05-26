@@ -44,22 +44,81 @@ def _truncate(text: str, n: int = LLM_RERANK_TRUNC_CHARS) -> str:
     return (text or "")[:n]
 
 
-def _parse_scores(raw_text: str, *, n: int) -> list[float]:
-    """Parse the model's JSON array → a list of n floats (0.0 default for any
-    missing/malformed item). Accepts {"i","s"} and {"id","score"} shapes."""
-    scores = [0.0] * n
-    text = (raw_text or "").strip()
-    # Extract the first JSON array if the model wrapped it in prose/fences.
-    m = re.search(r"\[.*\]", text, re.DOTALL)
-    if not m:
-        return scores
+def _strip_fences(text: str) -> str:
+    """Drop a leading ```json / ``` fence and its closing ``` if present."""
+    t = text.strip()
+    if t.startswith("```"):
+        t = re.sub(r"^```[a-zA-Z]*\s*", "", t)
+        t = re.sub(r"\s*```$", "", t)
+    return t.strip()
+
+
+def _iter_balanced_objects(text: str) -> list[str]:
+    """Yield every top-level balanced ``{...}`` substring, respecting string
+    literals/escapes. Robust to prose wrapping, trailing commas, and a TRUNCATED
+    array (complete leading objects are still recovered; the dangling final one
+    is dropped) — the model's score items are flat ``{...}`` objects, so this
+    salvages them regardless of the array framing."""
+    objs: list[str] = []
+    i, n = 0, len(text)
+    while i < n:
+        if text[i] != "{":
+            i += 1
+            continue
+        depth, in_str, esc, j = 0, False, False, i
+        while j < n:
+            c = text[j]
+            if in_str:
+                if esc:
+                    esc = False
+                elif c == "\\":
+                    esc = True
+                elif c == '"':
+                    in_str = False
+            elif c == '"':
+                in_str = True
+            elif c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    objs.append(text[i : j + 1])
+                    break
+            j += 1
+        # If we never closed (truncated), stop — nothing further is complete.
+        if depth != 0:
+            break
+        i = j + 1
+    return objs
+
+
+def _loads_lenient(s: str) -> object | None:
+    """json.loads, retrying once with trailing commas stripped (``,]`` / ``,}``)."""
     try:
-        items = json.loads(m.group(0))
+        parsed: object = json.loads(s)
+        return parsed
     except (json.JSONDecodeError, ValueError):
-        return scores
-    if not isinstance(items, list):
-        return scores
-    for it in items:
+        try:
+            recovered: object = json.loads(re.sub(r",(\s*[}\]])", r"\1", s))
+            return recovered
+        except (json.JSONDecodeError, ValueError):
+            return None
+
+
+def _parse_scores(raw_text: str, *, n: int) -> list[float]:
+    """Parse the model's score output → a list of n floats (0.0 default for any
+    missing/malformed item). Accepts {"i","s"} and {"id","score"} shapes.
+
+    Hardened against real-model output: ```json fences, prose-wrapped arrays
+    (incl. a stray leading ``[0]`` before the real array), trailing commas, and a
+    truncated array (complete leading objects are still scored). Each score item
+    is keyed by its own ``i``/``id`` field, so per-object salvage preserves order
+    without depending on the array wrapper. Unparseable output → all-0.0, which
+    the reranker degrades to original input order (no candidates dropped)."""
+    scores = [0.0] * n
+    text = _strip_fences((raw_text or "").strip())
+    for obj_src in _iter_balanced_objects(text):
+        it = _loads_lenient(obj_src)
         if not isinstance(it, dict):
             continue
         raw_idx = it.get("i", it.get("id"))

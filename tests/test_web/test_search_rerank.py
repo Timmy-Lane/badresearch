@@ -86,5 +86,37 @@ def test_parse_scores_accepts_id_and_score_keys():
     assert _parse_scores('[{"id":0,"score":0.5}]', n=1) == [0.5]
 
 
+def test_parse_scores_strips_json_code_fence():
+    raw = '```json\n[{"i":0,"s":0.9},{"i":1,"s":0.3}]\n```'
+    assert _parse_scores(raw, n=2) == [0.9, 0.3]
+
+
+def test_parse_scores_ignores_stray_leading_bracket_in_prose():
+    # a real model: "[0] is the best, then [1]." before the real array.
+    raw = 'Passage [0] is best, then [1]. Scores: [{"i":0,"s":1.0},{"i":1,"s":0.4}]'
+    assert _parse_scores(raw, n=2) == [1.0, 0.4]
+
+
+def test_parse_scores_tolerates_trailing_comma():
+    assert _parse_scores('[{"i":0,"s":0.7},{"i":1,"s":0.5},]', n=2) == [0.7, 0.5]
+
+
+def test_parse_scores_recovers_complete_objects_from_truncated_array():
+    # max_tokens cut the stream mid-object: leading complete items still score.
+    raw = '[{"i":0,"s":0.9},{"i":1,"s":0.6},{"i":2,"s":'
+    assert _parse_scores(raw, n=3) == [0.9, 0.6, 0.0]
+
+
+def test_parse_scores_unparseable_degrades_to_zeros():
+    assert _parse_scores("I cannot score these passages.", n=3) == [0.0, 0.0, 0.0]
+
+
+def test_rerank_fenced_output_degrades_to_input_order_only_when_unparseable():
+    # fenced + valid → real scores (not the all-0.0 input-order fallback)
+    llm = _StubLLM('```json\n[{"i":0,"s":0.2},{"i":1,"s":0.95}]\n```')
+    out = HostModelReranker(llm=llm).rerank("q", ["a", "b"])
+    assert out == [(1, 0.95), (0, 0.2)]
+
+
 def test_rerank_empty_docs():
     assert HostModelReranker(llm=_StubLLM("[]")).rerank("q", []) == []

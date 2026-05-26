@@ -25,7 +25,8 @@ _SEED_LIMIT = 2          # verticals fan on <=2 seed queries (§8.2)
 
 def detect_intent(question: str) -> str:
     """DESIGNED regex fallback (§8.2); the host model normally tags intent in the
-    expansion step. Academic > medical > technical precedence (most specific wins)."""
+    expansion step. medical > academic > technical precedence (most specific wins —
+    a medical signal beats the generic "systematic review"/"paper" academic cues)."""
     if _MEDICAL.search(question):
         return "medical"
     if _ACADEMIC.search(question):
