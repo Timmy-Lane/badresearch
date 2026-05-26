@@ -5,8 +5,8 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from hyperresearch.core.config import VaultConfig
-from hyperresearch.core.db import get_connection, init_schema
+from bad_research.core.config import VaultConfig
+from bad_research.core.db import get_connection, init_schema
 
 HYPERRESEARCH_DIR = ".hyperresearch"
 CONFIG_FILE = "config.toml"
@@ -137,7 +137,7 @@ class Vault:
         )
 
         # Inject CLAUDE.md at vault root
-        from hyperresearch.core.agent_docs import inject_agent_docs
+        from bad_research.core.agent_docs import inject_agent_docs
         inject_agent_docs(root)
 
         return vault
@@ -161,7 +161,7 @@ class Vault:
         """Run an incremental sync if auto_sync is enabled."""
         if not self.config.auto_sync:
             return
-        from hyperresearch.core.sync import compute_sync_plan, execute_sync
+        from bad_research.core.sync import compute_sync_plan, execute_sync
 
         plan = compute_sync_plan(self)
         if plan.to_add or plan.to_update or plan.to_delete:

@@ -309,6 +309,7 @@ crawl4ai = [
     { name = "crawl4ai" },
 ]
 dev = [
+    { name = "mcp" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -353,6 +354,7 @@ requires-dist = [
     { name = "jinja2", specifier = ">=3.1" },
     { name = "lancedb", specifier = ">=0.13" },
     { name = "langdetect", marker = "extra == 'quality'", specifier = ">=1.0.9" },
+    { name = "mcp", marker = "extra == 'dev'", specifier = ">=1.6" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.6" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.8" },
     { name = "numpy", specifier = ">=1.26" },

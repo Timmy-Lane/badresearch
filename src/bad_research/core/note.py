@@ -7,14 +7,14 @@ import re
 from datetime import UTC, datetime
 from pathlib import Path
 
-from hyperresearch.core.frontmatter import parse_frontmatter, render_note
-from hyperresearch.core.patterns import (
+from bad_research.core.frontmatter import parse_frontmatter, render_note
+from bad_research.core.patterns import (
     CODE_BLOCK_RE,
     INLINE_CODE_RE,
     WIKI_LINK_RE,
     is_valid_wiki_link_target,
 )
-from hyperresearch.models.note import Note, NoteMeta, slugify
+from bad_research.models.note import Note, NoteMeta, slugify
 
 
 def read_note(file_path: Path, vault_root: Path) -> Note:

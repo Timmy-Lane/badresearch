@@ -77,7 +77,7 @@ def enrich_note_file(note_path: Path, conn: sqlite3.Connection, user_tags: list[
 
     Called after write_note() but before sync. Returns True if the file was modified.
     """
-    from hyperresearch.core.frontmatter import parse_frontmatter, serialize_frontmatter
+    from bad_research.core.frontmatter import parse_frontmatter, serialize_frontmatter
 
     content = note_path.read_text(encoding="utf-8-sig")
     meta, body = parse_frontmatter(content)

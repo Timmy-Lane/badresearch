@@ -6,7 +6,7 @@ import re
 
 import yaml
 
-from hyperresearch.models.note import NoteMeta
+from bad_research.models.note import NoteMeta
 
 FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n?", re.DOTALL)
 

@@ -23,7 +23,7 @@ _vault = None
 def _get_vault():
     global _vault
     if _vault is None:
-        from hyperresearch.core.vault import Vault
+        from bad_research.core.vault import Vault
         _vault = Vault.discover()
         _vault.auto_sync()
     return _vault
@@ -42,8 +42,8 @@ def search_notes(query: str, tag: str = "", status: str = "", parent: str = "", 
     """
     vault = _get_vault()
     vault.auto_sync()
-    from hyperresearch.search.filters import SearchFilters
-    from hyperresearch.search.fts import search_fts
+    from bad_research.search.filters import SearchFilters
+    from bad_research.search.fts import search_fts
     tags = [t.strip() for t in tag.split(",") if t.strip()] or None
     filters = SearchFilters(tags=tags, status=status or None, parent=parent or None)
     ranking = {
@@ -285,7 +285,7 @@ def fetch_url(url: str, tags: str = "", provider: str = "") -> str:
         tags: Comma-separated tags (e.g. "ml,transformers")
         provider: Web provider override (leave empty for default)
     """
-    from hyperresearch.core.fetcher import fetch_and_save
+    from bad_research.core.fetcher import fetch_and_save
 
     vault = _get_vault()
     vault.auto_sync()
@@ -314,9 +314,9 @@ def create_note(title: str, body: str, tags: str = "", source: str = "", summary
         source: Source URL (if from the web)
         summary: One-line summary (auto-generated if empty)
     """
-    from hyperresearch.core.enrich import enrich_note_file
-    from hyperresearch.core.note import write_note
-    from hyperresearch.core.sync import compute_sync_plan, execute_sync
+    from bad_research.core.enrich import enrich_note_file
+    from bad_research.core.note import write_note
+    from bad_research.core.sync import compute_sync_plan, execute_sync
 
     vault = _get_vault()
     vault.auto_sync()
@@ -362,8 +362,8 @@ def update_note(note_id: str, status: str = "", add_tags: str = "", remove_tags:
         remove_tags: Comma-separated tags to remove
         summary: New summary text
     """
-    from hyperresearch.core.frontmatter import parse_frontmatter, serialize_frontmatter
-    from hyperresearch.core.sync import compute_sync_plan, execute_sync
+    from bad_research.core.frontmatter import parse_frontmatter, serialize_frontmatter
+    from bad_research.core.sync import compute_sync_plan, execute_sync
 
     vault = _get_vault()
     vault.auto_sync()

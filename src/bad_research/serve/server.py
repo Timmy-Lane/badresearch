@@ -7,7 +7,7 @@ import json
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-from hyperresearch.serve.renderer import render_markdown
+from bad_research.serve.renderer import render_markdown
 
 # -- Vintage cream & dark brown theme --
 CSS = """
@@ -508,7 +508,7 @@ class HyperresearchHandler(BaseHTTPRequestHandler):
             self._send(200, body, "Search")
             return
 
-        from hyperresearch.search.fts import search_fts
+        from bad_research.search.fts import search_fts
         results = search_fts(self.db, query, limit=50)
         body += f"<p>{len(results)} results</p>\n<div class='results'>\n"
         for r in results:

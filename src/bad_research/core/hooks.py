@@ -3383,7 +3383,7 @@ def _read_skill_source(src_name: str) -> str | None:
 
     try:
         return (
-            importlib.resources.files("hyperresearch.skills")
+            importlib.resources.files("bad_research.skills")
             .joinpath(src_name)
             .read_text(encoding="utf-8")
         )

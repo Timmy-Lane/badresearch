@@ -10,8 +10,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
-from hyperresearch.core.note import read_note, strip_markdown
-from hyperresearch.core.patterns import (
+from bad_research.core.note import read_note, strip_markdown
+from bad_research.core.patterns import (
     CODE_BLOCK_RE,
     INLINE_CODE_RE,
     WIKI_LINK_RE,
