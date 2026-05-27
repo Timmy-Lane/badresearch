@@ -63,6 +63,12 @@ browse = ["playwright>=1.40"]
 # the bge-small bi-encoder, the ms-marco/bge cross-encoder reranker, the nli-deberta
 # verifier, and the LanceDB vector store (only when neural_recall is on, >25k chunks).
 # torch transitively brings numpy for the NLI verifier + bge embed paths.
+# Reranker default here is the LIGHT ms-marco-MiniLM (reranker="local"/"light");
+# reranker="zerank2" opts into ZeroEntropy zerank-2 (zeroentropy/zerank-2-reranker,
+# +8.7pp NDCG@10 over MiniLM, STEAL_LIST #6b). zerank-2 is NOT the default: it is a
+# 4B CC-BY-NC-4.0 (non-commercial) Qwen3 model with a raw-logit predict() contract —
+# sentence-transformers>=5.4 loads it as a CrossEncoder; the loader wires the
+# documented sigmoid(score/5). Commercial users must obtain a license from ZeroEntropy.
 local = [
     "torch>=2.0",
     "sentence-transformers>=3.0",

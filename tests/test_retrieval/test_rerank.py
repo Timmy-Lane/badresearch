@@ -144,6 +144,65 @@ def test_llm_call_exception_degrades_to_all_zero():
     assert out == {0: 0.0, 1: 0.0}
 
 
+# ── E14: zerank-2 documented opt-in (STEAL_LIST #6b) ─────────────────────────
+# VERIFY result: zeroentropy/zerank-2-reranker exists and is CrossEncoder-loadable
+# (config_sentence_transformers.json model_type=CrossEncoder), BUT (a) license is
+# CC-BY-NC-4.0 (non-commercial — does NOT cleanly permit use) and (b) predict()
+# returns RAW "Yes" logits, not [0,1] — the [0,1] map is sigmoid(score/5), NOT the
+# plain sigmoid MiniLM uses. So the default is UNCHANGED (MiniLM stays light/local);
+# zerank-2 is a documented opt-in with the correct normalization wired so it isn't
+# broken IF a user opts in. These tests assert the default stays + the opt-in works.
+
+from bad_research.retrieval.rerank import (
+    LOCAL_RERANKER_LIGHT,
+    ZERANK2_MODEL,
+    BGEReranker,
+    _zerank2_sigmoid,
+)
+
+
+def test_local_default_is_unchanged_light_minilm():
+    # E14 GATE: the [local] default MUST stay ms-marco-MiniLM (zerank-2 is CC-BY-NC
+    # + a logit-output contract change → not a safe default swap).
+    rr = BGEReranker(scorer=lambda pairs: [0.5] * len(pairs))
+    assert rr.model == LOCAL_RERANKER_LIGHT == "ms-marco-MiniLM-L-6-v2"
+
+
+def test_zerank2_model_id_is_the_verified_hf_repo():
+    # the EXACT verified repo id (HF API: zeroentropy/zerank-2-reranker, gated=false).
+    assert ZERANK2_MODEL == "zeroentropy/zerank-2-reranker"
+
+
+def test_zerank2_uses_temperature_scaled_sigmoid_not_plain():
+    # zerank-2 predict() returns raw "Yes" logits; the [0,1] map is sigmoid(score/5)
+    # (README breaking-change May 2026), NOT the plain sigmoid MiniLM's loader uses.
+    # README example: logit 5.4062 -> ~0.746; logit -4.5 -> ~0.289.
+    assert abs(_zerank2_sigmoid(5.4062) - 0.7461) < 0.01
+    assert abs(_zerank2_sigmoid(-4.5) - 0.2891) < 0.01
+    # a plain sigmoid would give a DIFFERENT (wrong) value for the same logit
+    import math
+    plain = 1.0 / (1.0 + math.exp(-5.4062))
+    assert abs(_zerank2_sigmoid(5.4062) - plain) > 0.1   # demonstrably different
+
+
+def test_get_reranker_zerank2_opt_in_builds_bge_with_that_model():
+    # the documented opt-in: reranker="zerank2" → BGEReranker(zeroentropy/zerank-2-reranker)
+    class _Cfg:
+        reranker = "zerank2"
+    rr = get_reranker(_Cfg(), bge_scorer=lambda pairs: [0.4] * len(pairs))
+    assert isinstance(rr, BGEReranker)
+    assert rr.model == ZERANK2_MODEL
+
+
+def test_get_reranker_light_alias_maps_to_minilm():
+    # --reranker light is the documented lightweight fallback name → MiniLM.
+    class _Cfg:
+        reranker = "light"
+    rr = get_reranker(_Cfg(), bge_scorer=lambda pairs: [0.4] * len(pairs))
+    assert isinstance(rr, BGEReranker)
+    assert rr.model == LOCAL_RERANKER_LIGHT
+
+
 def test_host_failure_warns_once_then_degrades_silently(caplog):
     # A broken host LLM should be OBSERVABLE (warn once), not silently lower quality
     # forever — but it must not spam a warning per query (§5.3 / INFO-3).

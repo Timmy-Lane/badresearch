@@ -40,7 +40,9 @@ class BadResearchConfig:
     budget_usd: float | None = None        # None = uncapped
     cheap: bool = False                    # demote heavy->work
     # ── Keyless knobs (KR-1; dossier 13/15/16) ──────────────────────────────
-    reranker: Literal["host", "local", "none"] = "host"   # host-model LLM-rerank default
+    # host-model LLM-rerank default; "local"/"light" = ms-marco-MiniLM ([local]),
+    # "zerank2" = ZeroEntropy zerank-2 opt-in ([local], +8.7pp NDCG@10, CC-BY-NC; E14)
+    reranker: Literal["host", "local", "light", "zerank2", "none"] = "host"
     neural_recall: bool = False                            # opt-in local bi-encoder lane ([local])
     searxng_endpoint: str = "http://localhost:8080"        # self-host T1; no key
     browse_engine: Literal["lightpanda", "chrome"] = "lightpanda"  # rung-2.5 default (dossier 14)

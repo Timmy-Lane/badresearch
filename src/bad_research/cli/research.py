@@ -257,7 +257,9 @@ def _build_embedder(cfg: object) -> object | None:
 
 def _build_reranker(cfg: object) -> object:
     """Keyless default reranker = ClaudeCodeReranker (host-model LLM-rerank, KR-5).
-    config.reranker selects host|local|none; the factory resolves it. Cohere is GONE."""
+    config.reranker selects host|local|light|zerank2|none; the factory resolves it.
+    "local"/"light" → ms-marco-MiniLM ([local]); "zerank2" → the zerank-2 opt-in
+    ([local], +8.7pp NDCG@10, CC-BY-NC; E14). Cohere is GONE."""
     from bad_research.retrieval.rerank import get_reranker
 
     return get_reranker(cfg)
