@@ -4,6 +4,7 @@ Tier A byte-identity ($0) -> Tier B local NLI ($0) -> Tier C triage-LLM judge
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
 from dataclasses import dataclass
@@ -14,6 +15,42 @@ from bad_research.llm.base import LLMMessage, LLMProvider
 from .anchors import AnchorStore, ClaimAnchor, quote_sha
 from .nli import NLILabel, NLIModel, classify_nli
 from .render import extract_citations
+
+
+def nli_available() -> bool:
+    """True iff the `[local]` neural stack (sentence-transformers, which brings
+    torch) is importable -- the auto-on switch for the NLI entailment lane. Uses
+    find_spec ONLY: it never imports torch, so probing this on the keyless path is
+    free (mirrors cli/doctor._local_installed)."""
+    try:
+        return importlib.util.find_spec("sentence_transformers") is not None
+    except (ImportError, ValueError):
+        return False
+
+
+class CitationPresentNLI:
+    """The keyless-path stand-in for the cross-encoder NLI. It performs NO
+    entailment check: every (premise, hypothesis) reads as entailment, so the
+    verifier's Tier-B lane marks a cited sentence SUPPORTED as long as Tier A
+    (byte-identity) already passed -- i.e. the citation-present check that shipped
+    before the entailment lane. Importing/instantiating it touches NO torch."""
+
+    def predict(self, premise: str, hypothesis: str) -> dict[str, float]:
+        # Entailment dominant: classify_nli -> ENTAILMENT (>= ENTAILMENT_PASS),
+        # contradiction below its flag bar so a present cite never reads opposite.
+        return {"entailment": 1.0, "neutral": 0.0, "contradiction": 0.0}
+
+
+def default_nli() -> NLIModel:
+    """The ship-path NLI: the real cross-encoder when `[local]` is installed (the
+    $0/local entailment lane auto-on, SUPPORTED_FLOOR=0.70), else the
+    citation-present no-op (keyless, no torch). Wiring the factory here keeps the
+    auto-on decision in one place for both the CLI and MCP verify seams."""
+    if nli_available():
+        from .nli import CrossEncoderNLI  # lazy: only when [local] is present
+
+        return CrossEncoderNLI()
+    return CitationPresentNLI()
 
 
 class VerifyVerdict(str, Enum):

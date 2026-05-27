@@ -250,8 +250,7 @@ def _verify_report(report_path: str, vault_tag: str) -> list[dict]:
     from bad_research.config import BadResearchConfig
     from bad_research.core.vault import Vault
     from bad_research.grounding.anchors import AnchorStore
-    from bad_research.grounding.nli import CrossEncoderNLI
-    from bad_research.grounding.verifier import CitationVerifier
+    from bad_research.grounding.verifier import CitationVerifier, default_nli
 
     cfg = BadResearchConfig.load()
     vault = Vault.discover()
@@ -272,7 +271,9 @@ def _verify_report(report_path: str, vault_tag: str) -> list[dict]:
 
     # get_llm_provider(name, **kwargs) forwards kwargs to AnthropicProvider, whose
     # signature is AnthropicProvider(api_key=None, config=None) — pass cfg via config=.
-    verifier = CitationVerifier(nli=CrossEncoderNLI(), llm=get_llm_provider("anthropic", config=cfg))
+    # default_nli() auto-selects the real cross-encoder entailment lane when the
+    # [local] stack is installed, else the keyless citation-present no-op (no torch).
+    verifier = CitationVerifier(nli=default_nli(), llm=get_llm_provider("anthropic", config=cfg))
     result = verifier.verify(report_md, store, note_bodies)
     findings = getattr(result, "findings", result)
     out = []

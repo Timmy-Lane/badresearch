@@ -149,6 +149,113 @@ class HypothesisAwareNLI:
         return {"entailment": 0.95, "neutral": 0.04, "contradiction": 0.01}
 
 
+# ── A-4: NLI auto-on under [local]; citation-present degrade when absent ─────
+
+def test_nli_available_reflects_find_spec():
+    import importlib.util
+
+    from bad_research.grounding.verifier import nli_available
+
+    expected = importlib.util.find_spec("sentence_transformers") is not None
+    assert nli_available() is expected
+
+
+def test_default_nli_returns_real_crossencoder_when_local_present(monkeypatch):
+    # When [local] is importable, the ship path's default NLI is the real
+    # cross-encoder (entailment lane auto-on). We force the available branch.
+    import bad_research.grounding.verifier as verifier_mod
+
+    monkeypatch.setattr(verifier_mod, "nli_available", lambda: True)
+    from bad_research.grounding.nli import CrossEncoderNLI
+
+    nli = verifier_mod.default_nli()
+    assert isinstance(nli, CrossEncoderNLI)
+
+
+def test_default_nli_is_citation_present_stub_when_local_absent(monkeypatch):
+    # With [local] absent, default_nli() must NOT be the cross-encoder; it is a
+    # citation-present no-op that treats a byte-identity-passing cite as supported
+    # WITHOUT touching torch/sentence-transformers.
+    import bad_research.grounding.verifier as verifier_mod
+    from bad_research.grounding.nli import CrossEncoderNLI
+
+    monkeypatch.setattr(verifier_mod, "nli_available", lambda: False)
+    nli = verifier_mod.default_nli()
+    assert not isinstance(nli, CrossEncoderNLI)
+    # The no-op marks any premise/hypothesis as entailment (citation present == ok),
+    # so the verifier's Tier-B lane reads SUPPORTED for resolved + byte-identity cites.
+    scores = nli.predict("any premise", "any hypothesis")
+    assert scores["entailment"] >= 0.70
+
+
+def test_citation_present_degrade_marks_resolved_cite_supported(fake_llm):
+    # End-to-end on the degrade path: a byte-identity-passing cited sentence is
+    # SUPPORTED via the citation-present stub, with NO LLM call and NO NLI model.
+    from bad_research.grounding.verifier import CitationPresentNLI
+
+    body = "Latency dropped to 12.4 ms under load in the benchmark run."
+    quote = "Latency dropped to 12.4 ms under load"
+    a = ClaimAnchor("nA", 0, len(quote), "Latency fell to 12.4 ms.", quote)
+    store = _store_with([a])
+    report = f"Latency fell to 12.4 ms. [[{a.anchor_id}]]\n"
+    verifier = CitationVerifier(nli=CitationPresentNLI(), llm=fake_llm)
+    result = verifier.verify(report, store, {"nA": body})
+    assert result.findings[0].verdict is VerifyVerdict.SUPPORTED
+    assert store.get(a.anchor_id).verified == 1
+    assert len(fake_llm.calls) == 0  # citation-present never escalates to the judge
+
+
+def test_keyless_verify_path_imports_no_torch(tmp_path):
+    # The degrade path must construct + run WITHOUT importing torch /
+    # sentence-transformers (keyless invariant). Run in a subprocess that blocks
+    # those imports at the import hook; if any code touches them, this fails.
+    import subprocess
+    import sys
+    import textwrap
+
+    prog = textwrap.dedent(
+        """
+        import builtins
+        _blocked = {"torch", "sentence_transformers", "lancedb", "pyarrow", "FlagEmbedding"}
+        _real = builtins.__import__
+        def _guard(name, *a, **k):
+            if name.split(".")[0] in _blocked:
+                raise ImportError("blocked in keyless test: " + name)
+            return _real(name, *a, **k)
+        builtins.__import__ = _guard
+
+        import sqlite3
+        import bad_research.grounding.verifier as V
+        from bad_research.grounding.anchors import AnchorStore, ClaimAnchor
+
+        V.nli_available = lambda: False          # force the keyless degrade branch
+        nli = V.default_nli()                     # must NOT import torch
+        assert "torch" not in __import__("sys").modules
+        assert "sentence_transformers" not in __import__("sys").modules
+
+        conn = sqlite3.connect(":memory:"); conn.row_factory = sqlite3.Row
+        store = AnchorStore(conn); store.init_schema()
+        body = "Latency dropped to 12.4 ms under load."
+        quote = "Latency dropped to 12.4 ms under load"
+        a = ClaimAnchor("nA", 0, len(quote), "Latency fell.", quote)
+        store.upsert(a)
+
+        class _LLM:
+            calls = []
+            def complete(self, *a, **k): raise AssertionError("no LLM on keyless path")
+
+        v = V.CitationVerifier(nli=nli, llm=_LLM())
+        res = v.verify(f"Latency fell. [[{a.anchor_id}]]\\n", store, {"nA": body})
+        assert res.findings[0].verdict.value == "supported"
+        assert "torch" not in __import__("sys").modules
+        print("OK")
+        """
+    )
+    res = subprocess.run([sys.executable, "-c", prog], capture_output=True, text=True)
+    assert res.returncode == 0, f"keyless verify path failed:\nSTDOUT={res.stdout}\nSTDERR={res.stderr}"
+    assert "OK" in res.stdout
+
+
 def test_verify_checks_report_sentence_not_stored_claim(fake_llm):
     # The anchor's stored claim is FAITHFUL to the support, but the report
     # SENTENCE that cites it says the opposite. The verifier must judge the

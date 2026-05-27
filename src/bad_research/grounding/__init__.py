@@ -12,9 +12,12 @@ from .nli import NLI_MODEL_NAME, CrossEncoderNLI, NLILabel, classify_nli
 from .render import extract_citations, render_citation
 from .verifier import (
     CitationFinding,
+    CitationPresentNLI,
     CitationVerifier,
     VerifyResult,
     VerifyVerdict,
+    default_nli,
+    nli_available,
     tier_a_byte_identity,
     tier_c_judge,
 )
@@ -23,6 +26,7 @@ __all__ = [
     "NLI_MODEL_NAME",
     "AnchorStore",
     "CitationFinding",
+    "CitationPresentNLI",
     "CitationVerifier",
     "ClaimAnchor",
     "CrossEncoderNLI",
@@ -32,10 +36,12 @@ __all__ = [
     "VerifyVerdict",
     "build_from_claims",
     "classify_nli",
+    "default_nli",
     "extract_citations",
     "extract_spans",
     "gate_blocks_ship",
     "is_factual_claim",
+    "nli_available",
     "no_uncited_claim_gate",
     "quote_sha",
     "render_citation",
