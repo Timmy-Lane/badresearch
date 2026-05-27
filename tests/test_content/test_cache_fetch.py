@@ -132,17 +132,18 @@ def test_fetch_clean_formats_projection(monkeypatch, sample_html: str, tmp_path)
     assert "metadata" not in out
 
 
-# --- E13 (STEAL_LIST #6a): Firecrawl-style url normalization + maxAge alias -----
-from bad_research.web.content.fetch_clean import FETCH_CACHE_MAXAGE_S, normalize_url
-
-
-def test_fetch_cache_maxage_is_firecrawl_default() -> None:
-    # the Firecrawl-default content-cache maxAge: 48h (STEAL_LIST #6a)
-    assert FETCH_CACHE_MAXAGE_S == 172800
+# --- E13 (STEAL_LIST #6a): Firecrawl-style url normalization -------------------
+from bad_research.web.content.fetch_clean import normalize_url
 
 
 def test_normalize_url_strips_fragment() -> None:
     assert normalize_url("https://ex.com/post#section-2") == "https://ex.com/post"
+
+
+def test_normalize_url_keeps_ipv6_brackets() -> None:
+    # IPv6 literal host must stay bracketed so the cache key is a valid netloc.
+    assert normalize_url("https://[2001:db8::1]:8080/x") == "https://[2001:db8::1]:8080/x"
+    assert normalize_url("http://[::1]/p#f") == "https://[::1]/p"
 
 
 def test_normalize_url_forces_https() -> None:
@@ -186,11 +187,10 @@ def test_fetch_clean_cache_hit_across_url_variants(monkeypatch, sample_html: str
     assert calls["n"] == 1                          # fetched once only
 
 
-def test_fetch_clean_cache_respects_maxage(monkeypatch, sample_html: str,
-                                           tmp_path) -> None:
-    # an entry older than FETCH_CACHE_MAXAGE_S is treated as expired and re-fetched
+def test_fetch_clean_cache_respects_ttl(monkeypatch, sample_html: str,
+                                        tmp_path) -> None:
+    # an entry older than the enforced CACHE_TTL is treated as expired and re-fetched
     monkeypatch.setattr(fc, "CACHE_DB_PATH", tmp_path / "c.sqlite")
-    monkeypatch.setattr(fc, "CACHE_TTL", fc.FETCH_CACHE_MAXAGE_S)
     calls = {"n": 0}
 
     def fake_static(url):
@@ -200,10 +200,10 @@ def test_fetch_clean_cache_respects_maxage(monkeypatch, sample_html: str,
     monkeypatch.setattr(fc, "_static_fetch", fake_static)
     fetch_clean("https://ex.com/post")
     assert fc.cache_get("https://ex.com/post") is not None   # fresh hit
-    # age the row past maxAge
+    # age the row past the real (un-faked) CACHE_TTL
     import sqlite3
     conn = sqlite3.connect(fc.CACHE_DB_PATH)
-    conn.execute("UPDATE content_cache SET ts = ts - ?", (fc.FETCH_CACHE_MAXAGE_S + 1,))
+    conn.execute("UPDATE content_cache SET ts = ts - ?", (fc.CACHE_TTL + 1,))
     conn.commit()
     conn.close()
     assert fc.cache_get("https://ex.com/post") is None       # expired -> miss

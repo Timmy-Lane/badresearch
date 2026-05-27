@@ -23,13 +23,8 @@ import platformdirs
 from bs4 import BeautifulSoup
 
 # --- frozen constants (docs/INTERFACES_KEYLESS.md §8 + dossier 12) -------------
-CACHE_TTL = 14 * 86400          # 14-day content cache TTL (dossier 12 §9 step 9)
-# Firecrawl's published content-cache default maxAge (48h) — the documented
-# fast-path freshness window for its semantic index (STEAL_LIST #6a / E13). We
-# keep the 14-day CACHE_TTL as the enforced ceiling (a fetched page rarely
-# changes within a single research run) and expose this as the Firecrawl-default
-# alias so a caller / future per-domain TTL map can opt into the tighter window.
-FETCH_CACHE_MAXAGE_S = 172800   # 48h, Firecrawl default (STEAL_LIST #6a)
+CACHE_TTL = 14 * 86400          # 14-day content-cache TTL (dossier 12 §9 step 9) — the
+                                # single enforced freshness window for the url->content cache.
 PRUNING_THRESHOLD = 0.48        # PruningContentFilter dynamic threshold (dossier 12 §3.3)
 NEEDS_JS_FLOOR = 200            # visible-text char floor to escalate to JS render (§1.1)
 MAIN_CONTENT_FLOOR = 200        # trafilatura fallback when pruning yields < this (§3.5)
@@ -512,9 +507,12 @@ def normalize_url(url: str) -> str:
     host = (parts.hostname or "").lower()
     if host.startswith("www."):
         host = host[4:]
+    # IPv6 literal: urlsplit().hostname strips the brackets — re-add them so the
+    # reassembled netloc is valid (cache-key only; the live fetch uses the raw URL).
+    hostpart = f"[{host}]" if ":" in host else host
     # keep an explicit non-default port; drop :80/:443
     port = parts.port
-    netloc = f"{host}:{port}" if port is not None and port not in (80, 443) else host
+    netloc = f"{hostpart}:{port}" if port is not None and port not in (80, 443) else hostpart
     # carry userinfo through unchanged if present (rare, but don't silently drop)
     if parts.username:
         cred = parts.username + (f":{parts.password}" if parts.password else "")
