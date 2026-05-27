@@ -9,7 +9,9 @@ import pytest
 # Keys that mark a "live" run as possible. A `live`-marked test runs only when
 # one of these is set AND BAD_RUN_LIVE=1; otherwise it is auto-skipped so the
 # default suite is offline + key-free.
-_LIVE_KEYS = ("ANTHROPIC_API_KEY", "TAVILY_API_KEY", "EXA_API_KEY", "COHERE_API_KEY")
+# Keyless: ANTHROPIC_API_KEY is the only key any path reads (the headless/calibration
+# bridge). Every other capability is keyless (host tools + local OSS/CLIs).
+_LIVE_KEYS = ("ANTHROPIC_API_KEY",)
 
 
 def pytest_collection_modifyitems(config, items):
@@ -30,11 +32,8 @@ def _clear_provider_keys(monkeypatch: pytest.MonkeyPatch) -> None:
     """Ensure no real provider keys leak into tests from the host environment."""
     for var in (
         "ANTHROPIC_API_KEY",
-        "COHERE_API_KEY",
         "BAD_RESEARCH_BUDGET_USD",
         "BAD_RESEARCH_CHEAP",
-        "BAD_RESEARCH_EMBED_MODEL",
-        "BAD_RESEARCH_RERANK_MODEL",
         "BAD_RESEARCH_VAULT_ROOT",
     ):
         monkeypatch.delenv(var, raising=False)
