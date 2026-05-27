@@ -25,6 +25,15 @@ from bad_research.skills import routing_constants as R  # noqa: N812
 from bad_research.skills.router import classify_route, route_reason
 
 
+def test_tiering_constants_are_what_these_fixtures_assume():
+    # The fixtures below pick atomic counts relative to these ceilings (e.g. the
+    # deep "best X" cases use > ROUTER_LIGHT_MAX_ATOMIC items, the explicit-survey
+    # cases use < ROUTER_SURVEY_MAX_ATOMIC). Pin them so a constant change that
+    # would silently invalidate the boundaries fails here loudly instead.
+    assert R.ROUTER_LIGHT_MAX_ATOMIC == 6
+    assert R.ROUTER_SURVEY_MAX_ATOMIC == 40
+
+
 def _decomp(**kw):
     base = dict(sub_questions=["q1"], entities=[], time_periods=[],
                 response_format="structured", contradiction_terms=[], domains=["tech"])
