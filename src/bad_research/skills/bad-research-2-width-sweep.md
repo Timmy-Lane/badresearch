@@ -281,6 +281,66 @@ items (same well/adequate/thin/uncovered logic as before):
 
 ---
 
+## Step 2.7 — Distill each round into reflections (distilled-reflection memory)
+
+**Why this step exists:** between rounds the loop must carry only **distilled
+reflections**, never the raw source corpus. Re-reading every fetched note body on
+each re-retrieve round makes inter-round token growth *quadratic*
+(`n·m·(m+1)/2`); carrying a compact distilled memory keeps it **linear** (`n·m`) —
+a ~−66% token win (Tavily). The raw bodies stay on disk in the vault, retrievable
+by `note_id`; they are NOT re-injected until synthesis (step 10/11), and even then
+only for the `note_id`s a section will cite. The data to do this already exists —
+each fetcher emits `research/temp/claims-<note-id>.json` of shape
+`{claim, note_id, quoted_support, char_start, char_end}`, i.e. the distilled
+claims are already separated from the raw note body.
+
+After each fetch wave (the funnel return in Step 2.2, and again after each gap
+fetch in Step 2.5), **distill, then drop the raw body from working context**:
+
+1. **Distill each kept source to ≤3 claim bullets + its `note_id`.** Read the
+   source's `research/temp/claims-<note-id>.json` (the distilled claims — NOT the
+   raw note body). Pick the ≤3 most load-bearing claim bullets for the current
+   sub-question. The bullets are distilled claims, never raw prose.
+
+2. **Append one record per round / sub-question to `research/temp/reflections.md`**
+   (append-only — never overwrite a prior round's record; that is what keeps
+   growth linear). Each record:
+   ```markdown
+   ### Round <n> — <sub_question>
+
+   **Key findings (distilled):**
+   - <≤3 distilled claim bullets, each traceable to a claims-*.json claim>
+
+   **Open gaps:**
+   - <atomic items still thin/uncovered, contradictions still unresolved>
+
+   **Cited notes (vault):** <note_id>, <note_id>, …
+   <!-- reflection {"round": <n>, "sub_question": "...", "key_findings": [...], "open_gaps": [...], "cited_note_ids": [...]} -->
+   ```
+   The deterministic helper `retrieval/reflections.py` (`ReflectionLog.append`)
+   writes this block; the trailing HTML comment is the machine-parseable payload.
+
+3. **DROP the raw note body from working context.** Once a source is distilled to
+   its reflection bullets, do NOT keep its raw body (or the funnel's full
+   `top_chunks` text) in context. The raw body stays on disk in the vault, keyed
+   by `note_id` — that is the "disk is memory, context is scratchpad" invariant.
+
+4. **The re-retrieve decision + next-round query planning read
+   `research/temp/reflections.md` + its `open_gaps` — NOT the raw corpus.** When
+   deciding whether to fire another gap fetch (Step 2.5) and what to search for,
+   read the reflections artifact and the aggregated `open_gaps`; do NOT re-read
+   the raw note bodies. Re-reading the corpus each round is the quadratic-growth
+   anti-pattern this step exists to prevent. If `reflections.md` grows past the
+   ≤10K-token synthesis ceiling, compact it (`ReflectionLog.compact` drops the
+   oldest records, keeping the most-recent live gaps).
+
+**Grounding is preserved:** dropping the raw body from *context* does not drop the
+verbatim `quoted_support` spans — those live in `claims-*.json` + the vault note,
+and synthesis (step 10/11) re-injects them for the cited `note_id`s so the
+`uncited-gate` / `recitation-gate` / `anchors.py` still verify byte-for-byte.
+
+---
+
 ## Source count targets
 
 | Tier | Minimum sources | Target sources | Fetchers per wave | Waves |
@@ -329,6 +389,7 @@ prompt: |
 - Minimum source count met (per tier table)
 - Coverage check shows no `uncovered` atomic items (thin is acceptable)
 - `research/temp/coverage-gaps.md` written
+- `research/temp/reflections.md` written — one distilled record per round, raw bodies dropped from context
 - (For std/full): `research/temp/redundancy-audit.md` written if any claim files existed
 
 If you fall short after two waves, proceed anyway but ensure `coverage-gaps.md` lists what's missing so the drafter handles it.

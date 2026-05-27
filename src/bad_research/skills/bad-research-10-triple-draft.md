@@ -24,6 +24,7 @@ description: >
 Read these inputs:
 - `research/scaffold.md` — vault_tag, modality, wrapper requirements
 - `research/prompt-decomposition.json` — atomic items, required_section_headings, response_format, citation_style, pipeline_tier
+- `research/temp/reflections.md` — the distilled short-term memory (≤3 claim bullets + `cited_note_ids` per round). **PLAN from this, not the raw corpus** — see Step 10.0b
 - `research/temp/evidence-digest.md` — top claims + verbatim quotes — PRIMARY EVIDENCE LAYER (full only; absent for light)
 - `research/comparisons.md` (full tier) — cross-locus tensions
 - `research/temp/source-tensions.json` (full tier) — expert disagreements
@@ -48,6 +49,39 @@ Read `response_format` and `citation_style` from `research/prompt-decomposition.
 | `"argumentative"` | 5000–10000 words / 20000–25000 chars (CJK) | Dense thesis-driven |
 
 **Length discipline:** Target the MIDDLE of the range. Under-length loses on comprehensiveness; over-length dilutes good content.
+
+---
+
+## Step 10.0b — Plan from reflections, re-inject raw only at the end (distilled-reflection memory)
+
+**Plan from the distilled memory, batch-read raw bodies only for what you'll
+cite.** This is Tavily's "re-inject raw only at the end": the mid-pipeline carried
+only distilled reflections (linear token growth); the drafter pays the raw-body
+cost ONCE, at draft time, and only for the `note_id`s it will actually cite.
+
+1. **Plan the draft from `research/temp/reflections.md`** — the ≤3-claim-bullet
+   distilled records per round, the `open_gaps`, and the `cited_note_ids`. Decide
+   the angle, the section beats, and which claims anchor which section *from the
+   distilled reflections*, NOT by re-reading the whole raw corpus. The reflections
+   are the short-term memory; trust them.
+
+2. **Then batch-read the raw note bodies ONLY for the `note_id`s you will cite.**
+   From the reflections' `cited_note_ids` (and the curated `must_read_note_ids`
+   list in Step 10.2), read the raw bodies for just those notes
+   (`$HPR note show <id1> <id2> ... -j`) so you have the verbatim text in front of
+   you as you write. Do NOT batch-read notes you don't intend to cite — that
+   re-introduces the quadratic-context cost the reflections discipline removed.
+
+3. **Spans survive for grounding.** Re-injecting the raw body for a cited note
+   gives you its verbatim `quoted_support` span — keep the exact wording when you
+   ground a claim so the downstream `uncited-gate` / `recitation-gate` /
+   `anchors.py` verify byte-for-byte. A claim whose supporting span you cannot
+   re-locate in the re-injected raw body is dropped or hedged, never fabricated.
+
+**Light tier:** light has no `evidence-digest.md`; it still plans from
+`reflections.md` (written in step 2) and re-injects raw bodies only for the
+`cited_note_ids` it will cite (the 8–15 notes it opens — see the Light tier
+section below).
 
 ---
 
