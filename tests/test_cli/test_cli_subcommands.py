@@ -73,6 +73,49 @@ def test_route_apply_writes_query_shape_field(tmp_path):
     assert written["route"] == "light"
 
 
+# ── E11 plan-gate: route CLI reports the gate decision (default = no gate) ─────
+
+def test_route_plan_gate_default_is_false(tmp_path):
+    # Default (no interactivity flag): non-interactive → plan_gate.would_gate False,
+    # even for a full-tier query. This is what keeps automated runs flowing through.
+    d = tmp_path / "decomp.json"
+    d.write_text(json.dumps({"sub_questions": [f"q{i}" for i in range(8)],
+                             "entities": [], "response_format": "argumentative",
+                             "time_periods": [], "contradiction_terms": ["vs"],
+                             "domains": ["a"]}))
+    res = runner.invoke(app, ["route", "--decomposition", str(d), "--json"])
+    assert res.exit_code == 0
+    out = json.loads(res.stdout)
+    assert out["route"] == "full"
+    assert out["plan_gate"]["would_gate"] is False
+
+
+def test_route_plan_gate_interactive_full_fires(tmp_path):
+    d = tmp_path / "decomp.json"
+    d.write_text(json.dumps({"sub_questions": [f"q{i}" for i in range(8)],
+                             "entities": [], "response_format": "argumentative",
+                             "time_periods": [], "contradiction_terms": ["vs"],
+                             "domains": ["a"]}))
+    res = runner.invoke(app, ["route", "--decomposition", str(d),
+                              "--interactive", "--json"])
+    assert res.exit_code == 0
+    out = json.loads(res.stdout)
+    assert out["plan_gate"]["would_gate"] is True
+
+
+def test_route_plan_gate_interactive_but_wrapped_does_not_fire(tmp_path):
+    d = tmp_path / "decomp.json"
+    d.write_text(json.dumps({"sub_questions": [f"q{i}" for i in range(8)],
+                             "entities": [], "response_format": "argumentative",
+                             "time_periods": [], "contradiction_terms": ["vs"],
+                             "domains": ["a"]}))
+    res = runner.invoke(app, ["route", "--decomposition", str(d),
+                              "--interactive", "--wrapped", "--json"])
+    assert res.exit_code == 0
+    out = json.loads(res.stdout)
+    assert out["plan_gate"]["would_gate"] is False
+
+
 def test_uncited_gate_command_registered():
     res = runner.invoke(app, ["uncited-gate", "--help"])
     assert res.exit_code == 0

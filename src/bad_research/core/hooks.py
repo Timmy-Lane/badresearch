@@ -3521,6 +3521,7 @@ _BAD_RESEARCH_STEP_SKILLS = [
     "bad-research-0.5-clarify",
     "bad-research-1-decompose",
     "bad-research-query-router",
+    "bad-research-1.6-plan-gate",
     "bad-research-2-width-sweep",
     "bad-research-3-contradiction-graph",
     "bad-research-4-loci-analysis",

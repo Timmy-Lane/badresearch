@@ -118,6 +118,20 @@ SHAPE_FANOUT: dict[str, dict[str, object]] = {
 }
 
 
+# ── E11 user-editable plan-gate (Gemini collaborative_planning; STEAL_LIST #3) ─
+# Gemini emits a structured plan → the user approves/edits → execute, so an
+# ambiguous/expensive query doesn't research the wrong sub-questions. The gate
+# (step bad-research-1.6-plan-gate) fires ONLY when the run is INTERACTIVE and not
+# `--auto`/wrapped and the run is EXPENSIVE — route == full OR atomic items >
+# ROUTER_LIGHT_MAX_ATOMIC OR an explicit cost estimate over this threshold (USD).
+# A non-interactive / wrapped / `--auto` / test run NEVER gates (mirrors how
+# 0.5-clarify skips for `--auto`/wrapped) so the eval gate + the whole test suite
+# flow straight through. The threshold is the light-tier ceiling (~$15, the top of
+# the `light` cost band in bad-research.md's route table) — below it a run is cheap
+# enough that a wrong sub-question costs less than the approval round-trip.
+PLAN_GATE_COST_THRESHOLD = 15.0  # USD; >= this estimated cost → expensive enough to gate
+
+
 # ── KR-6 loop levers (dossier 16; INTERFACES_KEYLESS §8 frozen table) ─────────
 
 # Grader loop — judge -> patch -> re-judge, capped (patch-not-regenerate => 3 is

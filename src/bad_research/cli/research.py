@@ -23,6 +23,10 @@ if TYPE_CHECKING:
 def route_cmd(
     decomposition: str = typer.Option(..., "--decomposition"),
     apply: bool = typer.Option(False, "--apply"),
+    interactive: bool = typer.Option(False, "--interactive"),
+    wrapped: bool = typer.Option(False, "--wrapped"),
+    auto: bool = typer.Option(False, "--auto"),
+    est_cost: float | None = typer.Option(None, "--est-cost"),
     json_output: bool = typer.Option(False, "--json", "-j"),
 ) -> None:
     """Classify a Step-1 decomposition into a pipeline route (agentic-fast|light|full).
@@ -31,10 +35,17 @@ def route_cmd(
     (straightforward|breadth_first|depth_first), ORTHOGONAL to the route. The
     shape ADDS the investigator arrangement (single|parallel|sequential); it does
     NOT change the route decision.
+
+    Emits `plan_gate.would_gate` (E11, Gemini collaborative_planning) — whether step
+    1.6 should pause to show a plan for approval. It is a SEPARATE gate signal; it
+    NEVER changes the route. The flags default OFF, so a run that does NOT pass
+    `--interactive` (the eval gate, the test suite, any wrapped/`--auto` run) reports
+    `would_gate: false` and flows straight through.
     """
     from bad_research.skills.router import (
         classify_query_shape,
         classify_route,
+        plan_gate_fires,
         route_reason,
         shape_reason,
     )
@@ -43,6 +54,9 @@ def route_cmd(
     decomp = json.loads(path.read_text(encoding="utf-8"))
     route = classify_route(decomp)
     shape = classify_query_shape(decomp)
+    would_gate = plan_gate_fires(
+        decomp, interactive=interactive, wrapped=wrapped, auto=auto, est_cost=est_cost
+    )
     if apply:
         decomp["route"] = route
         decomp["query_shape"] = shape
@@ -53,6 +67,12 @@ def route_cmd(
         "query_shape": shape,
         "shape_reason": shape_reason(decomp),
         "applied": apply,
+        "plan_gate": {
+            "would_gate": would_gate,
+            "interactive": interactive,
+            "wrapped": wrapped,
+            "auto": auto,
+        },
     }
     typer.echo(json.dumps(out) if json_output else f"route: {route}  shape: {shape}")
 
