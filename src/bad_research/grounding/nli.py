@@ -3,7 +3,7 @@ Local, $0, CPU-fine. dossier 08 §2.2 option 1."""
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any, Protocol
 
 # INTERFACES.md frozen constant (the bare HF repo name resolves to
@@ -14,7 +14,7 @@ ENTAILMENT_PASS = 0.70  # dossier §2.2: entailment >= 0.70 -> PASS
 CONTRADICTION_FLAG = 0.50  # dossier §2.2: contradiction >= 0.50 -> FLAG hard
 
 
-class NLILabel(str, Enum):
+class NLILabel(StrEnum):
     ENTAILMENT = "entailment"
     NEUTRAL = "neutral"
     CONTRADICTION = "contradiction"

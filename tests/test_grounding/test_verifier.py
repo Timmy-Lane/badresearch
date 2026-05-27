@@ -4,6 +4,31 @@ from bad_research.grounding.anchors import ClaimAnchor
 from bad_research.grounding.verifier import VerifyVerdict, tier_a_byte_identity
 
 
+def test_verifyverdict_str_subclass_contract():
+    """Pin the str-subclass behaviors the verifier/consistency/judge paths rely
+    on, so the `(str, Enum)` -> `StrEnum` migration is provably behavior-preserving.
+    Used forms: identity (`is`), construction-from-value with a ValueError fallback
+    for unknown tokens, member-as-dict-key, and JSON. None rely on `str(member)`."""
+    import json
+
+    assert isinstance(VerifyVerdict.SUPPORTED, str)
+    # _parse_judge_json / _parse_vote build the verdict from the model's token.
+    assert VerifyVerdict("supported") is VerifyVerdict.SUPPORTED
+    assert VerifyVerdict.SUPPORTED.value == "supported"
+    assert VerifyVerdict.SUPPORTED == "supported"
+    # an unknown token must raise ValueError (the parsers catch it -> UNSUPPORTED).
+    import pytest
+
+    with pytest.raises(ValueError):
+        VerifyVerdict("not-a-verdict")
+    # member-as-dict-key (the consistency vote tally) round-trips by identity.
+    tally = {v: 0 for v in VerifyVerdict}
+    tally[VerifyVerdict.PARTIAL] += 1
+    assert tally[VerifyVerdict.PARTIAL] == 1
+    # JSON serializes to the bare value, not "VerifyVerdict.SUPPORTED".
+    assert json.dumps(VerifyVerdict.CONTRADICTED) == '"contradicted"'
+
+
 def test_tier_a_passes_when_quote_matches_offsets_and_sha():
     body = "Latency dropped to 12.4 ms under load in the benchmark."
     quote = "Latency dropped to 12.4 ms under load"

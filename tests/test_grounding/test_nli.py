@@ -14,6 +14,26 @@ def test_model_name_is_frozen_constant():
     assert NLI_MODEL_NAME == "nli-deberta-v3-base"
 
 
+def test_nlilabel_str_subclass_contract():
+    """Pin the str-subclass behaviors the code actually relies on, so the
+    `(str, Enum)` -> `StrEnum` migration is provably behavior-preserving.
+    The code uses: identity (`is`), construction-from-value, `.value`, string
+    equality, and JSON serialization — all identical across both bases. It never
+    relies on `str(member)` (the one form that differs)."""
+    import json
+
+    # str subclass — every member IS a str.
+    assert isinstance(NLILabel.ENTAILMENT, str)
+    # construction from the value (classify_nli returns these; model id2label is
+    # matched by the plain value elsewhere).
+    assert NLILabel("entailment") is NLILabel.ENTAILMENT
+    # value + string equality (the funnel/gate compare against the bare value).
+    assert NLILabel.ENTAILMENT.value == "entailment"
+    assert NLILabel.ENTAILMENT == "entailment"
+    # JSON serializes to the bare value (str content), not "NLILabel.ENTAILMENT".
+    assert json.dumps(NLILabel.NEUTRAL) == '"neutral"'
+
+
 class _StubCrossEncoder:
     """A fake CrossEncoder whose logit order is given by `id2label`. predict()
     emits a one-hot-ish logit vector chosen by which premise/hypothesis pair it
