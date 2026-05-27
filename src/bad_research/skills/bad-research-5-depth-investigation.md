@@ -19,7 +19,8 @@ description: >
 
 Read these inputs:
 - `research/scaffold.md` — vault_tag
-- `research/loci.json` — scored loci with source_budget per locus
+- `research/loci.json` — scored loci with source_budget per locus, plus the `"fanout"` key step 4 wrote (arrangement + ordered loci)
+- `research/prompt-decomposition.json` — **`query_shape`** (decides parallel vs sequential vs single — see step 1 below)
 - `research/temp/contradiction-graph.json` (if step 3 ran)
 - `research/query-<vault_tag>.md` — canonical research query
 
@@ -27,7 +28,15 @@ Read these inputs:
 
 ## Procedure
 
-1. **Spawn K `bad-research-depth-investigator` subagents in parallel** (ONE message, all Task calls). One per locus with `source_budget > 0`, capped at 6.
+0. **Branch the fan-out on `query_shape`** (the arrangement step 4 recorded in `research/loci.json`'s `"fanout"` key; Claude Research `research_lead_agent.md:12-29`). The shape is orthogonal to the tier — it decides only how the investigators are *arranged*:
+
+   - **`breadth_first` → PARALLEL.** Spawn K investigators in ONE message (true parallel), **importance-ordered** (highest composite-score locus first), `K = min(n_loci, 6)`. Independent loci, gathered simultaneously. This is the default path (step 1 below).
+   - **`depth_first` → SEQUENTIAL.** Run **2–4 perspectives on the ONE** highest-impact locus, **one at a time**: spawn perspective 1, wait for its committed position, then spawn perspective 2 with the prior perspective's committed position pasted into its prompt ("here is the position the preceding perspective committed to — extend, challenge, or steelman it"), and so on for 2–4 rounds. Going deep on a single topic from many angles, each building on the last. Do NOT spawn them in parallel — the sequential read of the prior's position is the whole point.
+   - **`straightforward` → SINGLE.** Spawn exactly one investigator on the one locus that matters. No ensemble, no sequence.
+
+   Absent a `query_shape` (older runs), use the parallel path (step 1).
+
+1. **`breadth_first` / default — Spawn K `bad-research-depth-investigator` subagents in parallel** (ONE message, all Task calls). One per locus with `source_budget > 0`, capped at 6, **importance-ordered**.
 
    **Spawn template** (carries the 7-field delegation contract — the four added
    fields `objective`, `output_shape`, `tools_allowed`, `stop_conditions` appear
@@ -85,6 +94,12 @@ Read these inputs:
    ```
 
    Each investigator's hard cap is `locus.source_budget`, not a flat number.
+
+   **`depth_first` — SEQUENTIAL perspectives (one locus, 2–4 angles).** When `query_shape == depth_first`, do NOT use the parallel spawn above. Instead, on the single highest-impact locus, run 2–4 investigators one at a time:
+   1. Spawn perspective 1 with the spawn template above (but `analytical perspective: "<angle 1, e.g. the economic lens>"`). Wait for it to write its interim note and return its committed position.
+   2. Spawn perspective 2 with the **prior perspective's committed position pasted into the prompt**: add a `PRIOR COMMITTED POSITION` block — *"The preceding perspective committed to: <quote>. Read it, then investigate this locus from <angle 2>; extend it where the evidence agrees, challenge or steelman it where it doesn't."* Each perspective reads the prior's committed position so the sequence accumulates depth rather than repeating.
+   3. Repeat for perspectives 3–4 if the locus warrants it (importance/uncertainty high). Stop at 4.
+   The interim notes are distinguished by `perspective-<n>` in their tags. Step 6 reconciles the sequence's committed positions into one.
 
    **Hard sources (JS-heavy, login-walled, anti-bot):** when a load-bearing
    source fails a Tier-0/1 fetch (returns junk or a login wall), escalate it

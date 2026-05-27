@@ -42,7 +42,20 @@ Read:
    - **light** elif response_format == "structured" OR atomic_items 3–6
    - **full** else (multi-domain, contested, argumentative, time_periods, ≥7 items)
 
-   The command prints `{"route": "agentic-fast"|"light"|"full", "reason": "...", "applied": false}`.
+   The command prints
+   `{"route": "agentic-fast"|"light"|"full", "reason": "...", "query_shape": "straightforward"|"breadth_first"|"depth_first", "shape_reason": "...", "applied": false}`.
+
+   **`query_shape` is ORTHOGONAL to the route** (E12, Claude Research
+   `research_lead_agent.md:12-29`). The route is the cost tier — *how many*
+   resources (agentic-fast/light/full). The shape is the fan-out arrangement —
+   *how they're arranged*: `depth_first` (one topic, multiple perspectives →
+   investigators run **sequentially**, each reading the prior's committed
+   position), `breadth_first` (independent sub-questions → investigators run **in
+   parallel**, importance-ordered, `K = min(n_subq, cap)`), `straightforward` (a
+   **single** investigator). The `query_shape` field is NEW and ADDS the fan-out
+   shape; it **does not change the route** decision — `classify_route`'s
+   agentic-fast/light/full output is identical with or without it. A `full` route
+   can carry any of the three shapes; steps 4–5 branch their fan-out on the shape.
 
 2. **Honor the existing tier.** If step 1 set `pipeline_tier: "full"` for a
    stated reason (time_periods present, argumentative, contested), the router
@@ -53,15 +66,19 @@ Read:
    ```bash
    bad route --decomposition research/prompt-decomposition.json --apply --json
    ```
-   This adds a top-level `"route"` field to `research/prompt-decomposition.json`.
+   This adds the top-level `"route"` field AND the `"query_shape"` field to
+   `research/prompt-decomposition.json` (both written in the one `--apply` call).
 
 4. Record a one-line rationale (the CLI's `reason` field) in `research/scaffold.md`
-   under a `## Route rationale` subsection.
+   under a `## Route rationale` subsection. Add the CLI's `shape_reason` on the
+   next line as the `query_shape` rationale (which fan-out arrangement and why).
 
 ## Exit criterion
 
 - `research/prompt-decomposition.json` has a `"route"` field ∈ {agentic-fast, light, full}
+- `research/prompt-decomposition.json` has a `"query_shape"` field ∈ {straightforward, breadth_first, depth_first}
 - A route never demotes a justified `full`
+- The `query_shape` write never changed the `route` (orthogonal — shape ADDS, route is unchanged)
 - `research/scaffold.md` has a `## Route rationale` subsection
 
 ## Next step

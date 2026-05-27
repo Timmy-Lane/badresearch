@@ -73,6 +73,51 @@ DISPUTE_PHRASE_MARKERS = (
 ROUTER_SURVEY_MAX_ATOMIC = 40
 
 
+# ── E12 query-SHAPE classifier (2026-05-27) ──────────────────────────────────
+# Claude Research classifies the query SHAPE before searching (verbatim
+# research_lead_agent.md:12-29): the subagent count AND the delegation pattern
+# (sequential vs parallel) are downstream of this 3-way classification, not of a
+# raw token budget. Shape is ORTHOGONAL to the cost tier: tier = how many
+# resources (light/full), shape = how they're arranged.
+#
+#   - depth_first   : one topic, multiple perspectives → SEQUENTIAL subagents
+#                     (each reads the prior's committed position). "What really
+#                     caused the 2008 financial crisis?"
+#   - breadth_first : independent sub-questions → PARALLEL subagents, importance-
+#                     ordered, K=min(n_independent_subq, cap). "Compare the
+#                     economic systems of three Nordic countries."
+#   - straightforward : focused/well-defined → a SINGLE subagent. "What is the
+#                     current population of Tokyo?"
+#
+# CRITICAL: query_shape is a NEW field that ADDS the fan-out shape. It MUST NOT
+# change classify_route's agentic-fast/light/full decision (the golden corpus's
+# decompose-component checks assert that route). The classifier reuses the
+# existing modality + contestedness signals; it never feeds back into the route.
+
+# How many atomic items count as a "straightforward" single-investigation query.
+SHAPE_STRAIGHTFORWARD_MAX_ATOMIC = 2
+
+# The parallel breadth-first fan-out cap (mirrors SUBAGENT_FANOUT_MAX = 20). The
+# effective K is min(n_independent_subq, this cap).
+SHAPE_BREADTH_K_CAP = SUBAGENT_FANOUT_MAX  # 20
+
+# Depth-first deploys 2-4 SEQUENTIAL perspectives on one locus.
+SHAPE_DEPTH_MIN_PERSPECTIVES = 2
+SHAPE_DEPTH_MAX_PERSPECTIVES = 4
+
+# The fan-out arrangement per shape. `k` is the literal count when fixed;
+# `arrangement` is single | parallel | sequential. The breadth-first K is
+# computed at dispatch time as min(n_independent_subq, k_cap).
+SHAPE_FANOUT: dict[str, dict[str, object]] = {
+    "straightforward": {"arrangement": "single", "k": 1},
+    "breadth_first": {"arrangement": "parallel", "k_cap": SHAPE_BREADTH_K_CAP,
+                      "importance_ordered": True},
+    "depth_first": {"arrangement": "sequential",
+                    "min_k": SHAPE_DEPTH_MIN_PERSPECTIVES,
+                    "max_k": SHAPE_DEPTH_MAX_PERSPECTIVES},
+}
+
+
 # ── KR-6 loop levers (dossier 16; INTERFACES_KEYLESS §8 frozen table) ─────────
 
 # Grader loop — judge -> patch -> re-judge, capped (patch-not-regenerate => 3 is

@@ -40,6 +40,39 @@ def test_route_apply_idempotent_and_reason_present(tmp_path):
     assert out["reason"]
 
 
+def test_route_command_emits_query_shape(tmp_path):
+    # E12: the route CLI also emits query_shape (fan-out shape) + shape_reason,
+    # ORTHOGONAL to the route. A single-entity factual is `straightforward`.
+    d = tmp_path / "decomp.json"
+    d.write_text(json.dumps({"sub_questions": ["what is the population of Tokyo"],
+                             "entities": ["Tokyo"], "response_format": "short",
+                             "time_periods": [], "contradiction_terms": [],
+                             "domains": ["geo"]}))
+    res = runner.invoke(app, ["route", "--decomposition", str(d), "--json"])
+    assert res.exit_code == 0
+    out = json.loads(res.stdout)
+    assert out["query_shape"] == "straightforward"
+    assert out["shape_reason"]
+    # the route field is still the unchanged agentic-fast classification
+    assert out["route"] == "agentic-fast"
+
+
+def test_route_apply_writes_query_shape_field(tmp_path):
+    # a multi-entity survey applies a `breadth_first` shape WITHOUT changing route
+    d = tmp_path / "decomp.json"
+    d.write_text(json.dumps({"sub_questions": [f"metric {i}" for i in range(8)],
+                             "entities": ["Norway", "Sweden", "Denmark"],
+                             "response_format": "structured", "modality": "compare",
+                             "time_periods": [], "contradiction_terms": [],
+                             "domains": ["econ"]}))
+    res = runner.invoke(app, ["route", "--decomposition", str(d), "--apply", "--json"])
+    assert res.exit_code == 0
+    written = json.loads(d.read_text())
+    assert written["query_shape"] == "breadth_first"
+    # route is whatever it was before E12 (the B-5 survey down-route still holds)
+    assert written["route"] == "light"
+
+
 def test_uncited_gate_command_registered():
     res = runner.invoke(app, ["uncited-gate", "--help"])
     assert res.exit_code == 0

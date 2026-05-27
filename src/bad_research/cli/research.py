@@ -25,17 +25,36 @@ def route_cmd(
     apply: bool = typer.Option(False, "--apply"),
     json_output: bool = typer.Option(False, "--json", "-j"),
 ) -> None:
-    """Classify a Step-1 decomposition into a pipeline route (agentic-fast|light|full)."""
-    from bad_research.skills.router import classify_route, route_reason
+    """Classify a Step-1 decomposition into a pipeline route (agentic-fast|light|full).
+
+    Also emits `query_shape` (E12, Claude Research) — the fan-out SHAPE
+    (straightforward|breadth_first|depth_first), ORTHOGONAL to the route. The
+    shape ADDS the investigator arrangement (single|parallel|sequential); it does
+    NOT change the route decision.
+    """
+    from bad_research.skills.router import (
+        classify_query_shape,
+        classify_route,
+        route_reason,
+        shape_reason,
+    )
 
     path = Path(decomposition)
     decomp = json.loads(path.read_text(encoding="utf-8"))
     route = classify_route(decomp)
+    shape = classify_query_shape(decomp)
     if apply:
         decomp["route"] = route
+        decomp["query_shape"] = shape
         path.write_text(json.dumps(decomp, indent=2), encoding="utf-8")
-    out = {"route": route, "reason": route_reason(decomp), "applied": apply}
-    typer.echo(json.dumps(out) if json_output else f"route: {route}")
+    out = {
+        "route": route,
+        "reason": route_reason(decomp),
+        "query_shape": shape,
+        "shape_reason": shape_reason(decomp),
+        "applied": apply,
+    }
+    typer.echo(json.dumps(out) if json_output else f"route: {route}  shape: {shape}")
 
 
 # ── funnel-gather (Task 6/9/12) — the §6 scraper funnel ──────────────────────
