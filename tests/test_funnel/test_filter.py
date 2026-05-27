@@ -45,15 +45,20 @@ def test_keeps_near_but_under_threshold():
     assert len(stored) == 2
 
 
-def test_stores_raw_body_to_vault_returns_note_ids():
+def test_stores_raw_body_to_vault_returns_notes():
     pages = [_page("https://good.com/a", "substantive content body " * 40)]
     vault = FakeVault()
     stored = filter_and_store(pages, vault=vault, postfetch_filter=fake_postfetch_filter,
                               redundancy_overlap=0.60, shingle_n=3)
-    note_id, body = stored[0]
+    # filter_and_store now returns real Note objects — the EXACT type
+    # RetrievalEngine.index consumes (it reads note.meta.{id,title,source} + note.body).
+    note = stored[0]
+    note_id = note.meta.id
     assert note_id in vault.notes                       # the raw body lives on disk
     assert "substantive content" in vault.notes[note_id]
-    assert "substantive content" in body                # passed to RetrievalEngine.index
+    assert "substantive content" in note.body           # passed to RetrievalEngine.index
+    assert note.meta.source == "https://good.com/a"     # url threaded onto the Note
+    assert note.path == f"research/notes/{note_id}.md"  # provenance path for chunk_note
 
 
 def test_empty_input_returns_empty():

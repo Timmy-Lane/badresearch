@@ -7,7 +7,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-import bad_research.cli.research as RESEARCH
+import bad_research.cli.research as RESEARCH  # noqa: N812 (used pervasively as RESEARCH.*)
 from bad_research.cli import app
 
 runner = CliRunner()
@@ -106,7 +106,7 @@ import json as _json
 from dataclasses import dataclass
 
 from bad_research.llm.base import LLMResponse
-from bad_research.web.base import SearchQuery, WebResult
+from bad_research.web.base import WebResult
 
 
 @dataclass
@@ -242,13 +242,7 @@ def test_run_query_end_to_end_degrades_gracefully_on_real_builders(monkeypatch, 
     """The full headless pipeline.run_query on the REAL builders + a mocked host
     LLM, NO keys, NO network. The four real builders assemble and run end-to-end
     without crashing; run_query returns a RunResult and the synthesizer reaches the
-    host-model seam (a key-claiming builder would crash the import here).
-
-    NOTE: the funnel→RetrievalEngine input-shape seam (funnel.filter_and_store emits
-    (note_id, body) tuples; RetrievalEngine.index wants Note objects) is a
-    pre-existing KR-1..5 mismatch OUTSIDE KR-6's scope — so _gather degrades to an
-    honest empty corpus rather than a fabricated answer. That graceful degradation
-    (never a crash) is itself the contract this test guards."""
+    host-model seam (a key-claiming builder would crash the import here)."""
     from bad_research import pipeline
     from bad_research.config import BadResearchConfig
 
@@ -280,3 +274,151 @@ def test_run_query_end_to_end_degrades_gracefully_on_real_builders(monkeypatch, 
     assert mock_llm.synth_calls >= 1, "synthesis never reached the host-model seam"
     assert "host-model synthesis ran" in result.report
     assert result.corpus, "run_query produced an empty corpus on the real builders"
+
+
+# ── the crown jewel — the REAL funnel→engine seam, NO mocks on deps.retrieval ──
+#
+# Every prior funnel/pipeline test mocked deps.retrieval (a FakeRetrievalEngine
+# whose .index() happily accepts (note_id, body) tuples) or sidestepped the funnel
+# with a seeded _retrieve. So the funnel→RetrievalEngine input-shape seam — Stage E
+# emitting what Stage F's RetrievalEngine.index(Iterable[Note]) actually consumes —
+# was never exercised. These tests drive the WHOLE chain with the REAL engine, so a
+# wrong type at the seam surfaces as an empty corpus / AttributeError, not a pass.
+
+
+def _real_engine_on_tmp_vault(tmp_path):
+    """A REAL keyless RetrievalEngine (FTS-only, embedder=None) on a tmp vault,
+    with the host-model reranker mocked at construction (no key, no network)."""
+    from bad_research.retrieval.engine import RetrievalEngine
+    from bad_research.retrieval.rerank import ClaudeCodeReranker
+
+    base = tmp_path / ".bad-research"
+    base.mkdir(parents=True, exist_ok=True)
+    reranker = ClaudeCodeReranker(llm=_MockHostLLM())  # REAL reranker, mocked host
+    return RetrievalEngine(cache_db=base / "semantic_cache.db",
+                           reranker=reranker, embedder=None)
+
+
+def _wire_real_funnel_deps(monkeypatch, tmp_path):
+    """Assemble a FunnelDeps where EVERY seam that touches the funnel→engine path
+    is REAL: real providers (host Links injected), real TieredFetcher (module-level
+    fetch_tiered patched to canned content), a REAL VaultStore on a tmp vault, and
+    a REAL RetrievalEngine. The ONLY fakes are network edges (no key/no net)."""
+    from bad_research.core.vault import Vault
+    from bad_research.funnel.orchestrator import FunnelDeps
+    from bad_research.funnel.store import VaultStore
+    from bad_research.web.base import WebResult
+
+    cfg = _Cfg()
+    provs = RESEARCH._build_providers(cfg)
+    ws = next(p for p in provs if type(p).__name__ == "WebSearchToolProvider")
+    ws._links_source = lambda q, allowed=None, blocked=None: [
+        {"title": "Attention Is All You Need", "url": "https://a.example/transformers"},
+        {"title": "Retrieval Augmented Generation", "url": "https://b.example/rag"},
+    ]
+    ddgs = next(p for p in provs if type(p).__name__ == "DdgsProvider")
+    monkeypatch.setattr(ddgs, "search", lambda *a, **k: [])
+
+    fetcher = RESEARCH._build_tiered_fetcher(cfg)
+
+    def _fake_fetch_tiered(url, *, tier_max, instruction=None, schema=None,
+                           replay_key=None, variables=None, **kw):
+        # Real, indexable prose with a heading so the prose chunker produces chunks.
+        return WebResult(
+            url=url, title=f"page {url}",
+            content=("# Findings\n\nTransformers replace recurrence with self "
+                     "attention so the model weighs every token against every other "
+                     "token in parallel during training and inference. " * 8),
+            metadata={"source": "test"})
+    monkeypatch.setattr("bad_research.browse.ladder.fetch_tiered", _fake_fetch_tiered)
+
+    # A REAL vault on disk (idempotent: reuse if a prior call already init'd it).
+    vault = Vault(tmp_path) if (tmp_path / ".hyperresearch").is_dir() else Vault.init(tmp_path)
+    real_engine = _real_engine_on_tmp_vault(tmp_path)
+    return FunnelDeps(
+        providers=provs,
+        fetcher=fetcher,
+        postfetch_filter=lambda r: r.looks_like_junk(),
+        vault=VaultStore(vault),                    # REAL vault adapter (persists to disk)
+        retrieval=real_engine,                      # REAL engine — NO mock
+    ), vault, real_engine
+
+
+async def test_real_funnel_into_real_engine_produces_nonempty_corpus(monkeypatch, tmp_path):
+    """THE BUG GUARD: run the REAL funnel A→F into the REAL RetrievalEngine. The
+    seam (Stage E → Stage F index) must hand `index` real Notes; if it hands tuples
+    the engine raises AttributeError → gather can't return chunks → empty corpus.
+    A non-empty corpus here proves the seam carries the right type."""
+    from bad_research.funnel.orchestrator import gather
+
+    deps, vault, _engine = _wire_real_funnel_deps(monkeypatch, tmp_path)
+    # Query terms all appear in the canned body (transformers/attention/token), so
+    # the FTS AND-match recalls the chunk; the bug we guard is the SEAM (tuple vs
+    # Note), not FTS tokenization — a poorly-matched query is a separate concern.
+    chunks = await gather("transformers attention token", mode="light", deps=deps)
+
+    assert chunks, ("real funnel → real engine produced an EMPTY corpus — the "
+                    "Stage E→F seam handed the wrong type to RetrievalEngine.index")
+    assert all(getattr(c, "note_id", None) for c in chunks)
+    # The reranker ran over the indexed chunks (host-model seam reached, no key).
+    assert all(getattr(c, "score", 0.0) > 0.0 for c in chunks)
+    # Vault persistence intact: survivors were written to disk as real note files.
+    note_files = list((vault.root / "research" / "notes").glob("*.md"))
+    assert note_files, "survivors were not persisted to the vault (Stage E broke)"
+
+
+async def test_real_funnel_engine_search_returns_ranked_chunks(monkeypatch, tmp_path):
+    """After the real funnel indexes the real engine, a direct engine.search over
+    the same vault returns ranked chunks (the ClaudeCodeReranker scored them via the
+    mocked host LLM). Proves the indexed corpus is queryable end-to-end, no key."""
+    from bad_research.funnel.orchestrator import gather
+
+    deps, _vault, engine = _wire_real_funnel_deps(monkeypatch, tmp_path)
+    await gather("transformers attention token", mode="light", deps=deps)
+    hits = engine.search("self attention tokens parallel", mode="light", top_k=5)
+    assert hits, "the real engine returned no hits after the real funnel indexed it"
+    assert all(h.score > 0.0 for h in hits)
+
+
+def test_run_query_nonempty_corpus_on_real_funnel(monkeypatch, tmp_path):
+    """pipeline.run_query end-to-end on the REAL funnel + a mocked host LLM, NO keys.
+    The corpus that reaches synthesis is NON-EMPTY (the bug = empty) and the report
+    is NOT the 'no evidence gathered' template — real chunks reached the synthesizer."""
+    from bad_research import pipeline
+    from bad_research.cli import research as research_mod
+    from bad_research.config import BadResearchConfig
+    from bad_research.core.vault import Vault
+
+    mock_llm = _MockHostLLM()
+    monkeypatch.setattr("bad_research.llm.base.get_llm_provider",
+                        lambda *a, **k: mock_llm)
+
+    # Build a real vault on disk and make run_funnel use REAL deps (real engine).
+    Vault.init(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    deps_box: dict = {}
+
+    def _wired_run_funnel(query, *, mode, vault_tag):
+        import asyncio
+        from dataclasses import asdict, is_dataclass
+
+        from bad_research.funnel.orchestrator import gather
+
+        deps, _vault, _engine = _wire_real_funnel_deps(monkeypatch, tmp_path)
+        deps_box["deps"] = deps
+        chunks = asyncio.run(gather(query, mode=("full" if mode == "full" else "light"),
+                                    deps=deps))
+        top_chunks = [asdict(c) if is_dataclass(c) else dict(getattr(c, "__dict__", {}))
+                      for c in chunks]
+        return {"note_ids": [], "top_chunks": top_chunks, "n_read": len(top_chunks)}
+
+    monkeypatch.setattr(research_mod, "run_funnel", _wired_run_funnel)
+    # Force _gather to use the real (wired) funnel and _retrieve to NOT override it.
+    monkeypatch.setattr(pipeline, "_retrieve", lambda *a, **k: [])
+
+    result = pipeline.run_query("transformers attention token", BadResearchConfig())
+    assert result.corpus, "run_query produced an EMPTY corpus on the real funnel chain"
+    assert "No evidence was gathered" not in result.report, \
+        "synthesis emitted the no-evidence template — real chunks never reached it"
+    assert mock_llm.synth_calls >= 1, "synthesis never reached the host-model seam"

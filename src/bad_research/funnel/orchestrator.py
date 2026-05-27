@@ -83,22 +83,25 @@ async def gather(
     )
 
     # ── Stage E — FILTER (junk + >60% redundancy) + STORE to vault ─────────
-    stored = filter_and_store(
+    # `notes` is list[Note] — the EXACT type Stage F's RetrievalEngine.index
+    # consumes. filter_and_store persists each survivor to disk (raw body) AND
+    # returns the in-hand Note mirroring it, so Stage F never sees a raw tuple.
+    notes = filter_and_store(
         pages,
         vault=deps.vault,
         postfetch_filter=deps.postfetch_filter,
         redundancy_overlap=cfg.redundancy_overlap,
         shingle_n=cfg.shingle_n,
     )
-    if not stored:
+    if not notes:
         return []   # honest gap, never hallucinate (SPEC §13)
 
     # ── Stage F — RERANK chunks via RetrievalEngine -> top set ─────────────
-    # The vault holds the breadth (raw bodies on disk); the engine indexes them
-    # and returns only the reranked top chunks the model will see.
+    # The vault holds the breadth (raw bodies on disk); the engine indexes the
+    # Notes and returns only the reranked top chunks the model will see.
     # deps.retrieval is a duck-typed Protocol (RetrievalEngine) resolved at
     # wiring time (Plan 08); typed `object` here for isolation -> ignore attr.
-    deps.retrieval.index(stored)  # type: ignore[attr-defined]
+    deps.retrieval.index(notes)  # type: ignore[attr-defined]
     chunks: list[Any] = deps.retrieval.search(  # type: ignore[attr-defined]
         query, mode=mode, top_k=cfg.top_chunks)
     return chunks

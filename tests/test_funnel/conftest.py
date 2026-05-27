@@ -154,8 +154,11 @@ class FakeRetrievalEngine:
         self.indexed: list[tuple[str, str]] = []  # (note_id, body)
 
     def index(self, notes) -> None:
-        for note_id, body in notes:
-            self.indexed.append((note_id, body))
+        # Mirror the REAL RetrievalEngine.index contract: an Iterable[Note]. We
+        # read the same fields chunk_note reads (note.meta.id + note.body) so a
+        # tuple-vs-Note seam mismatch surfaces here exactly as it would in prod.
+        for note in notes:
+            self.indexed.append((note.meta.id, note.body))
 
     def search(self, query: str, *, mode: str, top_k: int) -> list:
         chunks = []

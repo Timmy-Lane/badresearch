@@ -9,7 +9,13 @@
 3. Store survivors to the vault (disk/SQLite). The raw body lives ON DISK; it
    is what RetrievalEngine.index reads, never what the caller sees.
 
-Returns list[(note_id, body)] for Stage F to index.
+Returns list[Note] for Stage F — the EXACT type RetrievalEngine.index consumes
+(it reads note.meta.{id,title,source,content_type} + note.body + note.path via
+chunk_note). The vault seam exposes no load-by-id, so we build each Note inline
+from the data already in hand at persist time (note_id from store_note + the
+page's body/title/url) — see orchestrator Stage F. This keeps the funnel's
+isolation contract (FakeVault stays a pure capture stub) while feeding the
+engine real Note objects, not (note_id, body) tuples.
 """
 
 from __future__ import annotations
@@ -17,6 +23,7 @@ from __future__ import annotations
 from typing import Any
 
 from bad_research.core.similarity import jaccard, shingle
+from bad_research.models.note import Note, NoteMeta
 
 
 def filter_and_store(
@@ -26,7 +33,7 @@ def filter_and_store(
     postfetch_filter: Any,
     redundancy_overlap: float,
     shingle_n: int,
-) -> list[tuple[str, str]]:
+) -> list[Note]:
     # 1. Junk filter (Plan 05).
     clean = [p for p in pages if postfetch_filter(p) is None]
 
@@ -44,15 +51,23 @@ def filter_and_store(
         kept.append(p)
         kept_shingles.append(sh)
 
-    # 3. Store survivors to the vault (raw body -> disk).
-    stored: list[tuple[str, str]] = []
+    # 3. Store survivors to the vault (raw body -> disk) AND build the Note Stage F
+    #    will index. Persistence stays the source of truth on disk; the in-hand Note
+    #    mirrors exactly what was persisted (same note_id, body, title, url).
+    stored: list[Note] = []
     for p in kept:
         body = getattr(p, "content", "") or ""
-        note_id = vault.store_note(
-            title=getattr(p, "title", "") or p.url,
+        url = p.url
+        title = getattr(p, "title", "") or url
+        provider = getattr(p, "serp_provider", "") or "fetch"
+        note_id = vault.store_note(title=title, body=body, url=url, provider=provider)
+        # Build the Note from the persisted facts. chunk_note reads meta.{id,title,
+        # source,content_type} + body + path; content_type is left None (prose) — the
+        # funnel reads web pages, not source code, so the prose chunker is correct.
+        note = Note(
+            meta=NoteMeta(title=title, id=note_id, source=url, fetch_provider=provider),
             body=body,
-            url=p.url,
-            provider=getattr(p, "serp_provider", "") or "fetch",
+            path=f"research/notes/{note_id}.md",
         )
-        stored.append((note_id, body))
+        stored.append(note)
     return stored
