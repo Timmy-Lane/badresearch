@@ -198,6 +198,59 @@ def test_e6_cascade_preserves_gate_quality(tmp_path):
     assert all(h.score >= 0.70 for h in hits)
 
 
+class _OutOfRangeReranker:
+    """A reranker whose raw scores can EXCEED 1.0 (like IdentityReranker's `n-i`
+    pseudo-scores). The E6 cascade bound is `best = fuse(initial, 1.0, rank)` — it
+    is only an upper bound (hence lossless) if the engine treats the reranker score
+    as living in [0,1]. If the engine fed a raw >1 score straight into the blend,
+    the cascade could auto-DROP a doc the uncertain path would then KEEP — a
+    losslessness violation. This double makes that gap observable."""
+
+    def __init__(self) -> None:
+        self.docs_seen: list[int] = []
+
+    def rerank(self, query, docs):
+        self.docs_seen.append(len(docs))
+        n = len(docs)
+        # descending pseudo-scores well above 1.0 (n-i), exactly IdentityReranker's shape.
+        return [(i, float(n - i)) for i in range(n)]
+
+
+def test_e6_cascade_is_lossless_for_out_of_range_reranker_scores(tmp_path):
+    # Regression for the `reranker="none"` / IdentityReranker path. The E6 cascade's
+    # auto-DROP bound pins the reranker at 1.0 (`best = fuse(initial, 1.0, rank)`), so
+    # the bound is only a valid UPPER bound — and the cascade only lossless — if the
+    # reranker score the engine actually fuses lives in [0,1]. IdentityReranker
+    # returns `n-i` pseudo-scores (> 1.0 for all but the last doc). Without an engine
+    # clamp, the uncertain/kept bands would fuse those raw > 1.0 scores, producing
+    # impossible final scores and (worse) letting a doc the cascade auto-DROPPED at
+    # the bound have survived in the OLD all-rerank path — a real losslessness break.
+    # The fix: clamp the reranker score to [0,1] at the single fusion site, which is
+    # a no-op for the host (already clamps) and BGE (sigmoid) rerankers, and makes the
+    # bound EXACT for every reranker. Then every survivor's score is a valid [0,1]
+    # blend (<= the source-type ceiling) and clears the frozen 0.70 gate.
+    rr = _OutOfRangeReranker()
+    eng = RetrievalEngine(cache_db=tmp_path / "cache.db", reranker=rr)
+    # 6 graded docs → the proxy leaves >=2 in the uncertain band, so the top uncertain
+    # doc would receive an n-i pseudo-score of 2.0 (the leak vector pre-clamp).
+    eng.index([
+        _note("d0", "# d0\n\n" + "python async concurrency " * 12 + "\n"),
+        _note("d1", "# d1\n\n" + "python async concurrency " * 8 + " filler " * 4 + "\n"),
+        _note("d2", "# d2\n\n" + "python async concurrency " * 5 + " filler " * 15 + "\n"),
+        _note("d3", "# d3\n\n" + "python async concurrency " * 3 + " filler " * 30 + "\n"),
+        _note("d4", "# d4\n\n" + "python async concurrency " * 2 + " filler " * 45 + "\n"),
+        _note("d5", "# d5\n\npython async concurrency " + " filler " * 70 + "\n"),
+    ])
+    hits = eng.search("python async concurrency", mode="light", top_k=10)
+    # No survivor may carry an impossible score: a valid [0,1] blend scaled by the
+    # source-type weight maxes at DEFAULT_SOURCE_TYPE_WEIGHT (1.0 for "docs"). A score
+    # > 1.0 here is direct proof a raw n-i (> 1.0) reranker score leaked into the blend.
+    assert all(h.score <= 1.0 + 1e-9 for h in hits), \
+        f"raw out-of-range reranker score leaked into the fused result: {[(h.note_id, h.score) for h in hits]}"
+    # And every survivor still clears the frozen gate.
+    assert all(h.score >= 0.70 for h in hits)
+
+
 def test_expand_symbols_pulls_wiki_link_neighbors(tmp_path, stub_links_db):
     # Note "a" links to note "b"; a low-pass first round should widen to b's chunks.
     links_path = stub_links_db([("a", "b")])

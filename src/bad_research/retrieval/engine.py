@@ -63,14 +63,14 @@ from bad_research.retrieval.fusion import (
 #   • UNCERTAIN  — everything between → the only docs the reranker pays for.
 # This is provably LOSSLESS w.r.t. the gate: the keep/drop bounds are computed with
 # the SAME three_tier_fuse + source-type-weight algebra the gate uses, with the
-# reranker score pinned to its extremes — so no doc that could have passed is
-# dropped, and no doc that would have failed is kept. The frozen constants
-# (RELEVANCE_GATE=0.70, ALPHA=0.7, RRF_K=60, the three-tier weights) are UNTOUCHED;
-# the cascade is a band built AROUND the gate, not a change to it.
-# Optional belt-and-suspenders proxy cuts (documented, NOT the safety mechanism —
-# the gate-aware bound is): a high keep cut and a low drop cut on the raw proxy.
-PROXY_KEEP_CUT = 0.90   # proxy >= this is "clearly relevant" (the bound still decides)
-PROXY_DROP_CUT = 0.05   # proxy <= this is "clearly irrelevant" (the bound still decides)
+# reranker score pinned to its extremes (and the live reranker score clamped to the
+# same [0,1] range at the fusion site) — so no doc that could have passed is dropped,
+# and no doc that would have failed is kept. The frozen constants (RELEVANCE_GATE=0.70,
+# ALPHA=0.7, RRF_K=60, the three-tier weights) are UNTOUCHED; the cascade is a band
+# built AROUND the gate, not a change to it. The decision is the gate-aware bound and
+# ONLY the bound — there are no extra "proxy cut" thresholds, because any raw-proxy cut
+# is either redundant with the bound (it can only fire inside a band the bound already
+# decided) or unsafe (it could override the bound). The bound is the whole safety story.
 
 
 class _ChunkMeta:
@@ -251,29 +251,35 @@ class RetrievalEngine:
             rank = rank0 + 1
             initial = fused_initial[cid]
             ct = self._meta[cid].content_type
-            # best/worst achievable final, computed with the SAME gate algebra.
+            # best/worst achievable final, computed with the SAME gate algebra and the
+            # reranker score pinned to its (clamped) extremes — the gate-aware bound is
+            # the entire safety guarantee, so the decision is the bound and only the bound.
             worst = apply_source_type_weight(three_tier_fuse(initial, 0.0, rank), ct)
             best = apply_source_type_weight(three_tier_fuse(initial, 1.0, rank), ct)
-            # The proxy cuts give the "clearly relevant / clearly irrelevant" labels
-            # (the brief's high keep cut / low drop cut); the gate-aware bound is the
-            # SAFETY guarantee — a doc is only auto-kept/dropped when BOTH the cut
-            # labels it obvious AND the bound proves the verdict can't flip.
-            clearly_relevant = initial >= PROXY_KEEP_CUT and worst >= self.gate
-            clearly_irrelevant = initial <= PROXY_DROP_CUT and best < self.gate
-            if worst >= self.gate or clearly_relevant:   # KEEP free (reranker can't lower it)
+            if worst >= self.gate:        # KEEP free — reranker can only raise it
                 auto_keep.append(rank0)
-            elif best < self.gate or clearly_irrelevant:  # DROP free (reranker can't save it)
+            elif best < self.gate:        # DROP free — reranker can never save it
                 continue
-            else:                                         # genuinely uncertain → pay
+            else:                         # genuinely uncertain → pay for the reranker
                 uncertain.append(rank0)
 
         # ONE batched host-model call over ONLY the uncertain band (the obvious
         # keep/drop bands never reach the reranker — the cascade's whole point).
+        # Reranker scores are CLAMPED to [0,1] here: the cascade's keep/drop bounds
+        # are computed with the reranker pinned to its extremes (0.0 / 1.0), so the
+        # bound is only a valid upper/lower bound — and the cascade only LOSSLESS —
+        # if the fused score also lives in [0,1]. The host (already clamps) and BGE
+        # (sigmoid) rerankers are in-range, so this is a no-op for them; it is the
+        # IdentityReranker (`reranker="none"`, n-i ordering pseudo-scores > 1.0) that
+        # needs it — three_tier_fuse's blend is calibrated for a [0,1] relevance
+        # score, and an out-of-range value would both inflate finals past 1.0 and let
+        # a doc the bound auto-dropped re-pass the gate (a losslessness break).
         rer: dict[int, float] = {}
         if uncertain:
             unc_docs = [self._meta[cand_ids[r0]].chunk.text for r0 in uncertain]
             local_scores = dict(self.reranker.rerank(query, unc_docs))  # local idx → score
-            rer = {uncertain[li]: s for li, s in local_scores.items()}
+            rer = {uncertain[li]: max(0.0, min(1.0, float(s)))
+                   for li, s in local_scores.items()}
         self.last_reranked_count = len(uncertain)
 
         survivors: list[Chunk] = []
