@@ -47,6 +47,31 @@ from bad_research.retrieval.fusion import (
     three_tier_fuse,
 )
 
+# ── E6 — cascade-proxy relevance gate (ENHANCEMENT_PLAN E6, P2) ──────────────
+# Pattern: Snowflake cascade rerank (DEEPLEARNINGAI.md A12, 20-500% speedup,
+# <2% acc loss) + the grounding verifier's own byte→NLI→LLM cascade, applied to
+# RELEVANCE. The cheap proxy is the `initial` score (min-max-normed BM25 in the
+# keyless default; renormalized RRF k=60 in the [local] dense lane) — already
+# computed, free, in [0,1]. We use it to skip the EXPENSIVE host-model reranker on
+# the obvious cases:
+#   • auto-KEEP  — a doc whose WORST achievable final (reranker_score=0.0) already
+#                  clears the frozen 0.70 gate: the reranker can only raise it, so
+#                  the call is wasted → keep it, score it at its no-rerank floor.
+#   • auto-DROP  — a doc whose BEST achievable final (reranker_score=1.0) still
+#                  cannot reach the gate: the reranker can never save it → drop it
+#                  without a call.
+#   • UNCERTAIN  — everything between → the only docs the reranker pays for.
+# This is provably LOSSLESS w.r.t. the gate: the keep/drop bounds are computed with
+# the SAME three_tier_fuse + source-type-weight algebra the gate uses, with the
+# reranker score pinned to its extremes — so no doc that could have passed is
+# dropped, and no doc that would have failed is kept. The frozen constants
+# (RELEVANCE_GATE=0.70, ALPHA=0.7, RRF_K=60, the three-tier weights) are UNTOUCHED;
+# the cascade is a band built AROUND the gate, not a change to it.
+# Optional belt-and-suspenders proxy cuts (documented, NOT the safety mechanism —
+# the gate-aware bound is): a high keep cut and a low drop cut on the raw proxy.
+PROXY_KEEP_CUT = 0.90   # proxy >= this is "clearly relevant" (the bound still decides)
+PROXY_DROP_CUT = 0.05   # proxy <= this is "clearly irrelevant" (the bound still decides)
+
 
 class _ChunkMeta:
     __slots__ = ("chunk", "content_type")
@@ -86,6 +111,10 @@ class RetrievalEngine:
         create_chunk_fts(self.conn)
         self._meta: dict[str, _ChunkMeta] = {}
         self.last_cache_hit: bool = False
+        # E6 cascade instrumentation (last _one_round): how many candidates reached
+        # the rerank decision vs. how many actually paid for the host-model reranker.
+        self.last_rerank_candidate_count: int = 0
+        self.last_reranked_count: int = 0
 
     # ── INDEX ────────────────────────────────────────────────────────────
     def index(self, notes: Iterable[Note]) -> None:
@@ -209,11 +238,59 @@ class RetrievalEngine:
         # pre-rerank rank (1-based) by initial score desc.
         ranked = sorted(fused_initial.items(), key=lambda kv: kv[1], reverse=True)
         cand_ids = [cid for cid, _ in ranked]
-        docs = [self._meta[cid].chunk.text for cid in cand_ids]
-        rer = dict(self.reranker.rerank(query, docs))  # idx0 → reranker_score
+        self.last_rerank_candidate_count = len(cand_ids)
+
+        # ── E6 cascade-proxy gate ───────────────────────────────────────────
+        # Triage every candidate on the FREE proxy (its initial score) BEFORE the
+        # expensive host-model reranker. The keep/drop decision uses the gate's own
+        # three_tier_fuse + source-type-weight algebra with the reranker score pinned
+        # to its extremes, so it is provably lossless w.r.t. the frozen 0.70 gate.
+        auto_keep: list[int] = []     # idx into cand_ids — clearly relevant, kept @ floor
+        uncertain: list[int] = []     # idx into cand_ids — must be reranked
+        for rank0, cid in enumerate(cand_ids):
+            rank = rank0 + 1
+            initial = fused_initial[cid]
+            ct = self._meta[cid].content_type
+            # best/worst achievable final, computed with the SAME gate algebra.
+            worst = apply_source_type_weight(three_tier_fuse(initial, 0.0, rank), ct)
+            best = apply_source_type_weight(three_tier_fuse(initial, 1.0, rank), ct)
+            # The proxy cuts give the "clearly relevant / clearly irrelevant" labels
+            # (the brief's high keep cut / low drop cut); the gate-aware bound is the
+            # SAFETY guarantee — a doc is only auto-kept/dropped when BOTH the cut
+            # labels it obvious AND the bound proves the verdict can't flip.
+            clearly_relevant = initial >= PROXY_KEEP_CUT and worst >= self.gate
+            clearly_irrelevant = initial <= PROXY_DROP_CUT and best < self.gate
+            if worst >= self.gate or clearly_relevant:   # KEEP free (reranker can't lower it)
+                auto_keep.append(rank0)
+            elif best < self.gate or clearly_irrelevant:  # DROP free (reranker can't save it)
+                continue
+            else:                                         # genuinely uncertain → pay
+                uncertain.append(rank0)
+
+        # ONE batched host-model call over ONLY the uncertain band (the obvious
+        # keep/drop bands never reach the reranker — the cascade's whole point).
+        rer: dict[int, float] = {}
+        if uncertain:
+            unc_docs = [self._meta[cand_ids[r0]].chunk.text for r0 in uncertain]
+            local_scores = dict(self.reranker.rerank(query, unc_docs))  # local idx → score
+            rer = {uncertain[li]: s for li, s in local_scores.items()}
+        self.last_reranked_count = len(uncertain)
 
         survivors: list[Chunk] = []
-        for rank0, cid in enumerate(cand_ids):
+        # Auto-kept docs: score at their no-rerank FLOOR (reranker_score=0.0) — the
+        # conservative final we already proved clears the gate; we never inflate.
+        for rank0 in auto_keep:
+            cid = cand_ids[rank0]
+            initial = fused_initial[cid]
+            fused = apply_source_type_weight(
+                three_tier_fuse(initial, 0.0, rank0 + 1), self._meta[cid].content_type)
+            c = self._meta[cid].chunk
+            survivors.append(Chunk(chunk_id=c.chunk_id, note_id=c.note_id, text=c.text,
+                                   char_start=c.char_start, char_end=c.char_end,
+                                   score=fused, source_id=c.source_id))
+        # Uncertain docs: blend in the host reranker score, then apply the gate.
+        for rank0 in uncertain:
+            cid = cand_ids[rank0]
             rank = rank0 + 1
             initial = fused_initial[cid]
             reranker_score = rer.get(rank0, 0.0)
