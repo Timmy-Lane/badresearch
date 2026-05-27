@@ -8,7 +8,6 @@ upstream package if it's importable.
 from __future__ import annotations
 
 import importlib.util
-import os
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -52,40 +51,17 @@ class HyperresearchBaseline:
         )
 
 
-@dataclass
-class _ApiBaseline:
-    name: str
-    env_var: str
-
-    def available(self) -> bool:
-        return bool(os.environ.get(self.env_var))
-
-    def run(self, query: str) -> BaselineResult:
-        if not self.available():
-            raise BaselineUnavailable(f"{self.name}: {self.env_var} not set")
-        # Real API call lives behind the key-gate; only reached when keyed (live tier).
-        raise NotImplementedError(  # pragma: no cover
-            f"{self.name} live call — implement against its deep-research API when keyed"
-        )
-
-
-class PerplexityBaseline(_ApiBaseline):
-    def __init__(self) -> None:
-        super().__init__(name="perplexity", env_var="PPLX_API_KEY")
-
-
-class GrokBaseline(_ApiBaseline):
-    def __init__(self) -> None:
-        super().__init__(name="grok", env_var="XAI_API_KEY")
-
-
 def available_baselines() -> list[Baseline]:
-    """Every baseline whose key/dependency is present right now."""
-    candidates: list[Baseline] = [
-        HyperresearchBaseline(),
-        PerplexityBaseline(),
-        GrokBaseline(),
-    ]
+    """Every baseline whose dependency is present (keyless only).
+
+    The keyed deep-research APIs (Perplexity/Grok) are REMOVED in the keyless
+    re-architecture — they need third-party keys, which the keyless rule forbids.
+    The only baseline is `hyperresearch` (host-driven, structural comparator) when
+    its package is importable. The keyless calibration plan
+    (docs/plans/2026-05-27-bad-research-KR-7-calibration-plan.md) measures the
+    keyless pipeline against keyless references instead.
+    """
+    candidates: list[Baseline] = [HyperresearchBaseline()]
     return [b for b in candidates if b.available()]
 
 
@@ -93,8 +69,6 @@ __all__ = [
     "Baseline",
     "BaselineResult",
     "BaselineUnavailable",
-    "GrokBaseline",
     "HyperresearchBaseline",
-    "PerplexityBaseline",
     "available_baselines",
 ]

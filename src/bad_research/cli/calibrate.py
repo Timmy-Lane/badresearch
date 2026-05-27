@@ -1,13 +1,17 @@
-"""`bad calibrate <query>` — OFFLINE calibration harness (SPEC §14).
+"""`bad calibrate <query>` — OFFLINE calibration harness (SPEC §14; keyless).
 
-Runs a query through bad-research, judges it on the 5-axis rubric, compares to
-available key-gated baselines, and writes calibration-report.{json,md}. This is
-calibration, NOT a per-run gate (SPEC §10 Excluded list).
+Runs a query through bad-research, judges it on the 5-axis rubric, and writes
+calibration-report.{json,md}. Calibration, NOT a per-run gate (SPEC §10 Excluded).
 
 `--offline` forces a deterministic stub runner + StubJudge so the command runs
-with ZERO keys and ZERO network (the tested path). The live path drives the real
-pipeline + a single strong-model LLMJudge + key-gated baselines; it needs an
-Anthropic key and is exercised only when keyed.
+with ZERO keys and ZERO network — this is the tested path.
+
+The live path drives the KEYLESS `pipeline.run_query` (host WebSearch + ddgs +
+crawl4ai + FTS5/BM25 + host-model LLM-rerank — no third-party key) and a single
+strong-model LLMJudge. It still reads ANTHROPIC_API_KEY for the HEADLESS model
+calls (the only path that needs it; the skill path uses the Claude Code host
+model and needs no key). The only baseline is the keyless `hyperresearch` one —
+the keyed deep-research baselines (Perplexity/Grok) were removed.
 """
 
 from __future__ import annotations
