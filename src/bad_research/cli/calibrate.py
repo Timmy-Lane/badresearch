@@ -65,7 +65,7 @@ def calibrate(
                 cost=meter,
             )
 
-        judge = StubJudge(scores={a: 0.85 for a in JUDGE_AXES})
+        judge = StubJudge(rails={a: "pass" for a in JUDGE_AXES})
         report = run_calibration(query, runner=_stub_runner, baselines=[], judge=judge)
     else:
         # Live path: real runner + LLM judge + key-gated baselines.
@@ -108,12 +108,12 @@ def calibrate(
     v = report.bad.verdict
     console.print(f"[bold]Calibration:[/] {query}")
     console.print(
-        f"  bad-research overall: [bold]{v.overall:.3f}[/] "
+        f"  bad-research pass-rate: [bold]{v.pass_rate:.3f}[/] "
         f"({'[green]PASS[/]' if v.passed else '[red]FAIL[/]'})  "
         f"cost ${report.bad.cost_usd:.4f}"
     )
     for b in report.baselines:
-        console.print(f"  {b.name}: {b.verdict.overall:.3f}  (Δ {report.delta_vs(b.name):+.3f})")
+        console.print(f"  {b.name}: {b.verdict.pass_rate:.3f}  (Δ {report.delta_vs(b.name):+.3f})")
     console.print(f"\n[green]Wrote[/] {json_path}\n[green]Wrote[/] {md_path}")
 
 

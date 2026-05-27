@@ -23,15 +23,16 @@ from bad_research.calibrate.harness import (
     run_calibration,
 )
 from bad_research.calibrate.judge import (
-    AxisScores,
+    AxisRails,
     Judge,
+    JudgeRail,
     JudgeVerdict,
     LLMJudge,
     StubJudge,
 )
 
 __all__ = [
-    "AxisScores",
+    "AxisRails",
     "BadRunOutput",
     "BadRunner",
     "Baseline",
@@ -40,6 +41,7 @@ __all__ = [
     "CalibrationReport",
     "CostMeter",
     "Judge",
+    "JudgeRail",
     "JudgeVerdict",
     "LLMJudge",
     "StubJudge",
