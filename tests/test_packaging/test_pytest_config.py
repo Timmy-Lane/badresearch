@@ -31,3 +31,35 @@ def test_strict_markers_and_coverage(cfg):
 
 def test_testpaths(cfg):
     assert cfg["testpaths"] == ["tests"]
+
+
+@pytest.fixture(scope="module")
+def cov() -> dict:
+    pp = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    return pp["tool"]["coverage"]["run"]
+
+
+def test_omit_drops_deleted_modules(cov):
+    omit_joined = " ".join(cov["omit"])
+    # Deleted in the keyless rebuild — must NOT appear in omit (the files are gone).
+    for gone in (
+        "exa_provider",
+        "web/providers",
+    ):
+        assert gone not in omit_joined, f"omit references deleted module: {gone}"
+
+
+def test_new_keyless_modules_are_not_omitted(cov):
+    omit_joined = " ".join(cov["omit"])
+    # The new keyless surface must be COVERED (not omitted), so it counts to the floor.
+    for covered in (
+        "web/search",
+        "web/content",
+        "browse/agent_browser",
+        "retrieval/rerank",
+    ):
+        assert covered not in omit_joined, f"new keyless module wrongly omitted: {covered}"
+
+
+def test_coverage_floor_still_80(cfg):
+    assert "--cov-fail-under=80" in cfg["addopts"]

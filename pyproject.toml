@@ -133,10 +133,18 @@ omit = [
     "*/graph/*",
     "*/models/graph.py",
     "*/models/search.py",
-    # legacy / heavy optional providers
+    # legacy keyless render/fetch wrappers KEPT for the Tier-0 httpx path + the
+    # crawl4ai render fallback (web/base.py + fetch_clean call them). Thin wrappers
+    # around external libs, not KR-2..6 adds — unit-covered indirectly, omitted from
+    # the floor like the rest of the inherited surface.
     "*/web/builtin.py",
     "*/web/crawl4ai_provider.py",
-    # inherited core data layer (vault sync, notes, enrich, linking, migrations)
+    # the optional [local] neural stack — only materialized under `pip install [local]`,
+    # so it is not exercised by the default keyless test run.
+    "*/embed/bge_local.py",
+    "*/retrieval/store.py",
+    # inherited core data layer (vault sync, notes, enrich, linking, migrations) — kept,
+    # but unit-covered by the inherited hyperresearch suite, not this codebase's adds.
     "*/core/sync.py",
     "*/core/note.py",
     "*/core/enrich.py",
@@ -155,10 +163,8 @@ omit = [
     "*/cli/fetch.py",
     "*/cli/research.py",
     "*/funnel/store.py",
-    # KR-1 keyless stubs (real coverage lands in KR-2/KR-5)
-    "*/web/search/base.py",
+    # embed/base.py is the [local] EmbedProvider Protocol — only materialized with [local].
     "*/embed/base.py",
-    "*/retrieval/store.py",
 ]
 
 [tool.coverage.report]
