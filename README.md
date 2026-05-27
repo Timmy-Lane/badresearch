@@ -15,14 +15,42 @@ never requirements.
 
 ## Install
 
+Bad Research is a small CLI that registers itself as a Claude Code skill. No API keys. Requires Python 3.11–3.13.
+
 ```bash
-pipx install bad-research        # or: pip install bad-research
-bad doctor                       # keyless capability report — no key needed
+# 1. Download + install the CLI (pipx keeps it in its own isolated env)
+pipx install git+https://github.com/LeventySeven/badresearch.git
+#    └─ or:  uv tool install git+https://github.com/LeventySeven/badresearch.git
+
+# 2. Register the /bad-research skill into ~/.claude (one time, applies to every project)
+bad install
+
+# 3. Verify — keyless capability report, no key needed
+bad doctor
 ```
 
-`bad install` registers the `/bad-research` skill into `~/.claude/`. Run
-`bad doctor` any time to see what's wired (host model, keyless search/browse, the
-optional external CLIs it can drive, and whether the `[local]` neural stack is present).
+`bad install` writes the entry skill to `~/.claude/skills/bad-research/`; the per-step
+skills install lazily on first use. For a project-local install instead of global, run
+`bad install --project` inside the project. `bad doctor` shows what's wired (host model,
+keyless search/browse, the optional external CLIs it can drive, the `[local]` neural stack).
+
+## Use it in Claude Code
+
+After `bad install`, open Claude Code in any project and either:
+
+- **Invoke it directly** — type the slash command with your question:
+  ```
+  /bad-research Is open-source AI more dangerous than closed-source for national security?
+  ```
+- **Let Claude trigger it** — just ask a research-shaped question (*"write me a cited report
+  comparing vector databases"*, *"literature review on GLP-1 drugs"*) and Claude loads the
+  skill automatically.
+
+It scales to the question: a simple lookup gets a fast cited answer in minutes; a broad or
+contested one runs the full adversarially-reviewed pipeline (~1.5–2.5 h). The final report
+and every fetched source land in a vault under `./research/` that compounds across sessions.
+
+> Not yet on PyPI — install from GitHub as above. (Once published, `pipx install bad-research` will also work.)
 
 ## What it does
 
