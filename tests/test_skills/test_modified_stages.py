@@ -3,10 +3,18 @@ from tests.test_skills.validate import validate_skill
 STAGES = [
     "bad-research-2-width-sweep.md",
     "bad-research-5-depth-investigation.md",
+    "bad-research-10-triple-draft.md",
     "bad-research-11-synthesize.md",
     "bad-research-13-gap-fetch.md",
     "bad-research-16-readability-audit.md",
 ]
+
+# A-1: the generation-time grounding mandate marker. The drafter prompts carry an
+# unambiguous "cite as you write — [N] before the terminal period" instruction so
+# the downstream uncited-gate runs as a cheap VERIFIER (0-few blocks) rather than a
+# heavy block-and-patch rewriter. Asserting the literal anchor keeps the frozen
+# wording from silently drifting back to "draft now, ground later".
+_GEN_GROUNDING_ANCHOR = "GENERATION-TIME GROUNDING"
 
 
 def test_all_modified_stages_valid(skills_dir, known_skills):
@@ -57,3 +65,33 @@ def test_step16_has_recitation_gate(skills_dir):
     assert "bad recitation-gate" in body
     # it's a major finding, NOT a ship-block (unlike uncited)
     assert "not a ship-block" in body.lower() or "does not block ship" in body.lower()
+
+
+# ── A-1: generation-time grounding (cite-as-you-write) in the drafter prompts ──
+
+def test_step10_mandates_per_sentence_inline_cite_from_first_draft(skills_dir):
+    body = (skills_dir / "bad-research-10-triple-draft.md").read_text()
+    assert _GEN_GROUNDING_ANCHOR in body
+    low = body.lower()
+    # Unambiguous: a [N]/[[note-id]] citation before EVERY factual sentence's
+    # terminal period, in the FIRST draft (not deferred to a later grounding pass).
+    assert "before" in low and "terminal period" in low
+    assert "first draft" in low or "as you write" in low
+    assert "every factual sentence" in low
+
+
+def test_step11_synthesizer_spawn_mandates_inline_cite_as_you_write(skills_dir):
+    body = (skills_dir / "bad-research-11-synthesize.md").read_text()
+    assert _GEN_GROUNDING_ANCHOR in body
+    low = body.lower()
+    assert "before" in low and "terminal period" in low
+    assert "every factual sentence" in low
+    # the gate's role becomes a cheap verifier, not a rewriter
+    assert "verifier" in low
+
+
+def test_gen_grounding_preserves_patch_not_regenerate(skills_dir):
+    # The cite-as-you-write change must NOT weaken the patch-not-regenerate invariant.
+    body = (skills_dir / "bad-research-11-synthesize.md").read_text()
+    assert "patch-not-regenerate" in body or "patch not regenerate" in body.lower() \
+        or "do not re-synthesize" in body.lower()

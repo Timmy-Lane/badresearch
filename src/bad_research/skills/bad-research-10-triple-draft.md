@@ -53,6 +53,16 @@ Read `response_format` and `citation_style` from `research/prompt-decomposition.
 
 ---
 
+## GENERATION-TIME GROUNDING — cite as you write (applies to ALL drafts, ALL tiers)
+
+**Ground every factual sentence in the FIRST draft. Do not draft ungrounded prose and "add citations later".** A *factual sentence* is any sentence carrying a number, a named entity, a comparative/superlative, or a causal/temporal claim. Every such sentence MUST end with its citation token placed **before the terminal period** — `… grew 12.4% in 2024 [[note-id]].` (wikilink style) or `… grew 12.4% in 2024 [3].` (inline style). One marker minimum; stack `[[a]][[b]]` when two sources back the same claim.
+
+- **Why:** the downstream `bad uncited-gate` (step 16) is a deterministic ship-block on any uncited factual sentence. If you cite as you write, that gate runs as a cheap **verifier** that finds 0–few blocks. If you defer grounding, the gate becomes a heavy block-and-patch rewriter that re-touches dozens of sentences over many iterations — the ~2× cost the benchmark exposed. Cite-as-you-write moves the cost from a late rewrite to the cheapest possible moment: when the sentence is being written and the source is already in front of you.
+- **What does NOT need a citation:** the executive-summary topic sentence, pure transitions/framing ("This section examines…"), hedge-frame openers ("In general,…"), and questions. These are non-factual by the gate's own classifier, so leave them clean — don't bolt on a decorative cite.
+- **Anchoring rule:** every `[[note-id]]`/`[N]` you emit MUST point at a source you actually read (light tier: a note you opened; full tier: a note on your `must_read_note_ids`). A claim you cannot ground to a real source is NOT written — drop it or hedge it, never fabricate a marker. The CitationVerifier checks every cite byte-for-byte afterward; fabricated cites are caught and dropped.
+
+---
+
 ## Light tier ONLY: single-draft path
 
 If `pipeline_tier == "light"`: SKIP step 10.1 — 10.3 below and follow this section instead.
@@ -66,7 +76,7 @@ If `pipeline_tier == "light"`: SKIP step 10.1 — 10.3 below and follow this sec
    - Hit the length target from step 10.0's table for the chosen `response_format` (light typically pairs with `short` or `structured`).
    - Apply the modality calibration from the recover-state list above.
 
-3. **Citations.** Three styles:
+3. **Citations.** Apply the **GENERATION-TIME GROUNDING** rule above: every factual sentence ends with its citation token *before* the terminal period, written in the first pass. Three styles:
    - `"wikilink"` (default for non-wrapped runs): every citation is a `[[<source-note-id>]]` marker pointing at the source note in the vault. No separate `## Sources` section. Each wikilink resolves to its source note's frontmatter (title + URL). This is the navigable-vault format.
    - `"inline"` (benchmark + public deliverables): numbered `[N]` citations + a `## Sources` section listing each cited note as `[N] Title. URL` (read each cited note's YAML frontmatter for title + URL).
    - `"none"`: no citation markers anywhere, no Sources section.
@@ -170,6 +180,17 @@ prompt: |
   Read every note on must_read_note_ids before writing. Do NOT survey
   the vault — your reading list is curated. Do NOT fetch new sources.
   Write your draft from your assigned angle, citing your curated sources.
+
+  GENERATION-TIME GROUNDING (non-negotiable): cite as you write. Every
+  factual sentence — anything with a number, named entity, comparative/
+  superlative, or causal/temporal claim — MUST end with its citation
+  token BEFORE the terminal period (`… grew 12.4% in 2024 [[note-id]].`).
+  Do NOT write an ungrounded draft to be cited later. Every marker points
+  at a note on your must_read_note_ids; a claim you cannot ground is
+  dropped or hedged, never given a fabricated marker. Non-factual
+  sentences (transitions, framing, hedge-frame openers, questions) stay
+  uncited. This makes the step-16 uncited-gate a cheap verifier, not a
+  rewriter.
 ```
 
 **CRITICAL: never emit bare text while the 3 sub-orchestrators are running.** They will take 5-15 minutes each. Use this time to think — append notes to `research/temp/orchestrator-notes.md` about the synthesis you'll plan in step 11: what's the strongest thesis emerging across angles? Which atomic items will be contentious? What argumentative beats must the final draft commit to? One vault count check per minute max. Write your thoughts, don't just poll.

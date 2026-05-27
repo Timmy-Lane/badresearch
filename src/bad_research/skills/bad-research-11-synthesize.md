@@ -209,6 +209,22 @@ prompt: |
   write the cleaned pass 2 to final_output_path. Do not paste paragraphs
   from the input drafts — synthesize them in your own voice.
 
+  GENERATION-TIME GROUNDING (non-negotiable): cite as you write, in
+  pass 1. Every factual sentence — anything with a number, named entity,
+  comparative/superlative, or causal/temporal claim — MUST end with its
+  citation token BEFORE the terminal period
+  (`… grew 12.4% in 2024 [[note-id]].` or `… [3].`). Do NOT write an
+  ungrounded integrated draft and add citations in pass 2 — ground it the
+  first time, while the source chunk in synthesis-evidence.md is in front
+  of you. Every marker corresponds to a chunk in synthesis-evidence.md
+  whose quoted_support is in claim_anchors; a claim with no locatable
+  anchor is NOT written. Non-factual sentences (the executive-summary
+  topic sentence, transitions, framing, hedge-frame openers, questions)
+  stay uncited — do not bolt on decorative cites. This keeps the
+  step-16 `bad uncited-gate` a cheap VERIFIER over a clean draft (0–few
+  blocks) instead of a heavy block-and-patch rewriter — the ~2× cost the
+  benchmark exposed when drafts were grounded after the fact.
+
   **Citation rendering:**
   - If citation_style == "wikilink" (default): every citation is a
     `[[note-id]]` marker pointing at the source note in the vault. No
