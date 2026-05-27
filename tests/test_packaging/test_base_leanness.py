@@ -41,11 +41,12 @@ def test_package_imports_without_keyed_providers_installed():
     A base-only install does not have cohere/tavily/etc; if a kept module tries to
     import one at module load, this import fails — proving the lean base is broken.
     """
-    import bad_research  # noqa: F401
-    from bad_research.cli import app  # noqa: F401
-    from bad_research.providers import provider_status  # noqa: F401
+    import bad_research  # noqa: F401  (side-effect import: proves the package loads)
+    from bad_research.cli import app
+    from bad_research.providers import provider_status
 
     # Sanity: the providers we DID keep do not pull a removed lib transitively.
+    assert app is not None
     assert provider_status()  # non-empty registry, no ImportError raised
 
 

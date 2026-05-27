@@ -24,7 +24,7 @@ FORBIDDEN_IN_METADATA = (
 
 
 @pytest.fixture(scope="module")
-def wheel_metadata(tmp_path_factory) -> str:
+def wheel_contents(tmp_path_factory) -> dict[str, str]:
     out = tmp_path_factory.mktemp("dist")
     # uv build is offline-friendly: it packages, it does not resolve/install deps.
     proc = subprocess.run(
@@ -38,7 +38,18 @@ def wheel_metadata(tmp_path_factory) -> str:
     assert wheels, f"no wheel produced in {out}: {list(out.iterdir())}"
     with zipfile.ZipFile(wheels[0]) as zf:
         meta_name = next(n for n in zf.namelist() if n.endswith("METADATA"))
-        return zf.read(meta_name).decode("utf-8")
+        ep_name = next(
+            (n for n in zf.namelist() if n.endswith("entry_points.txt")), None
+        )
+        return {
+            "metadata": zf.read(meta_name).decode("utf-8"),
+            "entry_points": zf.read(ep_name).decode("utf-8") if ep_name else "",
+        }
+
+
+@pytest.fixture(scope="module")
+def wheel_metadata(wheel_contents) -> str:
+    return wheel_contents["metadata"]
 
 
 def test_wheel_metadata_lists_keyless_base(wheel_metadata):
@@ -60,8 +71,10 @@ def test_wheel_metadata_has_no_removed_providers(wheel_metadata):
     assert not leaked, f"removed providers leaked into base wheel metadata: {leaked}"
 
 
-def test_wheel_entry_points(wheel_metadata):
+def test_wheel_entry_points(wheel_contents):
     # The wheel must declare the `bad`/`badr` console scripts (entry_points.txt).
-    # METADATA does not carry entry points; re-open the wheel for entry_points.txt.
-    out = ROOT  # not used; metadata already proves the build. Smoke the Python is 3.11+.
+    # METADATA does not carry entry points; the fixture read entry_points.txt.
     assert sys.version_info >= (3, 11)
+    ep = wheel_contents["entry_points"]
+    assert "bad = bad_research.cli:app" in ep
+    assert "badr = bad_research.cli:app" in ep
