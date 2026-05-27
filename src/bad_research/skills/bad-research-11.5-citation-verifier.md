@@ -31,8 +31,16 @@ This step is tool-locked to `[Read]`. Read:
 1. Run the verifier (deterministic Python from the grounding seam):
    ```bash
    bad verify-citations --report research/notes/final_report_<vault_tag>.md \
-       --vault-tag <vault_tag> --json
+       --vault-tag <vault_tag> [--effort high] --json
    ```
+   **E4 high-effort lane:** when the run's `--reasoning-effort` is `high` (read it from
+   the scaffold's run config / `EFFORT_MAP`), pass `--effort high`. That switches the
+   Tier-C high-stakes band (the NLI-ambiguous claims below) from the single batched
+   judge to an **N-sample self-consistency vote** (universal self-consistency — sample
+   N host judgments, the majority verdict wins; keyless, costs N host calls per
+   high-stakes claim). On any other effort, OMIT the flag — the default single-judge
+   behaviour is unchanged (no extra calls).
+
    Per cited sentence it runs, cheapest-first:
    - **(A) byte-identity** — re-`find` the `quoted_support` in the cited note +
      SHA match ($0; kills fabricated quotes).

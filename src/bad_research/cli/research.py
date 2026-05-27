@@ -284,8 +284,14 @@ def retrieve_cmd(
 
 
 # ── verify-citations (Task 8/11/12) — backward grounding ─────────────────────
-def _verify_report(report_path: str, vault_tag: str) -> list[dict]:
-    """Adapter: load report + AnchorStore + note bodies, run CitationVerifier."""
+def _verify_report(
+    report_path: str, vault_tag: str, *, effort: str | None = None
+) -> list[dict]:
+    """Adapter: load report + AnchorStore + note bodies, run CitationVerifier.
+
+    `effort` is threaded into the verifier (E4): on `effort="high"` the Tier-C
+    high-stakes band is decided by the N-sample self-consistency vote rather than the
+    single batched judge. None / minimal / low / medium keep the default judge."""
     import sqlite3
     from dataclasses import asdict, is_dataclass
 
@@ -319,7 +325,7 @@ def _verify_report(report_path: str, vault_tag: str) -> list[dict]:
     # citation-drift on paraphrased claims is caught keyless (no new key/$). Threading
     # the same host provider into both the NLI and the verifier keeps one model seam.
     llm = get_llm_provider("anthropic", config=cfg)
-    verifier = CitationVerifier(nli=default_nli(llm=llm), llm=llm)
+    verifier = CitationVerifier(nli=default_nli(llm=llm), llm=llm, effort=effort)
     result = verifier.verify(report_md, store, note_bodies)
     findings = getattr(result, "findings", result)
     out = []
@@ -331,10 +337,22 @@ def _verify_report(report_path: str, vault_tag: str) -> list[dict]:
 def verify_citations_cmd(
     report: str = typer.Option(..., "--report"),
     vault_tag: str = typer.Option(..., "--vault-tag"),
+    reasoning_effort: str = typer.Option(
+        None, "--reasoning-effort", "--effort",
+        help="minimal|low|medium|high; 'high' enables the E4 self-consistency vote on "
+             "high-stakes (NLI-ambiguous) claims (N host samples; keyless).",
+    ),
     json_output: bool = typer.Option(False, "--json", "-j"),
 ) -> None:
-    """Run the CitationVerifier over a report. Returns per-sentence dispositions."""
-    typer.echo(json.dumps({"results": _verify_report(report, vault_tag)}, default=str))
+    """Run the CitationVerifier over a report. Returns per-sentence dispositions.
+
+    `--effort high` turns on the self-consistency lane (E4): the Tier-C band is decided by
+    an N-sample vote (universal self-consistency) instead of the single batched judge.
+    Default effort is unchanged (no extra calls)."""
+    typer.echo(json.dumps(
+        {"results": _verify_report(report, vault_tag, effort=reasoning_effort)},
+        default=str,
+    ))
 
 
 # ── uncited-gate (Task 9/12) — deterministic ship-block, $0 ──────────────────

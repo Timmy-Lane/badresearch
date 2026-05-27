@@ -182,3 +182,63 @@ def test_all_research_subcommands_registered():
     for cmd in ("route", "funnel-gather", "retrieve", "verify-citations", "uncited-gate"):
         res = runner.invoke(app, [cmd, "--help"])
         assert res.exit_code == 0, cmd
+
+
+def test_verify_citations_accepts_effort_flag():
+    # E4: verify-citations exposes --effort so the high-effort self-consistency lane
+    # can be turned on for high-stakes verification (--effort high). The flag is
+    # documented in the command help.
+    res = runner.invoke(app, ["verify-citations", "--help"])
+    assert res.exit_code == 0
+    assert "--effort" in res.stdout or "--reasoning-effort" in res.stdout
+
+
+def test_verify_report_threads_effort_into_verifier(tmp_path, monkeypatch):
+    # The --effort value reaches CitationVerifier.effort (so the high-effort vote
+    # actually fires on a real run, not just when constructed directly in a test).
+    import bad_research.cli.research as research_mod
+    from bad_research.grounding import verifier as verifier_mod
+
+    captured: dict[str, object] = {}
+    real_init = verifier_mod.CitationVerifier.__init__
+
+    def _spy_init(self, *, nli, llm, effort=None):
+        captured["effort"] = effort
+        real_init(self, nli=nli, llm=llm, effort=effort)
+
+    monkeypatch.setattr(verifier_mod.CitationVerifier, "__init__", _spy_init)
+
+    # Stub the heavy adapter pieces so _verify_report runs offline.
+    class _Vault:
+        root = str(tmp_path)
+
+    monkeypatch.setattr(research_mod, "_verify_report", research_mod._verify_report)
+    from bad_research.core.vault import Vault
+
+    monkeypatch.setattr(Vault, "discover", classmethod(lambda cls: _Vault()))
+
+    class _Cfg:
+        @staticmethod
+        def load():
+            return _Cfg()
+
+    from bad_research.config import BadResearchConfig
+
+    monkeypatch.setattr(BadResearchConfig, "load", staticmethod(lambda: _Cfg()))
+
+    class _LLM:
+        name = "stub"
+
+        def complete(self, *a, **k):  # never called on an empty report
+            raise AssertionError("no LLM expected on an empty report")
+
+    monkeypatch.setattr(research_mod, "get_llm_provider", lambda *a, **k: _LLM(), raising=False)
+    import bad_research.llm.base as llm_base
+
+    monkeypatch.setattr(llm_base, "get_llm_provider", lambda *a, **k: _LLM())
+
+    report = tmp_path / "report.md"
+    report.write_text("Just an intro with no citations.\n", encoding="utf-8")
+
+    research_mod._verify_report(str(report), "tag-1", effort="high")
+    assert captured["effort"] == "high"

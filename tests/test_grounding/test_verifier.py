@@ -256,6 +256,75 @@ def test_keyless_verify_path_imports_no_torch(tmp_path):
     assert "OK" in res.stdout
 
 
+# ── E4: self-consistency vote on the high-effort lane (wired into the verifier) ─
+
+def test_verifier_default_effort_uses_single_batched_judge_not_the_vote(fake_llm):
+    # DEFAULT path (effort != high): the neutral band escalates to the SINGLE batched
+    # Tier-C judge — exactly one LLM call, NO N-sample vote. Default behaviour unchanged.
+    import json
+    body = "Adoption grew over the period across several markets."
+    quote = "Adoption grew over the period across several markets"
+    a = ClaimAnchor("nA", 0, len(quote), "Adoption grew 12.4% in SEA.", quote)
+    store = _store_with([a])
+    nli = StubNLI({quote: {"entailment": 0.55, "neutral": 0.40, "contradiction": 0.05}})
+    fake_llm.script = [json.dumps([{"id": 0, "verdict": "partial", "score": 0.5}])]
+    report = f"Adoption grew 12.4% in SEA. [[{a.anchor_id}]]\n"
+    verifier = CitationVerifier(nli=nli, llm=fake_llm)  # no effort -> default
+    result = verifier.verify(report, store, {"nA": body})
+    assert result.findings[0].verdict is VerifyVerdict.PARTIAL
+    assert len(fake_llm.calls) == 1  # the single batched judge, not 3 samples
+
+
+def test_verifier_high_effort_routes_neutral_band_through_self_consistency_vote():
+    # effort=high: the neutral high-stakes band is decided by an N-sample self-
+    # consistency VOTE (universal self-consistency), not the single judge. A 2/3
+    # supported tally accepts the claim, and exactly N samples are drawn.
+    import json
+
+    from tests.test_quality.test_consistency import ScriptedLLM
+
+    body = "Adoption grew over the period across several markets."
+    quote = "Adoption grew over the period across several markets"
+    a = ClaimAnchor("nA", 0, len(quote), "Adoption grew strongly.", quote)
+    store = _store_with([a])
+    nli = StubNLI({quote: {"entailment": 0.55, "neutral": 0.40, "contradiction": 0.05}})
+    # 3 vote samples: 2 supported, 1 unsupported -> majority supported.
+    scripted = ScriptedLLM([
+        json.dumps({"verdict": "supported", "score": 0.9}),
+        json.dumps({"verdict": "supported", "score": 0.85}),
+        json.dumps({"verdict": "unsupported", "score": 0.2}),
+    ])
+    report = f"Adoption grew strongly. [[{a.anchor_id}]]\n"
+    verifier = CitationVerifier(nli=nli, llm=scripted, effort="high")
+    result = verifier.verify(report, store, {"nA": body})
+    assert result.findings[0].verdict is VerifyVerdict.SUPPORTED
+    # N independent samples were drawn — the keyless vote cost (not one batched call).
+    assert len(scripted.calls) == 3
+
+
+def test_verifier_high_effort_outvotes_single_dissenting_sample():
+    import json
+
+    from tests.test_quality.test_consistency import ScriptedLLM
+
+    body = "Adoption was mentioned in passing across markets."
+    quote = "Adoption was mentioned in passing across markets"
+    a = ClaimAnchor("nA", 0, len(quote), "Adoption surged 64%.", quote)
+    store = _store_with([a])
+    nli = StubNLI({quote: {"entailment": 0.55, "neutral": 0.40, "contradiction": 0.05}})
+    # 1 supported, 2 unsupported -> the dissenting supported is OUTVOTED -> not supported.
+    scripted = ScriptedLLM([
+        json.dumps({"verdict": "supported", "score": 0.95}),
+        json.dumps({"verdict": "unsupported", "score": 0.3}),
+        json.dumps({"verdict": "unsupported", "score": 0.25}),
+    ])
+    report = f"Adoption surged 64%. [[{a.anchor_id}]]\n"
+    verifier = CitationVerifier(nli=nli, llm=scripted, effort="high")
+    result = verifier.verify(report, store, {"nA": body})
+    assert result.findings[0].verdict is not VerifyVerdict.SUPPORTED
+    assert store.get(a.anchor_id).verified == 0
+
+
 def test_verify_checks_report_sentence_not_stored_claim(fake_llm):
     # The anchor's stored claim is FAITHFUL to the support, but the report
     # SENTENCE that cites it says the opposite. The verifier must judge the

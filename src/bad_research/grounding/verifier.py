@@ -271,11 +271,21 @@ def _split_sentences(text: str) -> list[str]:
 class CitationVerifier:
     """Stage-11.5 re-grounding pass. Tool-locked [Read]: reads the report +
     anchors + note bodies; writes only the findings + the verified flag (via the
-    AnchorStore DAL) -- it does NOT edit the report. dossier §2.3."""
+    AnchorStore DAL) -- it does NOT edit the report. dossier §2.3.
 
-    def __init__(self, *, nli: NLIModel, llm: LLMProvider) -> None:
+    `effort` selects how the Tier-C neutral band (the high-stakes, NLI-ambiguous
+    claims) is decided (E4): on the default/minimal/low/medium path it is the SINGLE
+    batched judge (one call, unchanged behaviour); on `effort="high"` each pending
+    pair is decided by an N-sample self-consistency VOTE (`quality/consistency.py`)
+    — universal self-consistency lifts judgment accuracy at the cost of N host calls.
+    Keyless either way (same LLMProvider seam)."""
+
+    def __init__(
+        self, *, nli: NLIModel, llm: LLMProvider, effort: str | None = None
+    ) -> None:
         self.nli = nli
         self.llm = llm
+        self.effort = effort
 
     def verify(
         self, report_md: str, store: AnchorStore, note_bodies: dict[str, str]
@@ -312,14 +322,30 @@ class CitationVerifier:
                     # Tier C judges the report sentence (claim) vs the quoted support.
                     pending.append((stub, hypothesis, anchor.quoted_support))
 
-        # Pass 2: Tier C -- judge the neutral band only, batched.
+        # Pass 2: Tier C -- judge the neutral band only.
         if pending:
-            pairs = [(claim, quote) for _, claim, quote in pending]
-            judged = tier_c_judge(pairs, self.llm)
-            for (stub, _, _), (verdict, score) in zip(pending, judged, strict=True):
-                stub.verdict = verdict
-                stub.score = score
-                findings.append(stub)
+            from bad_research.quality.consistency import (
+                consistency_enabled,
+                self_consistency_vote,
+            )
+
+            if consistency_enabled(self.effort):
+                # E4 high-effort lane: each high-stakes pair is decided by an N-sample
+                # self-consistency VOTE (universal self-consistency). Costs N host calls
+                # per pair (keyless) — only paid on effort=high, hence the gate above.
+                for stub, claim, quote in pending:
+                    verdict, score, _votes = self_consistency_vote(claim, quote, self.llm)
+                    stub.verdict = verdict
+                    stub.score = score
+                    findings.append(stub)
+            else:
+                # Default path: the SINGLE batched judge (one call). Unchanged.
+                pairs = [(claim, quote) for _, claim, quote in pending]
+                judged = tier_c_judge(pairs, self.llm)
+                for (stub, _, _), (verdict, score) in zip(pending, judged, strict=True):
+                    stub.verdict = verdict
+                    stub.score = score
+                    findings.append(stub)
 
         # Persist dispositions (dossier §2.3) + stamp the confidence band (dossier
         # 16 §7). fetcher-confidence + n_independent_sources come from the claims
