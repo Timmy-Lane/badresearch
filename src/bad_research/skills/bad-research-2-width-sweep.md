@@ -1,10 +1,10 @@
 ---
 name: bad-research-2-width-sweep
+user-invocable: false
 description: >
   Step 2 of the Bad Research pipeline — multi-perspective search planning
   (breadth / depth / adversarial lenses) plus parallel fetcher waves that build a
-  curated, coverage-checked source corpus in the vault. Invoked in order by the
-  bad-research router.
+  curated, coverage-checked source corpus in the vault.
 ---
 
 # Step 2 — Width sweep

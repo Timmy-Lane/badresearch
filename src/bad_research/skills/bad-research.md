@@ -1,11 +1,13 @@
 ---
 name: bad-research
 description: >
-  Use when a question needs deep, multi-source, fully-cited research — runs a
-  tier-adaptive pipeline (quick light tier → full adversarially-audited report)
-  as a Claude Code skill. This entry skill is a ROUTER: it routes each step
-  (bad-research-1-decompose … bad-research-16-readability-audit) to its own
-  skill, invoked in order and loaded fresh.
+  Use when a question needs deep, multi-source, fully-cited research — literature
+  reviews, comparative analyses, explainers that need primary sources, or
+  questions that require synthesizing conflicting expert views into a defended
+  answer. Behavior is tier-adaptive: a simple, bounded question gets a fast cited
+  answer in minutes, while a broad or contested one gets the full
+  adversarially-reviewed report. Output is a single grounded report with every
+  factual claim bound to a source.
 ---
 
 # Bad Research — multi-skill chain orchestrator
@@ -57,11 +59,12 @@ When you invoke a Skill, that skill's full procedure is loaded into your context
 
 | # | Skill name | What it does | Tiers |
 |---|---|---|---|
-| 0.5 | `bad-research-0.5-clarify` | Triage clarifier — ≤3 default-proceed questions before decompose | all (skipped for agentic-fast / `--auto`) |
+| 0.5 | `bad-research-0.5-clarify` | Triage clarifier — ≤3 default-proceed questions before decompose | all (skipped only on `--auto`/wrapped runs) |
 | 1.5 | `bad-research-query-router` | Classify the decomposition into a route (`agentic-fast` / `light` / `full`) | all |
 | 11.5 | `bad-research-11.5-citation-verifier` | Backward grounding — bind every claim to a source note | full |
-| 12.5 | `bad-research-12.5-grader` | In-pipeline grader loop (judge → patch → re-judge, ≤3) | full |
+| 12.5 | `bad-research-12.5-grader` | In-pipeline grader loop (judge → patch → re-judge, ≤3) — runs AFTER 13 despite its number (see the route table) | full |
 | 14.5 | `bad-research-fresh-review` | One fresh-context review pass | full |
+| — | `bad-research-agentic-fast` | The bounded-ReAct fast mode (a *route*, not a numbered step — replaces steps 2–14 when route == `agentic-fast`) | agentic-fast |
 
 **Complete pipeline order (full tier), half-steps included:**
 
@@ -78,20 +81,25 @@ When you invoke a Skill, that skill's full procedure is loaded into your context
 
 Step 1 decomposes the query; the query-router (step 1.5) classifies the
 decomposition into a `route` (`agentic-fast` / `light` / `full`) written to
-`research/prompt-decomposition.json`. After step 1.5, **read that file** for the
+`research/prompt-decomposition.json`. The **light tier** is the fast single-draft
+path (one curated draft, no adversarial review); the **full tier** is the
+deep path (triple-draft ensemble + synthesis + adversarial critics + grader loop
++ fresh review). After step 1.5, **read that file** for the
 `route`, then sequence steps according to this mode table:
 
 | Route | Step sequence | Cost | Time |
 |---|---|---|---|
-| `agentic-fast` | 0.5(skip) → 1 → 1.5 → agentic-fast → 15 → 16(+gate) | ~$1–5 | <3 min |
+| `agentic-fast` | 0.5 → 1 → 1.5 → agentic-fast → 15 → 16(+gate) | ~$1–5 | <3 min |
 | `light` | 0.5 → 1 → 1.5 → 2(funnel) → 10(single draft) → 15 → 16(+gate) | ~$5–15 | ~30–40 min |
 | `full` | 0.5 → 1 → 1.5 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 11.5 → 12 → 13 → 12.5(grader loop) → 14 → 14.5(fresh-review) → 15 → 16(+gate+recitation) | ~$60–120 | ~1.5–2.5 h |
 
+**On 0.5 (clarify):** the route — including `agentic-fast` — is only decided at step 1.5, *after* 0.5 has already run, so 0.5 normally runs first on every interactive run. 0.5 is skipped **only on `--auto`/wrapped runs** (a wrapped run is one where `research/wrapper_contract.json` is present and the query is binding GOSPEL not to be questioned). `16(+gate)` is shorthand for "step 16 plus the deterministic no-uncited-claim ship-gate that runs after it on every route" — a *ship-gate* is a blocking quality check that must pass before the report can be delivered.
+
 Where the half-step numbers map to:
-- 0.5 → `Skill(skill: "bad-research-0.5-clarify")` (triage clarifier; skipped for agentic-fast + --auto)
+- 0.5 → `Skill(skill: "bad-research-0.5-clarify")` (triage clarifier; runs first on every interactive run, skipped only on `--auto`/wrapped runs)
 - 1.5 → `Skill(skill: "bad-research-query-router")` (the route decision)
-- agentic-fast → `Skill(skill: "bad-research-agentic-fast")` (bounded ReAct; replaces 2–14)
-- 11.5 → `Skill(skill: "bad-research-11.5-citation-verifier")` (backward grounding; full only)
+- agentic-fast → `Skill(skill: "bad-research-agentic-fast")` (bounded-ReAct = a step-capped Reason+Act loop; replaces 2–14)
+- 11.5 → `Skill(skill: "bad-research-11.5-citation-verifier")` (backward grounding = binding each report claim back to its source note; full only)
 - 12.5 → `Skill(skill: "bad-research-12.5-grader")` (in-pipeline grader loop: judge→patch→re-judge ≤3; full only — slots between critics/gap-fetch and the patcher's final convergence)
 - 14.5 → `Skill(skill: "bad-research-fresh-review")` (one fresh-context pass; full only)
 
@@ -105,9 +113,9 @@ uncertain, route up — but never silently upgrade every query to `full`.
 
 The `--reasoning-effort` flag (alias `--effort`) is a 4-level dial — `minimal` /
 `low` / `medium` / `high` — that nudges the route + per-step fan-out on top of
-the auto-classified route. The mapping lives
-in `skills/routing_constants.py::EFFORT_MAP` and is applied by
-`skills/router.py::effort_overrides`:
+the auto-classified route. Use the human-readable mapping in the table directly
+below (source: `skills/routing_constants.py::EFFORT_MAP`, applied by
+`skills/router.py::effort_overrides`):
 
 | `--effort` | route | drafters | fetcher fan-out | extended thinking |
 |---|---|---|---|---|
@@ -135,7 +143,7 @@ count, not a billing system.
 Before you invoke any step skill, do this:
 
 0. **Auto-init if missing.** Two checks for the first-run-after-global-install case:
-   - **Vault check.** If `.hyperresearch/` doesn't exist in the working directory, run `bad init . --json`. Creates the SQLite vault and `research/` directory.
+   - **Vault check.** If `.hyperresearch/` doesn't exist in the working directory, run `bad init . --json`. Creates the SQLite vault (the `research/` source store — every fetched source becomes a note here) and the `research/` directory.
    - **Step-skills check (lazy install).** If `.claude/skills/bad-research-1-decompose/SKILL.md` doesn't exist relative to the working directory, run `bad install --steps-only . --json`. The user-global install ships only the entry skill + agents + PreToolUse hook; the step skills materialize per-project on first `/bad-research` invocation via this command. It installs the step skill files needed by `Skill(skill: "bad-research-N-...")` calls in later steps.
 
    If either command fails because the binary isn't on PATH, tell the user to run `pip install bad-research` first. If both files already exist, both commands no-op cheaply — safe to run unconditionally.
@@ -175,12 +183,12 @@ Before you invoke any step skill, do this:
    - Tier rationale (filled in after step 1)
    - Wrapper requirements (save path, citation format, terminal sections)
 
-6. **Seed the TodoWrite list.** Create todos for the step skill invocations using the step numbers, e.g.:
+6. **Seed the TodoWrite list (seed-then-lazy).** The route is only known after step 1.5, so seed in two passes. **First**, seed just the pre-route steps that always run, in order:
    - `Step 0.5 — Skill: bad-research-0.5-clarify`
    - `Step 1 — Skill: bad-research-1-decompose`
    - `Step 1.5 — Skill: bad-research-query-router`
-   - `Step 2 — Skill: bad-research-2-width-sweep`
-   - ... (through Step 16; the exact set depends on the route decided at 1.5)
+
+   **Then**, after step 1.5 returns the `route`, seed the remaining todos from the matching row of the route table above (the `agentic-fast` / `light` / `full` step sequence). Do NOT seed all 16 steps up front and prune — you don't know the route yet, and a `light`/`agentic-fast` run never has most of them.
 
    The todo list survives context compaction; it's your durable memory of where you are in the chain.
 
@@ -228,6 +236,8 @@ Skipping any of these seven in a Task prompt is a process violation.
 ## Recovery: if you wake up uncertain where you are
 
 Context compaction may eat parts of this conversation. If you're unsure what step you're on:
+
+(`$HPR` in the commands below is the `hyperresearch` CLI alias — the same binary the `bad` commands invoke; `-j` is shorthand for `--json`.)
 
 1. **Check the TodoWrite list.** It carries integer step numbers and survives compaction.
 2. **Check disk artifacts.** Each step writes a canonical artifact:

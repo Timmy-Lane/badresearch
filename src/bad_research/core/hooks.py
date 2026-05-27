@@ -3499,9 +3499,10 @@ def _read_skill_source(src_name: str) -> str | None:
 def _install_bad_research_skill(vault_root: Path) -> str | None:
     """Install the entry skill at .claude/skills/bad-research/SKILL.md.
 
-    Claude Code registers `/hyperresearch` as the slash-command trigger via
-    the skill's `name: hyperresearch` frontmatter. The 16 step skills are
-    installed separately by `_install_bad_research_step_skills`.
+    Claude Code derives the slash-command name from the skill DIRECTORY, so
+    `.claude/skills/bad-research/` registers `/bad-research`. The frontmatter
+    `name:` field is `bad-research` (it must match the directory). The 16 step
+    skills are installed separately by `_install_bad_research_step_skills`.
     """
     content = _read_skill_source("bad-research.md")
     if content is None:
@@ -3513,7 +3514,7 @@ def _install_bad_research_skill(vault_root: Path) -> str | None:
     if dest_path.exists() and dest_path.read_text(encoding="utf-8") == content:
         return None
     dest_path.write_text(content, encoding="utf-8")
-    return "Claude Code: .claude/skills/bad-research/SKILL.md (/hyperresearch trigger)"
+    return "Claude Code: .claude/skills/bad-research/SKILL.md (/bad-research trigger)"
 
 
 _BAD_RESEARCH_STEP_SKILLS = [

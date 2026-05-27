@@ -1,10 +1,11 @@
 ---
 name: bad-research-11.5-citation-verifier
+user-invocable: false
 description: >
   Step 11.5 of the Bad Research pipeline (full tier only) — the backward
   grounding pass that verifies every cited sentence against its source note and
-  writes dispositions for the patcher. Tool-locked to [Read]. Invoked in order
-  by the bad-research router.
+  writes per-claim dispositions (supported / partial / unsupported / contradicted)
+  for the patcher. Tool-locked to [Read].
 ---
 
 # Step 11.5 — Citation verifier (backward grounding)

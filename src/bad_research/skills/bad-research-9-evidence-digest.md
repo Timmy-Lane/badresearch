@@ -1,10 +1,11 @@
 ---
 name: bad-research-9-evidence-digest
+user-invocable: false
 description: >
   Step 9 of the Bad Research pipeline (full tier) — assembles the top
-  load-bearing claims and verbatim quotes into research/temp/evidence-digest.md,
-  the high-fidelity evidence index the drafters read. Invoked in order by the
-  bad-research router.
+  load-bearing claims and verbatim quotes into the evidence digest
+  (research/temp/evidence-digest.md), the high-fidelity evidence layer the step-10
+  drafters read.
 ---
 
 # Step 9 — Evidence digest

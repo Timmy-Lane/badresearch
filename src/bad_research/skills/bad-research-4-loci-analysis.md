@@ -1,10 +1,10 @@
 ---
 name: bad-research-4-loci-analysis
+user-invocable: false
 description: >
   Step 4 of the Bad Research pipeline (full tier) — spawns 2 parallel analysts to
   surface 1-6 loci (the contested sub-questions worth deep investigation), then
-  scores and source-budgets each into research/loci.json. Invoked in order by the
-  bad-research router.
+  scores and source-budgets each into research/loci.json.
 ---
 
 # Step 4 — Loci analysis (parallel, 2 analysts)

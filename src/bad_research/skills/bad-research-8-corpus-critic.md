@@ -1,9 +1,10 @@
 ---
 name: bad-research-8-corpus-critic
+user-invocable: false
 description: >
   Step 8 of the Bad Research pipeline (full tier) — a pre-draft corpus critic
   that finds "what source would overturn this?" gaps and runs a targeted fetch
-  wave to fill them before drafting. Invoked in order by the bad-research router.
+  wave to fill them before drafting. Produces research/corpus-critic-gaps.json.
 ---
 
 # Step 8 — Pre-draft corpus critic (targeted gap-fill)

@@ -1,10 +1,12 @@
 ---
 name: bad-research-10-triple-draft
+user-invocable: false
 description: >
   Step 10 of the Bad Research pipeline — for full tier, spawns 3 parallel
-  draft-orchestrators that each write one angle-specific draft from a curated
-  source list (step 11 synthesizes them); for light tier, writes a single final
-  draft directly. Invoked in order by the bad-research router.
+  draft-orchestrators that each write one angle-specific draft from step 9's
+  evidence digest plus a per-angle curated note list (step 11 synthesizes them);
+  for light tier, writes a single final draft directly. Produces
+  research/temp/draft-{a,b,c}.md (full) or the final report (light).
 ---
 
 # Step 10 — Triple-draft ensemble (curated lists, parallel writers)
@@ -13,7 +15,7 @@ description: >
 
 **Tier gate:** Runs for ALL tiers. For `light` tier: write a single draft directly to `research/notes/final_report_<vault_tag>.md` and skip ahead to step 15 (polish). For `full`: run the triple-draft ensemble below — step 11 (synthesizer) will turn the 3 drafts into the final report.
 
-**Goal:** produce THREE independent angle-specific drafts (`draft-{a,b,c}.md`). Step 11 (synthesizer subagent) consumes all three and writes the final report.
+**Goal:** produce THREE independent angle-specific drafts (`draft-{a,b,c}.md`) — each an *angle-specific draft*, i.e. a full draft written from one assigned analytical stance (e.g. strongest-thesis vs. steelman-contrarian vs. synthesis). Step 11 (synthesizer subagent) consumes all three and writes the final report.
 
 ---
 

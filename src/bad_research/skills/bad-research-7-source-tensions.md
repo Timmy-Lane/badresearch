@@ -1,10 +1,12 @@
 ---
 name: bad-research-7-source-tensions
+user-invocable: false
 description: >
   Step 7 of the Bad Research pipeline (full tier) — reads full source bodies to
   extract explicit expert disagreements (including orphan tensions not captured as
-  loci) into research/temp/source-tensions.json. Invoked in order by the
-  bad-research router.
+  loci) into research/temp/source-tensions.json, which the step-10 drafters read.
+  (Distinct from step 3's contradiction graph: that pairs claim-vs-claim; this
+  extracts named expert-vs-expert disagreements from full source bodies.)
 ---
 
 # Step 7 — Source tension extraction

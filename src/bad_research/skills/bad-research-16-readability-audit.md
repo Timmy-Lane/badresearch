@@ -1,10 +1,11 @@
 ---
 name: bad-research-16-readability-audit
+user-invocable: false
 description: >
   Step 16 (final) of the Bad Research pipeline — a readability recommender
   writes JSON formatting suggestions and the orchestrator selectively applies
-  them via Edit, then runs the uncited + recitation ship-gates. Invoked in order
-  by the bad-research router.
+  them via Edit, then runs the uncited + recitation ship-gates (blocking quality
+  checks before delivery).
 ---
 
 # Step 16 — Readability audit & selective apply (FINAL STEP)

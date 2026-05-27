@@ -1,9 +1,10 @@
 ---
 name: bad-research-11-synthesize
+user-invocable: false
 description: >
   Step 11 of the Bad Research pipeline (full tier) — plans and outlines the
   synthesis, then spawns one Read+Write-locked synthesizer that merges the 3
-  drafts into the final report. Invoked in order by the bad-research router.
+  drafts into the final report (research/notes/final_report_<vault_tag>.md).
 ---
 
 # Step 11 — Synthesize the final report

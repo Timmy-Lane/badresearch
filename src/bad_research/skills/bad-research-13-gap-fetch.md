@@ -1,9 +1,10 @@
 ---
 name: bad-research-13-gap-fetch
+user-invocable: false
 description: >
   Step 13 of the Bad Research pipeline (full tier) — a conditional fetcher wave
   that pulls sources for critic-identified vault gaps (capped at 5) so the patcher
-  has something to cite. Invoked in order by the bad-research router.
+  has something to cite.
 ---
 
 # Step 13 — Post-critic gap fetch (conditional)

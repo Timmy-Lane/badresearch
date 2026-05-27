@@ -1,10 +1,11 @@
 ---
 name: bad-research-12.5-grader
+user-invocable: false
 description: >
   Step 12.5 of the Bad Research pipeline (full tier only) — the in-pipeline
   grader loop (judge → patch → re-judge, ≤3 rounds) that scores the report on 5
-  quality axes and feeds failing-axis defects to the patcher. Invoked in order by
-  the bad-research router.
+  quality axes and feeds failing-axis defects to the patcher (runs AFTER step 13
+  despite its number).
 ---
 
 # Step 12.5 — Grader loop (judge → patch → re-judge)

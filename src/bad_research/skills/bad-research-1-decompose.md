@@ -1,10 +1,10 @@
 ---
 name: bad-research-1-decompose
+user-invocable: false
 description: >
   Step 1 of the Bad Research pipeline — decomposes the canonical query into
   atomic items, classifies pipeline_tier + response_format, and writes the
-  coverage matrix to research/prompt-decomposition.json. Invoked in order by the
-  bad-research router.
+  coverage matrix to research/prompt-decomposition.json.
 ---
 
 # Step 1 — Prompt decomposition
@@ -98,6 +98,8 @@ Read both before starting. The vault_tag is in the scaffold's "Run config" secti
 
 7. **Classify `pipeline_tier` and `response_format`.**
 
+   **`pipeline_tier` is an initial tier *signal*, not the final routing decision.** It records this step's read of how much pipeline the query wants (`light` vs `full`). The authoritative routing decision — the `route` field (`agentic-fast` / `light` / `full`) that the orchestrator actually sequences from — is made downstream by the query-router (step 1.5), which reads this `pipeline_tier` as input and never down-routes a justified `full`. Set `pipeline_tier` honestly here; let step 1.5 own `route`.
+
    **`pipeline_tier`** — how much pipeline to run:
 
    | Tier | When to use | Signal words / patterns |
@@ -131,7 +133,7 @@ Read both before starting. The vault_tag is in the scaffold's "Run config" secti
 
    **Wrapper override:** if `research/wrapper_contract.json` exists and specifies `citation_style`, it overrides the default. The benchmark harness sets `"inline"` via wrapper_contract so RACE evaluators can read numbered references; everything else gets the wikilink default.
 
-8. **Coverage matrix self-audit.** Re-read the verbatim query. Walk through it phrase by phrase and extract every **significant noun phrase, proper noun, technical term, and category name**. For each:
+8. **Coverage matrix self-audit.** (The coverage matrix is a table mapping each verbatim query phrase to the atomic item(s) that cover it — the audit that catches dropped or narrowed scope.) Re-read the verbatim query. Walk through it phrase by phrase and extract every **significant noun phrase, proper noun, technical term, and category name**. For each:
    - Does it map to at least one atomic item in the decomposition?
    - Is the decomposition's interpretation **as broad as the phrase's natural scope**? (e.g., "SaaS applications" must not be narrowed to "POS SaaS"; "rugged tablets" must not be collapsed into "payment terminals")
    - If the phrase has multiple plausible referents, does the decomposition cover BOTH readings?
@@ -165,10 +167,10 @@ Read both before starting. The vault_tag is in the scaffold's "Run config" secti
 
 ## Next step
 
-Return to the entry skill (`bad-research`). Read `research/prompt-decomposition.json` to learn the tier, then invoke step 2:
+Return to the entry skill (`bad-research`), then invoke the query-router (step 1.5) — NOT step 2 directly. Decompose feeds the router, which decides the `route` and then sequences step 2 per that route:
 
 ```
-Skill(skill: "bad-research-2-width-sweep")
+Skill(skill: "bad-research-query-router")
 ```
 
-Step 2 runs for ALL tiers.
+The router (step 1.5) writes the `route` into `research/prompt-decomposition.json` and then proceeds to step 2 for every route (step 2 runs for ALL tiers).

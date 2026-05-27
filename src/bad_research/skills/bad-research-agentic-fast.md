@@ -1,10 +1,10 @@
 ---
 name: bad-research-agentic-fast
+user-invocable: false
 description: >
   The bounded-ReAct fast mode of Bad Research (agentic-fast route only) — a
   step-bounded (max_steps ≤ 10) planner→writer loop that produces a fast, cheap,
-  per-sentence-cited answer, replacing the 16-step pipeline. Invoked in order by
-  the bad-research router.
+  per-sentence-cited answer, replacing the 16-step pipeline.
 ---
 
 # Agentic-fast — bounded ReAct

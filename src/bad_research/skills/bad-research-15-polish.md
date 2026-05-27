@@ -1,10 +1,10 @@
 ---
 name: bad-research-15-polish
+user-invocable: false
 description: >
   Step 15 of the Bad Research pipeline — spawns the Read+Edit-locked
   polish-auditor for the hygiene + filler pass (strips pipeline-reference leaks,
   frontmatter, scaffold sections, filler) before the step 16 readability audit.
-  Invoked in order by the bad-research router.
 ---
 
 # Step 15 — Polish audit

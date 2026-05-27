@@ -1,10 +1,11 @@
 ---
 name: bad-research-fresh-review
+user-invocable: false
 description: >
   Step 14.5 of the Bad Research pipeline (full tier only) — ONE fresh-context
   reviewer pass over the patched report (single pass, not a loop) that catches
-  whole-report issues the in-context critics miss. Invoked in order by the
-  bad-research router.
+  whole-report issues the in-context critics miss. Produces
+  research/temp/fresh-review.json for the patcher to apply.
 ---
 
 # Step 14.5 — Fresh-context review (single pass)

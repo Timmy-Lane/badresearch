@@ -1,9 +1,10 @@
 ---
 name: bad-research-query-router
+user-invocable: false
 description: >
   Step 1.5 of the Bad Research pipeline — classifies the decomposition into a
   route (agentic-fast / light / full) and writes it to
-  research/prompt-decomposition.json. Invoked in order by the bad-research router.
+  research/prompt-decomposition.json.
 ---
 
 # Step 1.5 — Query router
@@ -13,9 +14,14 @@ never down-routes a query that step 1 marked `full` for a stated reason —
 contested topics, time_periods, and argumentative formats always route `full`.
 
 **Goal:** route trivial/single-domain queries to the cheap bounded ReAct
-fast-mode, mid-size structured queries to `light`, and complex/contested
-queries to the full 16-step pipeline. The signal is Bad Research's OWN
-Step-1 decomposition — no new classifier.
+fast-mode (Reason+Act loop, step-capped), mid-size structured queries to
+`light`, and complex/contested queries to the full 16-step pipeline. The signal
+is Bad Research's OWN Step-1 decomposition — no new classifier.
+
+**`pipeline_tier` vs `route`:** step 1 set `pipeline_tier` as an initial tier
+*signal*; this step makes the authoritative routing decision and writes it to
+the `route` field. `route` is what the orchestrator sequences from; `pipeline_tier`
+is just one input to it.
 
 ## Recover state
 

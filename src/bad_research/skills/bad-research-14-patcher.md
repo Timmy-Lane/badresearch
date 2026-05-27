@@ -1,16 +1,17 @@
 ---
 name: bad-research-14-patcher
+user-invocable: false
 description: >
   Step 14 of the Bad Research pipeline (full tier) — spawns the Read+Edit-locked
   patcher to apply critic, grader, and verifier findings as surgical Edit hunks
-  (patch, never regenerate). Invoked in order by the bad-research router.
+  (patch, never regenerate). Produces research/patch-log.json and edits the final report in place.
 ---
 
 # Step 14 — Patch pass
 
 **Tier gate:** SKIP entirely for `light` tier (no critics = no findings to patch). For `full`: run as documented.
 
-**Goal:** apply critic findings to the draft as surgical Edit hunks. Zero regeneration.
+**Goal:** apply critic findings to the draft as surgical Edit hunks (targeted Edit diffs that change only the affected spans — no regeneration of whole sections). Zero regeneration.
 
 ---
 

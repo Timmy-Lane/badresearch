@@ -1,10 +1,10 @@
 ---
 name: bad-research-6-cross-locus-reconcile
+user-invocable: false
 description: >
   Step 6 of the Bad Research pipeline (full tier) — reconciles the depth
   investigators' committed positions into research/comparisons.md (named
-  cross-locus tensions with engagement guidance for the draft). Invoked in order
-  by the bad-research router.
+  cross-locus tensions with engagement guidance for the draft).
 ---
 
 # Step 6 — Cross-locus reconciliation

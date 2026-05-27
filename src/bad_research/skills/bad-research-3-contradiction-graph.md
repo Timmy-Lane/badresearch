@@ -1,10 +1,12 @@
 ---
 name: bad-research-3-contradiction-graph
+user-invocable: false
 description: >
   Step 3 of the Bad Research pipeline (full tier) — pairs opposing claims across
   the corpus into ranked "fight" clusters (plus consensus claims), writing the
-  contradiction graph that step 4 turns into loci. Invoked in order by the
-  bad-research router.
+  contradiction graph that step 4 turns into loci. (Distinct from step 7: this
+  step pairs claim-vs-claim across the corpus; step 7 extracts expert-vs-expert
+  disagreements from full source bodies.)
 ---
 
 # Step 3 — Contradiction graph

@@ -1,17 +1,21 @@
 ---
 name: bad-research-0.5-clarify
+user-invocable: false
 description: >
   Step 0.5 of the Bad Research pipeline — a triage-tier, default-proceed
   clarifier (≤3 questions) that runs before decompose and writes
-  research/clarify.json. Invoked in order by the bad-research router.
+  research/clarify.json (action + ≤3 questions + a distilled brief) — the brief
+  sharpens the scaffold that step 1 decompose then reads.
 ---
 
 # Step 0.5 — Clarify (triage tier, default-proceed)
 
-**Tier gate:** Runs for `light` and `full` interactive runs only. SKIP for
-`agentic-fast` (it is fast by design — no gate). SKIP when
-`research/wrapper_contract.json` exists or `--auto` is set (the wrapper/GOSPEL
-query is binding and must not be questioned).
+**Tier gate:** Runs first on every interactive run. SKIP only when the run is
+`--auto` or wrapped — i.e. when `research/wrapper_contract.json` exists or
+`--auto` is set (the wrapper/GOSPEL query is binding and must not be
+questioned). Note: the `route` (incl. `agentic-fast`) is not yet known here —
+it is decided at step 1.5, *after* this clarifier — so 0.5 cannot key off the
+route. On a clean interactive run it always runs first.
 
 **Goal:** spend one cheap triage-tier (Haiku-class) decision to avoid wasting a
 $5–120 run on a misread query. Fire a clarification ONLY on genuine ambiguity;

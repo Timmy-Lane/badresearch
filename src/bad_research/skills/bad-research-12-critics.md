@@ -1,10 +1,10 @@
 ---
 name: bad-research-12-critics
+user-invocable: false
 description: >
   Step 12 of the Bad Research pipeline (full tier) — spawns 4 adversarial critics
   in parallel against the final report, each writing a findings JSON for the
-  patcher (critics never edit the draft). Invoked in order by the bad-research
-  router.
+  patcher (critics never edit the draft).
 ---
 
 # Step 12 — Adversarial critique (parallel critics)

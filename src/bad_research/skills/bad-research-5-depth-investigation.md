@@ -1,16 +1,17 @@
 ---
 name: bad-research-5-depth-investigation
+user-invocable: false
 description: >
   Step 5 of the Bad Research pipeline (full tier) — spawns one depth-investigator
   per scored locus in parallel; each reads full sources and writes an interim note
-  ending in a Committed Position. Invoked in order by the bad-research router.
+  ending in a Committed Position.
 ---
 
 # Step 5 — Depth investigation (parallel, K = len(loci))
 
 **Tier gate:** SKIP entirely for `light` tier. Only `full` tier runs depth investigation.
 
-**Goal:** produce ONE `interim-{locus}.md` note per locus with dense synthesis that the draft sub-orchestrators (step 10) will draft from.
+**Goal:** produce ONE `interim-{locus}.md` note per locus with dense synthesis that the draft sub-orchestrators (step 10) will draft from. Each note ends in a **Committed Position** (a one-paragraph declarative stance on the locus — not a both-sides summary).
 
 ---
 
