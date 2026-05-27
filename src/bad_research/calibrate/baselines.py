@@ -20,7 +20,7 @@ class BaselineUnavailable(RuntimeError):
 class BaselineResult:
     name: str
     report: str
-    corpus: list[dict]  # the evidence that baseline used, for fair judging
+    corpus: list[dict[str, object]]  # the evidence that baseline used, for fair judging
 
 
 class Baseline(Protocol):

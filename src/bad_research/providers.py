@@ -104,11 +104,11 @@ def active_providers() -> list[ProviderStatus]:
     return [s for s in provider_status() if s.active]
 
 
-def external_cli_status() -> list[dict]:
+def external_cli_status() -> list[dict[str, object]]:
     """Detect the external keyless CLIs the skill drives (shutil.which; no subprocess).
 
-    Returns one row per CLI: {name, present: bool, hint: str}. SearXNG is silent —
-    never reported here (INTERFACES_KEYLESS §9).
+    Returns one row per CLI: {name: str, present: bool, hint: str}. SearXNG is silent
+    — never reported here (INTERFACES_KEYLESS §9).
     """
     return [
         {"name": name, "present": shutil.which(name) is not None, "hint": hint}
