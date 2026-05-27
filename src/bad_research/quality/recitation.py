@@ -24,6 +24,21 @@ _CITE_TOKEN = re.compile(r"\[\[[^\]]+\]\]|\[\d+\]")
 # OUTSIDE its quotes cannot launder the copy by appending an unrelated "quote" [1].
 _QUOTED_SPAN = re.compile(r'"[^"]+"')
 
+# A-9 carve-out (sibling to the attributed-quote rule): reference / metadata lines
+# inherently repeat source strings (a URL, a title, a citation-list entry) and are
+# NOT prose copying. Exempt a line that is a labelled metadata field (`**URL:**`,
+# `URL:`, `Source:`, `Title:`, `Author:`, `Published:`, `Accessed:`), a numbered
+# reference-list entry (`[1]:` / `1.` + a URL), or a bare URL. Prose sentences are
+# untouched — a verbatim prose lift still flags (the exemption keys on line SHAPE).
+_BARE_URL = re.compile(r"https?://|www\.", re.IGNORECASE)
+_REF_LABEL = re.compile(
+    r"^\s*(?:\*\*\s*)?(?:url|source|sources|title|author|authors|published|"
+    r"publisher|date|accessed|retrieved|doi|isbn|citation|reference|ref|link)\s*\**\s*:",
+    re.IGNORECASE,
+)
+# `[1]:` or `[note-id]:` style reference-list line head.
+_REF_ENTRY = re.compile(r"^\s*\[[^\]]+\]\s*:")
+
 
 def words(text: str) -> list[str]:
     """Lowercased word tokens with citation markup stripped."""
@@ -61,6 +76,19 @@ def _is_contiguous_sublist(needle: list[str], haystack: list[str]) -> bool:
     return any(haystack[i:i + n] == needle for i in range(len(haystack) - n + 1))
 
 
+def _is_reference_line(sent: str) -> bool:
+    """True iff the sentence is a reference / metadata line rather than prose:
+    a labelled field (`**URL:**`, `Source:`, ...), a `[ref]:`-style reference-list
+    entry, or a line that begins with a bare URL. These inherently echo the source
+    string, so verbatim overlap on them is expected, not recitation (A-9)."""
+    s = sent.strip()
+    if _REF_LABEL.match(s) or _REF_ENTRY.match(s):
+        return True
+    # A line whose first token is a URL is a bare-URL / citation line.
+    first = s.split(maxsplit=1)[0] if s else ""
+    return bool(_BARE_URL.match(first))
+
+
 def _run_is_attributed_quote(run: list[str], sent: str) -> bool:
     """True iff the verbatim `run` lies entirely within one of the sentence's
     explicit "..." quoted spans AND the sentence carries a citation token — an
@@ -82,6 +110,11 @@ def recitation_findings(report_md: str, note_bodies: dict[str, str]) -> list[Fin
     findings: list[Finding] = []
     body_words = {nid: words(body) for nid, body in note_bodies.items()}
     for sent in split_sentences(strip_sources_section(report_md)):
+        # A-9: reference/metadata lines (URLs, `**URL:**`/`Source:` labels,
+        # `[ref]:` entries) inherently repeat the source string — skip them so they
+        # don't fire as recitation. Prose sentences fall through unchanged.
+        if _is_reference_line(sent):
+            continue
         toks = words(sent)
         if not toks:
             continue
