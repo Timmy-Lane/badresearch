@@ -129,7 +129,7 @@ If `pipeline_tier == "light"`: SKIP step 10.1 — 10.3 below and follow this sec
 
 4. **Hygiene.** No YAML frontmatter on the final report. No pipeline vocabulary in prose ("hyperresearch", "evidence digest", "comparisons.md", "committed reading", etc.). When `citation_style == "wikilink"`, `[[<source-note-id>]]` markers ARE the citation system and must be preserved — only strip wikilinks that point at workspace artifacts (interim-*, scaffold, comparisons). Step 15 (polish) is a backstop, not a license to leak.
 
-5. **Exit and route.** Once `research/notes/final_report_<vault_tag>.md` is written, return to the entry skill and invoke `Skill(skill: "bad-research-15-polish")`. Light tier skips steps 11–14 entirely.
+5. **Exit and route.** Once `research/notes/final_report_<vault_tag>.md` is written, return to the entry skill and invoke `Skill(skill: "bad-research-12-critics")` for the **light-tier slim single critic** (E3 — one adversarial dialectic+instruction pass, applied inline; no fan-out, no patcher), THEN `Skill(skill: "bad-research-15-polish")`. Light tier skips steps 11 + 13–14 entirely (it runs the slim step-12 critic, not the full 4-critic fan-out + patcher).
 
 ---
 
@@ -281,5 +281,5 @@ When all 3 sub-orchestrators return:
 
 Return to the entry skill (`bad-research`). Tier-based routing:
 
-- **light tier:** You already wrote `research/notes/final_report_<vault_tag>.md` directly. Skip steps 11-14 (no synthesis, no critics, no patcher) and invoke `Skill(skill: "bad-research-15-polish")`.
+- **light tier:** You already wrote `research/notes/final_report_<vault_tag>.md` directly. Skip step 11 (synthesis) and steps 13–14 (no gap-fetch, no patcher), but DO run the light-tier slim critic — invoke `Skill(skill: "bad-research-12-critics")` (its **Light-tier slim critic** section: one adversarial dialectic+instruction pass, findings applied inline), THEN `Skill(skill: "bad-research-15-polish")`. (E3: the light route used to skip straight to polish with no adversarial pass.)
 - **full tier:** Invoke `Skill(skill: "bad-research-11-synthesize")`.

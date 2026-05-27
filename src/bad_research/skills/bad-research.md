@@ -74,7 +74,7 @@ When you invoke a Skill, that skill's full procedure is loaded into your context
     → 12 → 13 → 12.5 → 14 → 14.5 → 15 → 16(+gate)
 ```
 
-`light` runs `0.5 → 1 → 1.5 → 1.6 → 2 → 10 → 15 → 16(+gate)`; `agentic-fast` runs `1 → 1.5 → agentic-fast → 15 → 16(+gate)`. Step 1.6 (plan-gate) is present in the interactive expensive path and is a no-op (skipped) on every non-interactive / `--auto` / wrapped / cheap run. See the per-route table below for cost/time.
+`light` runs `0.5 → 1 → 1.5 → 1.6 → 2 → 10 → 12(slim critic) → 15 → 16(+gate)`; `agentic-fast` runs `1 → 1.5 → agentic-fast → 12(slim critic) → 15 → 16(+gate)`. Step 1.6 (plan-gate) is present in the interactive expensive path and is a no-op (skipped) on every non-interactive / `--auto` / wrapped / cheap run. Step 12 on the light/agentic-fast routes is the **slim single adversarial critic** (E3) — one dialectic+instruction pass, no 4-critic fan-out, no patcher — NOT the full-tier critique. See the per-route table below for cost/time.
 
 ---
 
@@ -90,8 +90,8 @@ deep path (triple-draft ensemble + synthesis + adversarial critics + grader loop
 
 | Route | Step sequence | Cost | Time |
 |---|---|---|---|
-| `agentic-fast` | 0.5 → 1 → 1.5 → agentic-fast → 15 → 16(+gate) | ~$1–5 | <3 min |
-| `light` | 0.5 → 1 → 1.5 → 1.6 → 2(funnel) → 10(single draft) → 15 → 16(+gate) | ~$5–15 | ~30–40 min |
+| `agentic-fast` | 0.5 → 1 → 1.5 → agentic-fast → 12(slim critic) → 15 → 16(+gate) | ~$1–5 | <3 min |
+| `light` | 0.5 → 1 → 1.5 → 1.6 → 2(funnel) → 10(single draft) → 12(slim critic) → 15 → 16(+gate) | ~$5–15 | ~30–40 min |
 | `full` | 0.5 → 1 → 1.5 → 1.6 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 11.5 → 12 → 13 → 12.5(grader loop) → 14 → 14.5(fresh-review) → 15 → 16(+gate+recitation) | ~$60–120 | ~1.5–2.5 h |
 
 **On 0.5 (clarify):** the route — including `agentic-fast` — is only decided at step 1.5, *after* 0.5 has already run, so 0.5 normally runs first on every interactive run. 0.5 is skipped **only on `--auto`/wrapped runs** (a wrapped run is one where `research/wrapper_contract.json` is present and the query is binding GOSPEL not to be questioned). `16(+gate)` is shorthand for "step 16 plus the deterministic no-uncited-claim ship-gate that runs after it on every route" — a *ship-gate* is a blocking quality check that must pass before the report can be delivered.
