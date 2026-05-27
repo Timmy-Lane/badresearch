@@ -291,22 +291,79 @@ def verify_citations_cmd(
 
 
 # ── uncited-gate (Task 9/12) — deterministic ship-block, $0 ──────────────────
-def _uncited_gate(report_path: str, vault_tag: str) -> list[dict]:
-    """Run the deterministic no-uncited-claim gate over the report."""
+def _standalone_store_from_bodies(note_bodies: dict[str, str]) -> object:
+    """An in-memory AnchorStore seeded from `{note_id: body}` — the standalone
+    path (no pre-populated vault, mirrors recitation-gate's --note-bodies). Each
+    body becomes a verified anchor keyed by BOTH its note_id (so `[[note-id]]`
+    wiki-links resolve) AND its 1-based ordinal (so numeric `[N]` resolve). The
+    whole body is the quoted_support, so Tier-A byte-identity holds if the
+    verifier is ever run over the same store. verified=1: the standalone gate
+    treats a provided source as authoritative (its job is "is there a real
+    citation", not "did Tier B pass")."""
     import sqlite3
 
-    from bad_research.core.vault import Vault
+    from bad_research.grounding.anchors import AnchorStore, ClaimAnchor
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    store = AnchorStore(conn)
+    store.init_schema()
+    for idx, (note_id, body) in enumerate(note_bodies.items(), start=1):
+        body = body or ""
+        # [[note-id]] anchor: anchor_id is the note_id itself so gate.get(note_id) hits.
+        wiki = ClaimAnchor(
+            note_id=note_id, char_start=0, char_end=len(body),
+            claim="", quoted_support=body, verified=1, anchor_id=note_id,
+        )
+        store.upsert(wiki)
+        # [N] anchor: anchor_id is the 1-based ordinal so gate.get("1") hits. A
+        # separate row (distinct PK) pointing at the same note/body.
+        numeric = ClaimAnchor(
+            note_id=note_id, char_start=0, char_end=len(body),
+            claim="", quoted_support=body, verified=1, anchor_id=str(idx),
+        )
+        store.upsert(numeric)
+    return store
+
+
+def _uncited_gate(report_path: str, vault_tag: str, note_bodies_path: str | None) -> list[dict]:
+    """Run the deterministic no-uncited-claim gate over the report.
+
+    Standalone-safe: `--note-bodies` (a JSON `{note_id: body}` map) seeds an
+    in-memory store with no vault needed; otherwise the vault's anchors.db is
+    used. The schema is always auto-initialized so a missing `claim_anchors`
+    table yields a clean "0 anchors" result instead of an OperationalError, and a
+    missing vault degrades to an empty store rather than crashing."""
+    import sqlite3
+
     from bad_research.grounding.anchors import AnchorStore
     from bad_research.grounding.gate import no_uncited_claim_gate
 
-    vault = Vault.discover()
     report_md = Path(report_path).read_text(encoding="utf-8")
-    db_path = Path(vault.root) / ".bad-research" / "anchors.db"
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
-    store = AnchorStore(conn)
-    findings = no_uncited_claim_gate(report_md, store)
+
+    if note_bodies_path:
+        bodies = json.loads(Path(note_bodies_path).read_text(encoding="utf-8"))
+        store: object = _standalone_store_from_bodies(bodies)
+    else:
+        # Vault path; if there is no vault (standalone, no --note-bodies), fall
+        # back to an empty in-memory store so the gate still runs (every factual
+        # sentence reads as uncited, which is the honest answer with no sources).
+        from bad_research.core.vault import Vault, VaultError
+
+        try:
+            vault = Vault.discover()
+            db_path = Path(vault.root) / ".bad-research" / "anchors.db"
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+            conn = sqlite3.connect(str(db_path))
+        except VaultError:
+            conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        store = AnchorStore(conn)
+        # Auto-init: a vault DB that predates the grounding tables (or a fresh
+        # in-memory DB) has no claim_anchors table. init_schema is idempotent.
+        store.init_schema()
+
+    findings = no_uncited_claim_gate(report_md, store)  # type: ignore[arg-type]
     return [
         {"sentence": getattr(f, "location", ""), "reason": getattr(f, "failure_mode", "uncited")}
         for f in findings
@@ -316,10 +373,16 @@ def _uncited_gate(report_path: str, vault_tag: str) -> list[dict]:
 def uncited_gate_cmd(
     report: str = typer.Option(..., "--report"),
     vault_tag: str = typer.Option(..., "--vault-tag"),
+    note_bodies: str = typer.Option(None, "--note-bodies", "--sources"),
     json_output: bool = typer.Option(False, "--json", "-j"),
 ) -> None:
-    """Deterministic ($0) no-uncited-claim ship gate. Non-zero exit when it blocks."""
-    uncited = _uncited_gate(report, vault_tag)
+    """Deterministic ($0) no-uncited-claim ship gate. Non-zero exit when it blocks.
+
+    Standalone (outside Claude Code): pass `--note-bodies`/`--sources` (a JSON
+    `{note_id: body}` map) to resolve `[N]`/`[[note-id]]` citations with no
+    pre-populated vault — mirrors recitation-gate. With neither a vault nor
+    --note-bodies, the gate auto-inits an empty store (clean "0 anchors")."""
+    uncited = _uncited_gate(report, vault_tag, note_bodies)
     typer.echo(json.dumps({"uncited": uncited}))
     if uncited:
         raise typer.Exit(1)

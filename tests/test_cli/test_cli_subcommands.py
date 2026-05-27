@@ -45,6 +45,63 @@ def test_uncited_gate_command_registered():
     assert res.exit_code == 0
 
 
+# ── A-3: standalone uncited-gate (no pre-populated vault) ────────────────────
+
+def test_uncited_gate_standalone_with_note_bodies_resolves_cites(tmp_path, monkeypatch):
+    # Run OUTSIDE Claude Code: a tmp cwd with NO vault. --note-bodies supplies the
+    # universe of valid sources; a fully-cited report ships clean (exit 0).
+    monkeypatch.chdir(tmp_path)
+    report = tmp_path / "r.md"
+    report.write_text(
+        "Southeast Asian GMV grew 12.4% in 2024 [1].\n"
+        "Vietnam led the region at 64% penetration [[src-vn]].\n",
+        encoding="utf-8",
+    )
+    notes = tmp_path / "notes.json"
+    notes.write_text(
+        json.dumps({"src-sea": "a 12.4% YoY expansion", "src-vn": "Vietnam at 64%"}),
+        encoding="utf-8",
+    )
+    res = runner.invoke(app, ["uncited-gate", "--report", str(report),
+                              "--note-bodies", str(notes), "--vault-tag", "x", "--json"])
+    assert res.exit_code == 0, res.stdout + (res.stderr or "")
+    assert json.loads(res.stdout)["uncited"] == []
+
+
+def test_uncited_gate_standalone_flags_uncited_factual_sentence(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    report = tmp_path / "r.md"
+    # one cited line + one genuinely uncited factual sentence
+    report.write_text(
+        "Southeast Asian GMV grew 12.4% in 2024 [1].\n"
+        "Indonesia reportedly led the region at 71% penetration.\n",
+        encoding="utf-8",
+    )
+    notes = tmp_path / "notes.json"
+    notes.write_text(json.dumps({"src-sea": "a 12.4% YoY expansion"}), encoding="utf-8")
+    res = runner.invoke(app, ["uncited-gate", "--report", str(report),
+                              "--note-bodies", str(notes), "--vault-tag", "x", "--json"])
+    assert res.exit_code == 1
+    uncited = json.loads(res.stdout)["uncited"]
+    assert len(uncited) == 1
+    assert "Indonesia" in uncited[0]["sentence"]
+
+
+def test_uncited_gate_missing_db_is_clean_zero_anchors_not_traceback(tmp_path, monkeypatch):
+    # No vault, no --note-bodies: the gate must auto-init the schema and report
+    # "0 anchors" (every factual sentence uncited) rather than raising
+    # OperationalError: no such table: claim_anchors.
+    monkeypatch.chdir(tmp_path)
+    report = tmp_path / "r.md"
+    report.write_text("A neutral framing sentence with no claims at all.\n", encoding="utf-8")
+    res = runner.invoke(app, ["uncited-gate", "--report", str(report),
+                              "--vault-tag", "x", "--json"])
+    # No traceback (the bug was a crash). A no-claim report ships clean.
+    assert res.exception is None, res.exception
+    assert res.exit_code == 0
+    assert json.loads(res.stdout)["uncited"] == []
+
+
 def test_all_research_subcommands_registered():
     for cmd in ("route", "funnel-gather", "retrieve", "verify-citations", "uncited-gate"):
         res = runner.invoke(app, [cmd, "--help"])
