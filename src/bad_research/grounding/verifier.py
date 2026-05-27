@@ -51,8 +51,11 @@ class HostJudgeNLI:
     seam already wired into the verifier):
 
       * claim ≈ quote (lexical overlap >= CLAIM_QUOTE_OVERLAP_SKIP) -> ENTAILMENT
-        softmax. This is the byte-identity/near-verbatim band Tier-A already covers;
-        the judge would add nothing, so we SKIP it ($0, no token cost).
+        softmax. This is the near-verbatim band; on the keyless+host path we accept it
+        to bound host-token cost (the residual number-flip risk in this band is the
+        keyless gap the `[local]`/keyed entailment lane closes — NOT Tier-A, which only
+        checks span-vs-body integrity). The host judge adds little here, so we SKIP it
+        ($0, no token cost).
       * genuine paraphrase (overlap < CLAIM_QUOTE_OVERLAP_SKIP) -> NEUTRAL softmax.
         NEUTRAL is exactly the band the CitationVerifier escalates to its *batched*
         Tier-C host-model judge (Pass 2) — so all queued paraphrase pairs share ONE
@@ -70,7 +73,9 @@ class HostJudgeNLI:
         from .gate import CLAIM_QUOTE_OVERLAP_SKIP, claim_quote_overlap
 
         if claim_quote_overlap(hypothesis, premise) >= CLAIM_QUOTE_OVERLAP_SKIP:
-            # claim ≈ quote -> Tier-A already proved byte-identity; accept, skip judge.
+            # claim ≈ quote (near-verbatim) -> accept to bound host-token cost; the
+            # number-flip residual here is the keyless gap closed by the [local]/keyed
+            # lane, not Tier-A (Tier-A only checks span-vs-body integrity). Skip judge.
             return {"entailment": 1.0, "neutral": 0.0, "contradiction": 0.0}
         # genuine paraphrase -> NEUTRAL so the verifier escalates it to the batched judge.
         return {"entailment": 0.0, "neutral": 1.0, "contradiction": 0.0}

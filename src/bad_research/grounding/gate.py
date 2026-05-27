@@ -172,8 +172,15 @@ def gate_blocks_ship(findings: list[Finding]) -> bool:
 # below it (a genuine paraphrase) → route to the batched host-model entailment judge.
 
 # A claim whose token set is >= this fraction contained in the cited span is treated
-# as "≈ the quote" — verbatim/near-verbatim, already covered by Tier-A byte-identity;
-# the semantic judge adds nothing, so we skip it (no host-token cost). dossier §2.2.
+# as "≈ the quote" — verbatim/near-verbatim. NOTE: this band is NOT covered by Tier-A:
+# Tier-A byte-identity checks span-vs-body integrity (the quoted_support still sits at
+# [char_start:char_end] with a matching SHA), NOT report-sentence-vs-span fidelity. The
+# residual risk in this band — a >=0.8-overlap report sentence that flipped a number
+# ("grew 12%" vs a span saying "grew 21%") — is caught by the `[local]`/keyed entailment
+# lane (CrossEncoderNLI / Tier-C judge), not by Tier-A keyless. On the keyless+host
+# path we accept this near-verbatim band to bound host-token cost: the host judge adds
+# little over the lexical match and the number-flip boundary is a known keyless gap that
+# the `[local]`/keyed lane closes when installed/keyed. dossier §2.2.
 CLAIM_QUOTE_OVERLAP_SKIP = 0.8
 
 _WORD_RE = re.compile(r"[a-z0-9]+")
