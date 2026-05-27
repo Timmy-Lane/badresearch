@@ -8,7 +8,7 @@ import importlib.util
 import json
 import re
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 from bad_research.llm.base import LLMMessage, LLMProvider
 
@@ -100,7 +100,7 @@ def default_nli(llm: LLMProvider | None = None) -> NLIModel:
     return CitationPresentNLI()
 
 
-class VerifyVerdict(str, Enum):
+class VerifyVerdict(StrEnum):
     SUPPORTED = "supported"
     PARTIAL = "partial"
     UNSUPPORTED = "unsupported"
