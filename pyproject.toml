@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "bad-research"
 version = "0.1.0"
-description = "michael jackson bad — a deep-research agent that filters garbage, grounds every claim, and runs as a Claude Code skill. A fork-and-enhance of hyperresearch."
+description = "michael jackson bad"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11,<3.14"

@@ -78,6 +78,10 @@ def doctor(
         output(success(data, vault=vault_root), json_mode=True)
         return
 
+    from bad_research._banner import render_rich
+
+    console.print(render_rich())
+    console.print()
     console.print("[bold]bad doctor[/] — keyless capability surface\n")
     console.print("[green]keyless by default[/] — zero third-party API key required.")
     console.print("[dim](the skill uses the Claude Code host model; web via host tools + local OSS/CLIs)[/]\n")
