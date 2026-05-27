@@ -130,3 +130,82 @@ def test_fetch_clean_formats_projection(monkeypatch, sample_html: str, tmp_path)
     out = fetch_clean("https://ex.com/post", formats=("markdown",))
     assert set(out.keys()) <= {"markdown", "url"}   # only requested + url survive
     assert "metadata" not in out
+
+
+# --- E13 (STEAL_LIST #6a): Firecrawl-style url normalization + maxAge alias -----
+from bad_research.web.content.fetch_clean import FETCH_CACHE_MAXAGE_S, normalize_url
+
+
+def test_fetch_cache_maxage_is_firecrawl_default() -> None:
+    # the Firecrawl-default content-cache maxAge: 48h (STEAL_LIST #6a)
+    assert FETCH_CACHE_MAXAGE_S == 172800
+
+
+def test_normalize_url_strips_fragment() -> None:
+    assert normalize_url("https://ex.com/post#section-2") == "https://ex.com/post"
+
+
+def test_normalize_url_forces_https() -> None:
+    assert normalize_url("http://ex.com/post") == "https://ex.com/post"
+
+
+def test_normalize_url_drops_default_ports() -> None:
+    assert normalize_url("https://ex.com:443/post") == "https://ex.com/post"
+    assert normalize_url("http://ex.com:80/post") == "https://ex.com/post"
+
+
+def test_normalize_url_strips_www() -> None:
+    assert normalize_url("https://www.ex.com/post") == "https://ex.com/post"
+
+
+def test_normalize_url_strips_trailing_index_files() -> None:
+    assert normalize_url("https://ex.com/dir/index.html") == "https://ex.com/dir/"
+    assert normalize_url("https://ex.com/index.php") == "https://ex.com/"
+
+
+def test_normalize_url_lowercases_host_only() -> None:
+    # host is case-insensitive; the path must NOT be lowercased
+    assert normalize_url("https://EX.com/Path/To/Page") == "https://ex.com/Path/To/Page"
+
+
+def test_fetch_clean_cache_hit_across_url_variants(monkeypatch, sample_html: str,
+                                                   tmp_path) -> None:
+    # the SAME page reached via http/www/fragment/default-port variants must all
+    # hit the ONE cached entry — only the first variant does a live fetch (E13).
+    monkeypatch.setattr(fc, "CACHE_DB_PATH", tmp_path / "c.sqlite")
+    calls = {"n": 0}
+
+    def fake_static(url):
+        calls["n"] += 1
+        return ("text/html; charset=utf-8", sample_html.encode("utf-8"))
+
+    monkeypatch.setattr(fc, "_static_fetch", fake_static)
+    fetch_clean("https://ex.com/post")
+    fetch_clean("http://www.ex.com/post#top")     # normalizes to the same key
+    fetch_clean("https://ex.com:443/post")        # ditto
+    assert calls["n"] == 1                          # fetched once only
+
+
+def test_fetch_clean_cache_respects_maxage(monkeypatch, sample_html: str,
+                                           tmp_path) -> None:
+    # an entry older than FETCH_CACHE_MAXAGE_S is treated as expired and re-fetched
+    monkeypatch.setattr(fc, "CACHE_DB_PATH", tmp_path / "c.sqlite")
+    monkeypatch.setattr(fc, "CACHE_TTL", fc.FETCH_CACHE_MAXAGE_S)
+    calls = {"n": 0}
+
+    def fake_static(url):
+        calls["n"] += 1
+        return ("text/html; charset=utf-8", sample_html.encode("utf-8"))
+
+    monkeypatch.setattr(fc, "_static_fetch", fake_static)
+    fetch_clean("https://ex.com/post")
+    assert fc.cache_get("https://ex.com/post") is not None   # fresh hit
+    # age the row past maxAge
+    import sqlite3
+    conn = sqlite3.connect(fc.CACHE_DB_PATH)
+    conn.execute("UPDATE content_cache SET ts = ts - ?", (fc.FETCH_CACHE_MAXAGE_S + 1,))
+    conn.commit()
+    conn.close()
+    assert fc.cache_get("https://ex.com/post") is None       # expired -> miss
+    fetch_clean("https://ex.com/post")
+    assert calls["n"] == 2                                    # re-fetched after expiry
