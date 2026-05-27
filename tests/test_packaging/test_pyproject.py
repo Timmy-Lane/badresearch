@@ -1,4 +1,4 @@
-"""pyproject.toml metadata + entry-point resolution + lean-base / extras groups."""
+"""pyproject.toml: pure-keyless base + the keyless extras (INTERFACES_KEYLESS §7)."""
 
 from __future__ import annotations
 
@@ -16,7 +16,17 @@ def pp() -> dict:
     return tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
 
 
-# ── Task 1: metadata + entry points ──────────────────────────────────────────
+def _names(dep_list: list[str]) -> set[str]:
+    out = set()
+    for d in dep_list:
+        name = d.split(";")[0].strip()
+        for sep in (">=", "==", "~=", "<", ">", "[", " "):
+            name = name.split(sep)[0]
+        out.add(name.strip().lower())
+    return out
+
+
+# ── metadata + entry points ──────────────────────────────────────────────────
 def test_project_name_and_python(pp):
     assert pp["project"]["name"] == "bad-research"
     assert pp["project"]["requires-python"] == ">=3.11,<3.14"
@@ -33,54 +43,45 @@ def test_wheel_packages(pp):
     assert pkgs == ["src/bad_research"]
 
 
-# Keyed / paid SDKs + the GPU stack that MUST NOT be in the keyless base.
-HEAVY_FORBIDDEN_IN_BASE = {
-    "cohere",
-    "tavily-python",
-    "exa-py",
-    "browser-use",
-    "agentql",
-    "stagehand",
-    "firecrawl-py",
-    "sentence-transformers",
-    "torch",
-    "lancedb",
-    "pyarrow",
-    "playwright",
-    "FlagEmbedding",
+# ── pure-keyless base ────────────────────────────────────────────────────────
+# The removed keyed/heavy stack MUST NOT be in the base install.
+FORBIDDEN_IN_BASE = {
+    "cohere", "tavily-python", "exa-py", "firecrawl-py", "browserbase",
+    "browser-use", "agentql", "stagehand", "playwright", "torch",
+    "sentence-transformers", "lancedb", "pyarrow", "flagembedding",
 }
 
 
-def _names(dep_list: list[str]) -> set[str]:
-    out = set()
-    for d in dep_list:
-        name = d.split(";")[0].strip()
-        for sep in (">=", "==", "~=", "<", ">", "[", " "):
-            name = name.split(sep)[0]
-        out.add(name.strip())
-    return out
-
-
-def test_base_install_is_lean(pp):
+def test_base_is_pure_keyless(pp):
     base = _names(pp["project"]["dependencies"])
-    leaked = (base & {n.lower() for n in HEAVY_FORBIDDEN_IN_BASE}) | (base & HEAVY_FORBIDDEN_IN_BASE)
-    assert not leaked, f"keyed/heavy deps leaked into base: {leaked}"
-    # base carries the keyless essentials (numpy stays: grounding/nli.py imports it directly)
-    assert {"anthropic", "httpx", "typer", "pymupdf", "crawl4ai", "ddgs", "trafilatura", "numpy"} <= base
+    leaked = base & {n.lower() for n in FORBIDDEN_IN_BASE}
+    assert not leaked, f"non-keyless deps leaked into base: {leaked}"
 
 
-def test_base_has_no_torch_lancedb_or_keyed_sdk(pp):
+def test_base_carries_keyless_essentials(pp):
+    base = _names(pp["project"]["dependencies"])
+    # anthropic stays core (the calibration/headless bridge); the keyless content stack.
+    assert {
+        "anthropic", "httpx", "crawl4ai", "ddgs", "pymupdf", "trafilatura",
+        "beautifulsoup4", "rank-bm25", "feedparser", "typer", "rich", "pydantic",
+    } <= base, f"missing keyless essentials; have {sorted(base)}"
+
+
+def test_base_has_no_torch_lancedb_playwright(pp):
     base = pp["project"]["dependencies"]
-    for forbidden in ("torch", "lancedb", "pyarrow", "cohere", "tavily", "exa-py", "playwright"):
-        assert all(forbidden not in d for d in base), f"{forbidden} leaked into base"
+    assert all(
+        "torch" not in d and "lancedb" not in d and "playwright" not in d for d in base
+    )
 
 
-def test_search_extra_is_gone(pp):
+# ── extras: the keyless shape ────────────────────────────────────────────────
+def test_search_and_grounding_extras_gone(pp):
     extras = pp["project"]["optional-dependencies"]
-    assert "search" not in extras, "the [search] extra must be deleted (pure keyless)"
+    assert "search" not in extras, "the keyed [search] extra must be deleted"
+    assert "grounding" not in extras, "[grounding] folds into [local] (sentence-transformers)"
 
 
-def test_extras_groups_exist(pp):
+def test_keyless_extras_exist(pp):
     extras = pp["project"]["optional-dependencies"]
     for group in ("browse", "local", "mcp", "all", "dev"):
         assert group in extras, f"missing extras group: {group}"
@@ -88,9 +89,7 @@ def test_extras_groups_exist(pp):
 
 def test_browse_extra_is_playwright_only(pp):
     browse = _names(pp["project"]["optional-dependencies"]["browse"])
-    assert "playwright" in browse
-    for gone in ("browser-use", "agentql", "crawl4ai"):
-        assert gone not in {n.lower() for n in browse}
+    assert browse == {"playwright"}, f"[browse] should be playwright-only; got {browse}"
 
 
 def test_local_extra_holds_the_neural_stack(pp):
@@ -98,6 +97,8 @@ def test_local_extra_holds_the_neural_stack(pp):
     assert {"torch", "sentence-transformers", "lancedb", "pyarrow"} <= local
 
 
-def test_all_composes_extras(pp):
+def test_all_composes_keyless_extras(pp):
     all_dep = pp["project"]["optional-dependencies"]["all"]
     assert any("bad-research[" in d for d in all_dep)
+    joined = " ".join(all_dep)
+    assert "browse" in joined and "local" in joined and "mcp" in joined
