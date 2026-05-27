@@ -7,6 +7,23 @@ tree is verbatim from DR-loops §9.2:
                 AND response_format == "short" AND single domain
   light         elif response_format == "structured" OR atomic_items 3-6 OR mild tension
   full          else (multi-domain, contested, argumentative, time_periods, >=7 items)
+
+[SEMANTIC-TIERING 2026-05-28] Two corrections to the post-B-5 behaviour:
+
+  1. **`pipeline_tier == "full"` from decompose is an honoured FLOOR.** Step 1
+     (bad-research-1-decompose.md) judges the SEMANTIC depth the query wants and
+     writes `pipeline_tier`, with "Default is full; when uncertain, tier up". The
+     router previously IGNORED that field and its docstring falsely claimed it
+     "never down-routes a justified full". It now does: an explicit
+     `pipeline_tier == "full"` forces `full` — mechanical heuristics may ESCALATE
+     above the model's call but never DEMOTE below it. A missing / `"light"`
+     pipeline_tier imposes no floor (so every fixture that omits it is unchanged).
+  2. **The raised survey ceiling now requires an EXPLICIT breadth `modality`.** A
+     merely lexically-inferred survey (detect_modality falling back to
+     SURVEY_PHRASE_MARKERS, no explicit `modality` field) no longer buys the
+     ROUTER_SURVEY_MAX_ATOMIC ceiling — it falls back to the depth-favouring deep
+     ceiling ROUTER_LIGHT_MAX_ATOMIC. This kills the lexical "best X"→light demotion
+     of deep single-subject queries while preserving the explicit-survey down-route.
 """
 from __future__ import annotations
 
@@ -58,6 +75,32 @@ def detect_modality(decomp: dict[str, Any]) -> str:
     return "deep"
 
 
+def _explicit_breadth_modality(decomp: dict[str, Any]) -> bool:
+    """Whether the decompose step EXPLICITLY declared a breadth modality.
+
+    [SEMANTIC-TIERING 2026-05-28] Only an explicit `modality` field set to one of
+    R.BREADTH_MODALITIES counts. A modality that detect_modality merely INFERRED
+    from sub_questions phrasing (the SURVEY_PHRASE_MARKERS / COMPARE_PHRASE_MARKERS
+    lexical fallback) does NOT count here — lexical "best X" phrasing cannot
+    distinguish a shallow option-enumeration survey from a deep single-subject
+    investigation, so it no longer earns the raised survey ceiling. This is the
+    crux of the fix: the survey down-route is gated on an EXPLICIT model judgment,
+    not on wording."""
+    explicit = decomp.get("modality")
+    return isinstance(explicit, str) and explicit in R.BREADTH_MODALITIES
+
+
+def _pipeline_tier_floor_full(decomp: dict[str, Any]) -> bool:
+    """Whether the decompose step explicitly declared `pipeline_tier == "full"`.
+
+    [SEMANTIC-TIERING 2026-05-28] This is the SEMANTIC depth signal the router must
+    honour as a FLOOR: when the model (step 1) judged the query deep enough to want
+    the full pipeline, classify_route must never demote it to light/agentic-fast.
+    Mechanical heuristics escalate above this, never below. A missing or `"light"`
+    pipeline_tier returns False (no floor) — preserving every fixture that omits it."""
+    return decomp.get("pipeline_tier") == "full"
+
+
 def contestedness_score(decomp: dict[str, Any]) -> float:
     """0..1 score of how source-CONTESTED the query is. >= CONTESTEDNESS_FULL_FLOOR
     means genuine tension that warrants the full adversarial path even for a
@@ -104,23 +147,33 @@ def _hard_full_triggers(decomp: dict[str, Any]) -> list[str]:
 
 
 def _breadth_forces_full(decomp: dict[str, Any]) -> bool:
-    """Whether the atomic-item COUNT escalates to full, AFTER the B-5 modality
-    gate. Pure breadth no longer forces full when the query is a low-contested
-    broad-curation survey (collect/compare/survey + contestedness below floor):
-    such a query is allowed up to ROUTER_SURVEY_MAX_ATOMIC items in `light`.
-    A deep-modality query keeps the original ROUTER_LIGHT_MAX_ATOMIC ceiling."""
+    """Whether the atomic-item COUNT escalates to full, AFTER the modality gate.
+
+    [SEMANTIC-TIERING 2026-05-28] The raised survey ceiling (ROUTER_SURVEY_MAX_ATOMIC)
+    now applies ONLY when the decompose step set an EXPLICIT breadth `modality` and
+    contestedness is below the floor — a broad-but-shallow curation survey the model
+    itself declared. A merely lexically-inferred breadth modality (no explicit
+    `modality` field) no longer buys the raised ceiling: it falls back to the
+    depth-favouring deep ceiling ROUTER_LIGHT_MAX_ATOMIC, so a deep single-subject
+    "best X" query escalates to full on item count as it should. (Previously this
+    gated on detect_modality, which folded in the lexical fallback — that was the
+    over-demotion bug.)"""
     n = _atomic_count(decomp)
-    modality = detect_modality(decomp)
     contested = contestedness_score(decomp) >= R.CONTESTEDNESS_FULL_FLOOR
-    if modality in R.BREADTH_MODALITIES and not contested:
-        # broad-but-shallow curation: breadth alone does not buy adversarial depth
+    if _explicit_breadth_modality(decomp) and not contested:
+        # EXPLICITLY-declared broad-but-shallow curation: breadth alone does not
+        # buy adversarial depth, so the raised survey ceiling applies.
         return n > R.ROUTER_SURVEY_MAX_ATOMIC
     return n > R.ROUTER_LIGHT_MAX_ATOMIC
 
 
 def _full_triggers(decomp: dict[str, Any]) -> list[str]:
     """The reasons (if any) a query MUST route full. Empty list → not forced full."""
-    reasons = _hard_full_triggers(decomp)
+    reasons: list[str] = []
+    if _pipeline_tier_floor_full(decomp):
+        # the SEMANTIC depth floor (SEMANTIC-TIERING 2026-05-28)
+        reasons.append('decompose pipeline_tier="full" (semantic depth floor)')
+    reasons.extend(_hard_full_triggers(decomp))
     if _breadth_forces_full(decomp):
         n = _atomic_count(decomp)
         reasons.append(f"{n} atomic items (>{R.ROUTER_LIGHT_MAX_ATOMIC})")
@@ -135,11 +188,14 @@ def classify_route(decomp: dict[str, Any]) -> Route:
     domains = decomp.get("domains") or []
     multi_domain = len(domains) >= 3
 
-    # FULL: Lens-D primaries, dialectics, source tensions, multi-domain breadth,
-    # OR a breadth count that survives the B-5 modality gate. A broad-but-shallow
-    # curation survey (collect/compare/survey, low contestedness) is NOT forced
-    # full by item count alone — that was the q1 over-routing bug.
-    if (time_periods or fmt == "argumentative" or contradiction
+    # FULL: an explicit decompose `pipeline_tier == "full"` (the SEMANTIC depth
+    # FLOOR — SEMANTIC-TIERING 2026-05-28), Lens-D primaries, dialectics, source
+    # tensions, multi-domain breadth, OR a breadth count that survives the modality
+    # gate. The floor means the router never demotes a query the model judged deep;
+    # a broad-but-shallow EXPLICIT-survey (low contestedness) is still NOT forced
+    # full by item count alone (the B-5 down-route).
+    if (_pipeline_tier_floor_full(decomp)
+            or time_periods or fmt == "argumentative" or contradiction
             or multi_domain or _breadth_forces_full(decomp)):
         return "full"
 
@@ -167,10 +223,12 @@ def route_reason(decomp: dict[str, Any]) -> str:
         return "full: " + ("; ".join(triggers) if triggers else "complex query")
     if route == "agentic-fast":
         return f"agentic-fast: {n} atomic item(s), short, single-domain, no tension"
-    # LIGHT: call out when a broad-curation modality spared a high-breadth query
-    # from full (the B-5 gate) so the rationale line is auditable.
-    if modality in R.BREADTH_MODALITIES and n > R.ROUTER_LIGHT_MAX_ATOMIC:
-        return (f"light: {n} atomic item(s) but {modality} modality / low "
+    # LIGHT: call out when an EXPLICIT broad-curation modality spared a high-breadth
+    # query from full (the B-5 gate) so the rationale line is auditable. Only an
+    # explicit modality reaches here with n > ceiling now — a lexically-inferred
+    # survey no longer buys the raised ceiling (SEMANTIC-TIERING 2026-05-28).
+    if _explicit_breadth_modality(decomp) and n > R.ROUTER_LIGHT_MAX_ATOMIC:
+        return (f"light: {n} atomic item(s) but explicit {modality} modality / low "
                 f"contestedness — breadth alone does not force full (B-5)")
     return f"light: {n} atomic item(s) / structured coverage, no full-tier trigger"
 
