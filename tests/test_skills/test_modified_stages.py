@@ -95,3 +95,39 @@ def test_gen_grounding_preserves_patch_not_regenerate(skills_dir):
     body = (skills_dir / "bad-research-11-synthesize.md").read_text()
     assert "patch-not-regenerate" in body or "patch not regenerate" in body.lower() \
         or "do not re-synthesize" in body.lower()
+
+
+# ── B-8: citation coalescing in step 16 (readability, provenance-preserving) ──
+
+def test_step16_mandates_citation_coalescing(skills_dir):
+    body = (skills_dir / "bad-research-16-readability-audit.md").read_text()
+    low = body.lower()
+    # invokes the deterministic helper (not a hand-edit)
+    assert "coalesce_citations" in body
+    # the rule: collapse CONSECUTIVE sentences sharing the SAME source set
+    assert "coalesc" in low
+    assert "consecutive" in low
+    assert "same source" in low or "identical source" in low or "same set" in low
+
+
+def test_step16_coalescing_preserves_provenance_and_never_drops_source(skills_dir):
+    body = (skills_dir / "bad-research-16-readability-audit.md").read_text()
+    low = body.lower()
+    # provenance preserved — explicitly forbids dropping any source
+    assert "never drop a source" in low or "never drop" in low or "no source" in low \
+        or "no provenance lost" in low
+    assert "provenance" in low
+    # a DISTINCT source must NOT be merged — keeps its own cite, breaks the run
+    assert "distinct source" in low
+    assert "never merge" in low or "never merges" in low or "not merge" in low \
+        or "breaks the run" in low
+
+
+def test_step16_coalescing_runs_after_both_gates(skills_dir):
+    # must run AFTER uncited + recitation gates (gates validate per-sentence cites
+    # first; coalescing only collapses the visual repetition afterwards)
+    body = (skills_dir / "bad-research-16-readability-audit.md").read_text()
+    low = body.lower()
+    assert "after" in low and ("both gate" in low or "gates pass" in low
+                               or "after the uncited" in low
+                               or "after both gate" in low)

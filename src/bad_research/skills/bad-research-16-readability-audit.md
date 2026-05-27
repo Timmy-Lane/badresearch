@@ -205,6 +205,34 @@ bad recitation-gate --report research/notes/final_report_<vault_tag>.md \
 
 ---
 
+## Step 16.8 — Citation coalescing (final visual pass, AFTER both gates pass)
+
+**Run this LAST — only after `bad uncited-gate` returned `{"uncited": []}` and the recitation gate is clean.** The gates validate per-sentence provenance *before* any cites are visually grouped; this pass only collapses the visual repetition.
+
+**Why:** hyperresearch's one clean readability win was paragraph-level citations. A run of consecutive sentences that all cite the same source-set renders as dense `[1][2][3]` ... `[1][2][3]` ... `[1][2][3]` — one repeated group per sentence. Collapsing a run of CONSECUTIVE sentences that share the SAME source-set into ONE trailing group cite reads better without losing any provenance.
+
+**This is a DETERMINISTIC, $0 pass — use the helper, do not hand-edit cites.** Run `bad_research.grounding.render.coalesce_citations` over the report body:
+
+```bash
+PYTHONIOENCODING=utf-8 python -c "
+import sys
+from bad_research.grounding.render import coalesce_citations
+p = 'research/notes/final_report_<vault_tag>.md'
+src = open(p, encoding='utf-8').read()
+open(p, 'w', encoding='utf-8').write(coalesce_citations(src))
+"
+```
+
+**The coalescing rule (exactly what the helper does — and what you MUST NOT override by hand):**
+- **Coalesce ONLY consecutive sentences that cite the IDENTICAL source SET.** `{1,2,3}` then `{1,2,3}` then `{1,2,3}` → the prose of all three sentences, then ONE `[1] [2] [3]` group cite at the end of the run. Order-independent: `{1,2}` and `{2,1}` are the same set and coalesce.
+- **A sentence citing a DISTINCT source NEVER merges.** It keeps its own cite and BREAKS the run. `…{1,2}. A separate audit disagreed [9]. …{1,2}.` → the `[9]` sentence stays exactly as written, and the two `{1,2}` sentences on either side are NOT joined across it.
+- **NEVER drop a source.** The union of cited sources is byte-identical before and after coalescing — every claim stays traceable to its sources; only the visual repetition is removed, never the provenance. (Sanity-check: the multiset of distinct source tokens from `extract_citations` over the whole report is unchanged.)
+- **Uncited (background/transition) sentences pass through unchanged** and also break a run.
+
+**Do NOT** re-run the uncited gate after coalescing (it checks per-sentence cites and would false-positive on the now-grouped sentences — provenance was already validated in 16.6 before grouping). If you must re-verify, verify the source-token SET is unchanged, not per-sentence presence.
+
+---
+
 ## Exit criterion
 
 - `research/readability-recommendations.json` exists
@@ -213,6 +241,7 @@ bad recitation-gate --report research/notes/final_report_<vault_tag>.md \
 - The final report's structure (H2 list, executive summary, conclusion) is unchanged from step 15's output (this step does not restructure)
 - `bad uncited-gate` returned `{"uncited": []}` (exit 0) — the ship-block passed
 - `bad recitation-gate` was run; any flagged sentences were paraphrased (recitation is a major finding, not a ship-block)
+- Citation coalescing (16.8) ran AFTER both gates; the report's distinct-source set is unchanged (no provenance lost — only consecutive same-set repetition collapsed)
 
 ---
 

@@ -9,7 +9,7 @@ from .anchors import AnchorStore, ClaimAnchor, build_from_claims, quote_sha
 from .extract import extract_spans
 from .gate import Finding, gate_blocks_ship, is_factual_claim, no_uncited_claim_gate
 from .nli import NLI_MODEL_NAME, CrossEncoderNLI, NLILabel, classify_nli
-from .render import extract_citations, render_citation
+from .render import coalesce_citations, extract_citations, render_citation
 from .verifier import (
     CitationFinding,
     CitationPresentNLI,
@@ -36,6 +36,7 @@ __all__ = [
     "VerifyVerdict",
     "build_from_claims",
     "classify_nli",
+    "coalesce_citations",
     "default_nli",
     "extract_citations",
     "extract_spans",

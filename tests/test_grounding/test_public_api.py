@@ -8,6 +8,6 @@ def test_public_api_surface():
         "extract_spans", "ClaimAnchor", "quote_sha", "AnchorStore", "build_from_claims",
         "CitationVerifier", "VerifyVerdict", "VerifyResult", "CitationFinding",
         "no_uncited_claim_gate", "Finding", "gate_blocks_ship",
-        "render_citation", "extract_citations", "NLI_MODEL_NAME",
+        "render_citation", "extract_citations", "coalesce_citations", "NLI_MODEL_NAME",
     ):
         assert hasattr(g, name), f"missing public export: {name}"
