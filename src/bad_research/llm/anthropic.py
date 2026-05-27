@@ -65,14 +65,14 @@ class AnthropicProvider:
     @staticmethod
     def _split_messages(
         messages: list[LLMMessage],
-    ) -> tuple[list[dict], list[dict]]:
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """Split into Anthropic's top-level `system` blocks and the `messages[]` array.
 
         Anthropic does NOT accept role="system" inside messages[]; system text goes
         to the top-level `system` param as a list of text blocks.
         """
-        system_blocks: list[dict] = []
-        convo: list[dict] = []
+        system_blocks: list[dict[str, Any]] = []
+        convo: list[dict[str, Any]] = []
         for m in messages:
             if m.role == "system":
                 text = m.content if isinstance(m.content, str) else ""
@@ -88,7 +88,7 @@ class AnthropicProvider:
         messages: list[LLMMessage],
         *,
         tier: ModelTier,
-        tools: list[dict] | None = None,
+        tools: list[dict[str, Any]] | None = None,
         cache: bool = False,
         max_tokens: int = 4096,
         temperature: float = 0.1,
@@ -97,11 +97,26 @@ class AnthropicProvider:
         system_blocks, convo = self._split_messages(messages)
         tools = list(tools) if tools else []
 
+        # E7 — append-only prompt-cache discipline (DEEPLEARNINGAI.md A4, Genspark
+        # >80% hit / 5-10x cost). The STABLE prefix is the system prompt block: it is
+        # byte-identical across calls within a stage (the same rerank/judge/verify
+        # system prompt is reused across batches, N-sample votes, and re-spawns),
+        # while the VARIABLE content (query/passages/claims) lives in messages[]
+        # AFTER it. Stamping cache_control on the last system block is always safe
+        # (it never changes output, only enables cache hits) so it defaults ON via
+        # config.prompt_cache — this is what makes the headless reranker / consistency
+        # vote / calibrate judge actually HIT the cache (not a dead opt-in flag).
+        # Degrades gracefully: no system block -> nothing stamped, no crash; SDKs/
+        # models without prompt caching just ignore the key. Anthropic allows <=4
+        # breakpoints; we use 1 (system) by default, +1 (last tool) when cache=True.
+        if self._config.prompt_cache and system_blocks:
+            system_blocks[-1] = {**system_blocks[-1], "cache_control": {"type": "ephemeral"}}
         if cache:
-            # Stamp the stable prefix: last system block + last tool definition.
-            # (<=4 breakpoints allowed; 2 used.) The cached prefix must be
-            # byte-identical across spawns — that's the caller's job.
-            if system_blocks:
+            # Explicit agent-loop opt-in: ALSO cache the last tool definition (the
+            # stable tool registry). The cached prefix must be byte-identical across
+            # spawns — that's the caller's job.
+            if system_blocks and not self._config.prompt_cache:
+                # honor the explicit opt-in even if the default discipline is disabled
                 system_blocks[-1] = {**system_blocks[-1], "cache_control": {"type": "ephemeral"}}
             if tools:
                 tools[-1] = {**tools[-1], "cache_control": {"type": "ephemeral"}}
@@ -126,7 +141,7 @@ class AnthropicProvider:
     @staticmethod
     def _to_llmresponse(resp: Any) -> LLMResponse:
         text_parts: list[str] = []
-        tool_calls: list[dict] = []
+        tool_calls: list[dict[str, Any]] = []
         for block in resp.content:
             btype = getattr(block, "type", None)
             if btype == "text":

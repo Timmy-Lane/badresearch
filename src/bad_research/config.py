@@ -30,7 +30,7 @@ def _parse_bool(value: str) -> bool:
 @dataclass
 class BadResearchConfig:
     vault_root: Path = field(default_factory=lambda: Path.home() / ".bad-research")
-    model_tiers: dict = field(
+    model_tiers: dict[str, str] = field(
         default_factory=lambda: {
             "triage": "claude-haiku-4-5",
             "work": "claude-sonnet-4-6",
@@ -39,6 +39,12 @@ class BadResearchConfig:
     )
     budget_usd: float | None = None        # None = uncapped
     cheap: bool = False                    # demote heavy->work
+    # E7 — append-only prompt-cache discipline (headless AnthropicProvider only).
+    # When True (default) the provider stamps a cache_control breakpoint on the
+    # STABLE system-prompt prefix so repeated headless calls hit the Anthropic
+    # prompt cache (>80% hit / 5-10x cost, Genspark; DEEPLEARNINGAI.md A4). Set
+    # False to disable (SDKs/models without prompt caching degrade gracefully).
+    prompt_cache: bool = True
     # ── Keyless knobs (KR-1; dossier 13/15/16) ──────────────────────────────
     # host-model LLM-rerank default; "local"/"light" = ms-marco-MiniLM ([local]),
     # "zerank2" = ZeroEntropy zerank-2 opt-in ([local], +8.7pp NDCG@10, CC-BY-NC; E14)
@@ -89,6 +95,8 @@ class BadResearchConfig:
                 cfg.budget_usd = float(section["budget_usd"])
             if "cheap" in section:
                 cfg.cheap = bool(section["cheap"])
+            if "prompt_cache" in section:
+                cfg.prompt_cache = bool(section["prompt_cache"])
 
         # --- env layer (overrides TOML) ---
         if (v := os.environ.get("BAD_RESEARCH_VAULT_ROOT")) is not None:
@@ -107,5 +115,7 @@ class BadResearchConfig:
             cfg.budget_usd = float(v)
         if (v := os.environ.get("BAD_RESEARCH_CHEAP")) is not None:
             cfg.cheap = _parse_bool(v)
+        if (v := os.environ.get("BAD_RESEARCH_PROMPT_CACHE")) is not None:
+            cfg.prompt_cache = _parse_bool(v)
 
         return cfg
