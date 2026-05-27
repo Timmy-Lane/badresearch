@@ -161,9 +161,25 @@ EFFORT_MAP = {
 
 # Token-ceiling degrade order (Claude §12: cut tokens LAST). dossier 16 §6.2.
 # Each step names what the orchestrator drops first when approaching --max-tokens.
+# The terminal step is the E10 / STEAL_LIST #6c per-step short-circuit (Perplexity):
+# when even fan-out + model-tier cuts leave less than RESERVE_FOR_SYNTHESIS, stop
+# stepping and go straight to synthesis with whatever's gathered. The synthesis +
+# grounding TOKEN budget itself is STILL never a degrade step (the 80%-variance core);
+# short_circuit_to_synthesis PROTECTS that budget by reserving it, it does not cut it.
 DEGRADE_ORDER = (
-    "tool-call-redundancy",   # 1. skip the redundancy-audit sub-step
-    "fan-out-width",          # 2. fewer fetchers / fewer loci
-    "model-tier",             # 3. heavy -> light on non-critical stages
+    "tool-call-redundancy",         # 1. skip the redundancy-audit sub-step
+    "fan-out-width",                # 2. fewer fetchers / fewer loci
+    "model-tier",                   # 3. heavy -> light on non-critical stages
+    "short_circuit_to_synthesis",   # 4. TERMINAL: stop retrieval/critic, jump to synthesis
     # NEVER cut synthesis/grounding token budget — the 80%-variance core.
 )
+
+# E10 / STEAL_LIST #6c — the token budget the run RESERVES for synthesis + the
+# grounding/citation pass so a retrieval-heavy run never burns the whole ceiling
+# on fetching and dies mid-pipeline. Covers the ≤10K-token distilled synthesis
+# context (Chroma ceiling, bad-research-11-synthesize §11.4b) + the multi-draft
+# synthesis OUTPUT + the grounding/uncited-gate/citation-verifier pass. When the
+# remaining budget (ceiling - cumulative) drops below this, the orchestrator walks
+# DEGRADE_ORDER to its terminal `short_circuit_to_synthesis` step. Perplexity-style
+# "reserve budget for synthesis" (PERPLEXITY_COMPUTER.md:434).
+RESERVE_FOR_SYNTHESIS = 40_000  # tokens; ~10K synth context + draft output + grounding

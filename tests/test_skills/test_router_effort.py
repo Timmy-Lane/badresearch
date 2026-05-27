@@ -67,5 +67,48 @@ def test_effort_can_downgrade_full_to_light():
 def test_degrade_order_is_tokens_last():
     order = degrade_order()
     assert order[0] == "tool-call-redundancy"
-    assert order[-1] == "model-tier"  # tokens/synthesis never appear — cut last (never)
-    assert "synthesis" not in order and "grounding-tokens" not in order
+    # fan-out width then model tier are cut before the terminal short-circuit.
+    assert order[1] == "fan-out-width"
+    assert order[2] == "model-tier"
+    # E10 terminal action is LAST — when even those cuts leave too little budget,
+    # short-circuit straight to synthesis with whatever's gathered (Perplexity).
+    assert order[-1] == "short_circuit_to_synthesis"
+    # the synthesis/grounding TOKEN budget itself is still never a degrade step.
+    assert "grounding-tokens" not in order
+    assert "synthesis-tokens" not in order
+
+
+# ── E10 (STEAL_LIST #6c): per-step short-circuit-to-synthesis predicate ────────
+from bad_research.skills.router import should_short_circuit
+
+
+def test_reserve_for_synthesis_constant_present():
+    # the reserved per-run budget that synthesis + grounding must never be starved of
+    assert isinstance(R.RESERVE_FOR_SYNTHESIS, int)
+    assert R.RESERVE_FOR_SYNTHESIS > 0
+
+
+def test_short_circuit_fires_when_remaining_below_reserve():
+    # ceiling - cumulative < RESERVE → stop stepping, go straight to synthesis.
+    ceiling = 100_000
+    cumulative = ceiling - (R.RESERVE_FOR_SYNTHESIS - 1)   # 1 token short of the reserve
+    assert should_short_circuit(cumulative, ceiling) is True
+
+
+def test_short_circuit_does_not_fire_with_ample_budget():
+    ceiling = 100_000
+    cumulative = ceiling - (R.RESERVE_FOR_SYNTHESIS + 50_000)   # plenty left
+    assert should_short_circuit(cumulative, ceiling) is False
+
+
+def test_short_circuit_at_exact_reserve_boundary_does_not_fire():
+    # remaining == RESERVE is exactly enough — only a STRICT shortfall short-circuits.
+    ceiling = 100_000
+    cumulative = ceiling - R.RESERVE_FOR_SYNTHESIS
+    assert should_short_circuit(cumulative, ceiling) is False
+
+
+def test_short_circuit_inert_when_no_ceiling():
+    # the --max-tokens ceiling is opt-in; with no ceiling there is nothing to reserve.
+    assert should_short_circuit(999_999, None) is False
+    assert should_short_circuit(999_999, 0) is False

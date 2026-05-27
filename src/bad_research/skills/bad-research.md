@@ -143,7 +143,17 @@ in **Claude's order — cut tokens LAST** (`skills/router.py::degrade_order`):
 1. cut tool-call redundancy first (skip the redundancy-audit sub-step)
 2. then cut fan-out width (fewer fetchers / fewer loci)
 3. then cut model tier (heavy → light on non-critical steps)
-4. NEVER cut the synthesis / grounding token budget — that's the 80%-variance core.
+4. **terminal — short-circuit to synthesis** (`short_circuit_to_synthesis`): after
+   **each retrieval/critic round**, call
+   `skills/router.py::should_short_circuit(cumulative_tokens, ceiling)`. When it
+   returns true — i.e. `ceiling − cumulative < RESERVE_FOR_SYNTHESIS`
+   (`skills/routing_constants.py::RESERVE_FOR_SYNTHESIS`) — **stop stepping**: skip
+   the remaining retrieval/critic stages and jump straight to step 10/11 (synthesis)
+   with whatever's been gathered. You ship a smaller-corpus *grounded* report rather
+   than dying mid-pipeline. This is Perplexity's "reserve budget for synthesis."
+5. NEVER cut the synthesis / grounding token budget itself — that's the 80%-variance
+   core. The short-circuit above *protects* that reserved budget; it never spends it
+   on more retrieval.
 
 The ceiling is opt-in; the default is the existing per-tier budget. We surface a
 count, not a billing system.

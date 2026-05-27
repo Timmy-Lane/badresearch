@@ -319,7 +319,30 @@ def effort_overrides(effort: str | None) -> dict[str, Any] | None:
 
 def degrade_order() -> tuple[str, ...]:
     """The Claude token-ceiling degrade order (dossier 16 §6.2): cut tool-call
-    redundancy, then fan-out width, then model tier — NEVER the synthesis/grounding
-    token budget (the 80%-variance core). The orchestrator walks this list when a
-    run approaches its --max-tokens ceiling."""
+    redundancy, then fan-out width, then model tier, then — as the TERMINAL action
+    (E10 / STEAL_LIST #6c) — short_circuit_to_synthesis. NEVER the synthesis/grounding
+    token budget itself (the 80%-variance core). The orchestrator walks this list when
+    a run approaches its --max-tokens ceiling; the terminal step is taken when
+    should_short_circuit() fires."""
     return R.DEGRADE_ORDER
+
+
+def should_short_circuit(cumulative_tokens: int, ceiling: int | None) -> bool:
+    """E10 / STEAL_LIST #6c — the per-step short-circuit-to-synthesis predicate
+    (Perplexity "reserve budget for synthesis", PERPLEXITY_COMPUTER.md:434).
+
+    After each retrieval/critic ROUND the orchestrator calls this with the running
+    `cumulative_tokens` and the opt-in `--max-tokens` `ceiling`. It returns True when
+    the budget left for the rest of the run has fallen BELOW the reserved synthesis +
+    grounding budget — i.e. ``ceiling - cumulative < RESERVE_FOR_SYNTHESIS``. On True,
+    the orchestrator stops stepping (skips remaining retrieval/critic stages), takes
+    the terminal ``short_circuit_to_synthesis`` step of `degrade_order`, and jumps to
+    step 10/11 with whatever's been gathered — shipping a smaller-corpus grounded
+    report instead of dying mid-pipeline.
+
+    Inert when there is no ceiling (the `--max-tokens` cap is opt-in; ``None``/``0`` →
+    nothing to reserve → never short-circuit). The comparison is STRICT: a remaining
+    budget exactly equal to the reserve is still enough, so it does not fire."""
+    if not ceiling:   # None or 0 → no opt-in ceiling, never short-circuit
+        return False
+    return (ceiling - cumulative_tokens) < R.RESERVE_FOR_SYNTHESIS
