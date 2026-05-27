@@ -1,12 +1,9 @@
 ---
 name: bad-research-8-corpus-critic
 description: >
-  Step 8 of the hyperresearch V8 pipeline. Spawns one corpus-critic subagent
-  to identify "what source, if found, would overturn the current
-  direction?" gaps, then runs a targeted fetch wave to fill them.
-  Highest-leverage intervention point: corrections applied before drafting
-  cost nothing; corrections applied after drafting require patches.
-  Invoked via Skill tool from the entry skill (full tier only).
+  Step 8 of the Bad Research pipeline (full tier) — a pre-draft corpus critic
+  that finds "what source would overturn this?" gaps and runs a targeted fetch
+  wave to fill them before drafting. Invoked in order by the bad-research router.
 ---
 
 # Step 8 — Pre-draft corpus critic (targeted gap-fill)
@@ -71,7 +68,7 @@ The targeted fetch wave in the next step will pull these filings BEFORE the corp
 
      QUERY FILE: research/query-<vault_tag>.md
 
-     PIPELINE POSITION: You are step 8 of the hyperresearch V8 pipeline.
+     PIPELINE POSITION: You are step 8 of the Bad Research pipeline.
      Step 6 produced research/comparisons.md. After you return, the
      orchestrator runs a targeted fetch wave, then step 10 drafts.
 
@@ -96,7 +93,7 @@ The targeted fetch wave in the next step will pull these filings BEFORE the corp
      QUERY FILE: research/query-<vault_tag>.md
 
      PIPELINE POSITION: You are a step 8 fetcher (corpus-critic gap-fill)
-     of the hyperresearch V8 pipeline. The corpus critic identified specific
+     of the Bad Research pipeline. The corpus critic identified specific
      gaps; you fetch sources targeting those gaps. After you return, the
      orchestrator updates comparisons.md based on what you found.
 
@@ -129,7 +126,7 @@ The targeted fetch wave in the next step will pull these filings BEFORE the corp
 
 ## Next step
 
-Return to the entry skill (`hyperresearch`). Invoke step 9:
+Return to the entry skill (`bad-research`). Invoke step 9:
 
 ```
 Skill(skill: "bad-research-9-evidence-digest")

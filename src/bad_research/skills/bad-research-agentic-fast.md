@@ -1,19 +1,18 @@
 ---
 name: bad-research-agentic-fast
 description: >
-  The bounded-ReAct fast mode of Bad Research. A step-bounded (max_steps ≤ 10)
-  planner→writer loop over the same providers + retrieval + vault as the full
-  pipeline, for fast/cheap answers to trivial single-domain queries. Single-pass
-  writer with per-sentence [N] citations. Replaces the entire 16-stage pipeline
-  for queries the router classified `agentic-fast`. Invoked via Skill tool from
-  the entry skill (agentic-fast route only).
+  The bounded-ReAct fast mode of Bad Research (agentic-fast route only) — a
+  step-bounded (max_steps ≤ 10) planner→writer loop that produces a fast, cheap,
+  per-sentence-cited answer, replacing the 16-step pipeline. Invoked in order by
+  the bad-research router.
 ---
 
-# Agentic-fast — bounded ReAct (the Perplexity engine)
+# Agentic-fast — bounded ReAct
 
 **Tier gate:** Runs ONLY for the `agentic-fast` route. It does NOT run the
-§6 funnel as a fixed stage; it does a bounded loop that *calls* the funnel /
-retrieval per step. No clarifier, no decompose-time fan-out — fast by design.
+width-sweep funnel (`bad funnel-gather`) as a fixed step; it does a bounded
+loop that *calls* the funnel / retrieval per iteration. No clarifier, no
+decompose-time fan-out — fast by design.
 
 **Goal:** answer a trivial, bounded, single-domain query in < 3 minutes and
 $1–5 with grounded per-sentence citations. Terminate when the model judges
@@ -28,7 +27,7 @@ Read:
 If `route != "agentic-fast"`, STOP and return to the entry skill — you were
 invoked by mistake.
 
-## The loop (planner → writer split, DR-loops §9.2)
+## The loop (planner → writer split)
 
 You are the **planner** (system A). Run a ReAct loop, persisting an auditable
 `(thought, action, observation)` trace to `research/temp/react-trace.md`:
@@ -52,7 +51,7 @@ while step < 10 and now < deadline:             # AGENTIC_FAST_MAX_STEPS
     if calls >= 15: break                        # AGENTIC_FAST_MAX_CALLS guard
 ```
 
-**Hard guards (Claude §CE.5 safety net):** never exceed 10 steps, 15 tool
+**Hard guards (safety net):** never exceed 10 steps, 15 tool
 calls, or 300 seconds. These are belt-and-suspenders on top of the
 model-judged stop — a stuck loop must die.
 

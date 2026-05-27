@@ -1,16 +1,14 @@
 ---
 name: bad-research
 description: >
-  Deep research via the HYPERRESEARCH V8 architecture — a tier-adaptive 16-step
-  pipeline (light / full) that scales from a ~30-minute light-tier answer to
-  a 1.5–2.5 hour adversarially-audited report. This entry skill is a ROUTER.
-  It does not contain step procedures — it tells you which Skill to invoke
-  for each step, in order. Each step's instructions live in its own skill
-  file (`bad-research-1-decompose` through `bad-research-16-readability-audit`)
-  and are loaded fresh into context when you invoke them.
+  Use when a question needs deep, multi-source, fully-cited research — runs a
+  tier-adaptive pipeline (quick light tier → full adversarially-audited report)
+  as a Claude Code skill. This entry skill is a ROUTER: it routes each step
+  (bad-research-1-decompose … bad-research-16-readability-audit) to its own
+  skill, invoked in order and loaded fresh.
 ---
 
-# Hyperresearch V8 — multi-skill chain orchestrator
+# Bad Research — multi-skill chain orchestrator
 
 You are the orchestrator (Opus). Your entire job in this conversation is:
 1. Read this file once at the start.
@@ -32,7 +30,7 @@ Skill(skill: "bad-research-N-stepname")
 
 When you invoke a Skill, that skill's full procedure is loaded into your context **fresh**. You then execute that step's procedure, hit its exit criterion, and return to the entry skill (this file) to invoke the next step.
 
-**Why this design?** Context compaction. V7 was one 1200-line skill that got compacted away by the time Layer 4 needed its triple-draft procedure. The orchestrator forgot the procedure, wrote a single draft, and produced a flat-scoring report. V8 fixes this at the source: each step's procedure is loaded into context **only at the moment it's needed**, fresh, with no eviction risk.
+**Why this design?** It is compaction-resistant: each step's procedure is loaded into context **only at the moment it's needed**, fresh, so a long run can't evict the procedure before the step that needs it.
 
 **The 16 step skills** (all prefixed `bad-research-`):
 
@@ -55,6 +53,25 @@ When you invoke a Skill, that skill's full procedure is loaded into your context
 | 15 | `bad-research-15-polish` | Hygiene + filler pass (Edit-based subagent) | all |
 | 16 | `bad-research-16-readability-audit` | Readability recommender writes JSON suggestions; orchestrator selectively applies via Edit | all |
 
+**Half-steps** sit between the integer steps and are not in the table above:
+
+| # | Skill name | What it does | Tiers |
+|---|---|---|---|
+| 0.5 | `bad-research-0.5-clarify` | Triage clarifier — ≤3 default-proceed questions before decompose | all (skipped for agentic-fast / `--auto`) |
+| 1.5 | `bad-research-query-router` | Classify the decomposition into a route (`agentic-fast` / `light` / `full`) | all |
+| 11.5 | `bad-research-11.5-citation-verifier` | Backward grounding — bind every claim to a source note | full |
+| 12.5 | `bad-research-12.5-grader` | In-pipeline grader loop (judge → patch → re-judge, ≤3) | full |
+| 14.5 | `bad-research-fresh-review` | One fresh-context review pass | full |
+
+**Complete pipeline order (full tier), half-steps included:**
+
+```
+0.5 → 1 → 1.5 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 11.5
+    → 12 → 13 → 12.5 → 14 → 14.5 → 15 → 16(+gate)
+```
+
+`light` runs `0.5 → 1 → 1.5 → 2 → 10 → 15 → 16(+gate)`; `agentic-fast` runs `1 → 1.5 → agentic-fast → 15 → 16(+gate)`. See the per-route table below for cost/time.
+
 ---
 
 ## Tier routing
@@ -64,13 +81,13 @@ decomposition into a `route` (`agentic-fast` / `light` / `full`) written to
 `research/prompt-decomposition.json`. After step 1.5, **read that file** for the
 `route`, then sequence steps according to this mode table:
 
-| Route | Stage sequence | Cost | Time |
+| Route | Step sequence | Cost | Time |
 |---|---|---|---|
 | `agentic-fast` | 0.5(skip) → 1 → 1.5 → agentic-fast → 15 → 16(+gate) | ~$1–5 | <3 min |
 | `light` | 0.5 → 1 → 1.5 → 2(funnel) → 10(single draft) → 15 → 16(+gate) | ~$5–15 | ~30–40 min |
 | `full` | 0.5 → 1 → 1.5 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 11.5 → 12 → 13 → 12.5(grader loop) → 14 → 14.5(fresh-review) → 15 → 16(+gate+recitation) | ~$60–120 | ~1.5–2.5 h |
 
-Where the stage numbers map to:
+Where the half-step numbers map to:
 - 0.5 → `Skill(skill: "bad-research-0.5-clarify")` (triage clarifier; skipped for agentic-fast + --auto)
 - 1.5 → `Skill(skill: "bad-research-query-router")` (the route decision)
 - agentic-fast → `Skill(skill: "bad-research-agentic-fast")` (bounded ReAct; replaces 2–14)
@@ -79,7 +96,7 @@ Where the stage numbers map to:
 - 14.5 → `Skill(skill: "bad-research-fresh-review")` (one fresh-context pass; full only)
 
 **RESPECT THE ROUTE.** `agentic-fast` is the cheap bounded ReAct loop, not a
-degraded full run; do NOT add the 16 stages "to be thorough." `full` ALWAYS runs
+degraded full run; do NOT add the 16 steps "to be thorough." `full` ALWAYS runs
 11.5 (citation verifier) and 14.5 (fresh-review). The deterministic
 no-uncited-claim gate in step 16 is a **ship-block for ALL routes**. If
 uncertain, route up — but never silently upgrade every query to `full`.
@@ -87,8 +104,8 @@ uncertain, route up — but never silently upgrade every query to `full`.
 ### Reasoning-effort continuum + token ceiling
 
 The `--reasoning-effort` flag (alias `--effort`) is a 4-level dial — `minimal` /
-`low` / `medium` / `high` — that nudges the route + per-stage fan-out on top of
-the auto-classified route (OpenAI's continuum, dossier 16 §6.1). The mapping lives
+`low` / `medium` / `high` — that nudges the route + per-step fan-out on top of
+the auto-classified route. The mapping lives
 in `skills/routing_constants.py::EFFORT_MAP` and is applied by
 `skills/router.py::effort_overrides`:
 
@@ -105,7 +122,7 @@ in **Claude's order — cut tokens LAST** (`skills/router.py::degrade_order`):
 
 1. cut tool-call redundancy first (skip the redundancy-audit sub-step)
 2. then cut fan-out width (fewer fetchers / fewer loci)
-3. then cut model tier (heavy → light on non-critical stages)
+3. then cut model tier (heavy → light on non-critical steps)
 4. NEVER cut the synthesis / grounding token budget — that's the 80%-variance core.
 
 The ceiling is opt-in; the default is the existing per-tier budget. We surface a
@@ -186,21 +203,9 @@ move to the next.
 
 ---
 
-## Four canonical rules (ALWAYS in force)
-
-1. **NEVER EMIT BARE TEXT WHILE TASKS ARE RUNNING.** In non-interactive (`-p`) mode, a text-only response (no tool call) triggers `end_turn` — the process exits and the pipeline dies. Every response while subagent tasks are in flight MUST include a tool call. The best one is appending analytical thoughts to `research/temp/orchestrator-notes.md`. Vault count checks at most once per minute.
-
-2. **PATCH, NEVER REGENERATE.** After step 11 produces the synthesized final report (or step 10 for light tier), the only modifications are surgical Edit hunks from step 14 (patcher) and step 15 (polish-auditor). Both subagents are tool-locked to `[Read, Edit]`. If a critic's finding would require rewriting a whole section, it escalates to you as a structural issue — not a rewrite. Keep hunks surgical.
-
-3. **ARGUE, DON'T JUST REPORT** (full force for `argumentative` response_format; relaxed for `structured` and `short`). The pipeline is engineered to push the final report toward argumentative density. Loci must include at least one dialectical locus. Depth investigators must commit to a position. Step 6 forces cross-locus reconciliation. Step 11's synthesizer requires every body section that touches a tension to engage it explicitly.
-
-4. **RESPECT THE TIER GATE.** See tier routing table. Don't add steps "for thoroughness." Don't drop steps "for budget." The tier is a binding contract.
-
----
-
 ## Subagent spawn contract (applies to every Task call)
 
-When a step skill instructs you to spawn a subagent, the prompt you pass MUST include **seven** pieces near the top — the 3-piece HAVE contract plus Claude's 4-field delegation contract (dossier 16 §3.1). A fetcher handed a thin sub-topic with no `stop_conditions` burns its whole budget "searching for nonexistent sources" — the exact documented failure mode. The four added fields are cheap insurance:
+When a step skill instructs you to spawn a subagent, the prompt you pass MUST include **seven** pieces near the top — the 3-piece HAVE contract (research_query / pipeline_position / inputs) plus a 4-field delegation contract (objective / output_shape / tools_allowed / stop_conditions). A fetcher handed a thin sub-topic with no `stop_conditions` burns its whole budget "searching for nonexistent sources" — the exact documented failure mode. The four added fields are cheap insurance:
 
 1. **`research_query` — verbatim, block-quoted** from `research/query-<vault_tag>.md`. Do not paraphrase, do not summarize.
 
@@ -210,7 +215,7 @@ When a step skill instructs you to spawn a subagent, the prompt you pass MUST in
 
 4. **`objective`** — the single self-contained sub-objective the subagent must achieve (one sentence).
 
-5. **`output_shape`** — the exact return format. For fetchers/investigators this is the `claims-*.json` shape: *"JSON array of {claim, note_id, quoted_support, char_start, char_end}"* — pinning this is what makes the downstream Stage-11.5 binding deterministic.
+5. **`output_shape`** — the exact return format. For fetchers/investigators this is the `claims-*.json` shape: *"JSON array of {claim, note_id, quoted_support, char_start, char_end}"* — pinning this is what makes the downstream step 11.5 binding deterministic.
 
 6. **`tools_allowed`** — the explicit tool allowlist, e.g. `["web_search","fetch_url","execute_python"]` for a fetcher, `["Read","Write"]` for a synthesizer.
 
@@ -284,9 +289,9 @@ If any rule returns `error` severity issues, address them before declaring compl
 
 ---
 
-## Invariants you cannot break
+## Invariants you cannot break (the canonical rules — ALWAYS in force)
 
-1. **PATCHING not REGENERATION after step 11.** Once step 11 produces the final report (or step 10 for light tier), modifications are surgical Edit hunks only.
+1. **PATCH, NEVER REGENERATE after step 11.** Once step 11 produces the synthesized final report (or step 10 for light tier), the only modifications are surgical Edit hunks from step 14 (patcher) and step 15 (polish-auditor). Both subagents are tool-locked to `[Read, Edit]`. If a critic's finding would require rewriting a whole section, it escalates to you as a structural issue — not a rewrite. Keep hunks surgical.
 2. **One final report.** Step 11's synthesizer writes the final report ONCE. No re-synthesizing. (Light tier: step 10 writes it once.)
 3. **At least one dialectical locus.** Step 4 must surface ≥1 dialectical locus unless skip is justified.
 4. **Every interim note commits to a position.** Step 5 investigators end with `## Committed position`.
@@ -294,21 +299,18 @@ If any rule returns `error` severity issues, address them before declaring compl
 6. **Steps are sequential at the outermost level, parallel within.** You cannot start step N+1 before step N completes. Within a step, parallelism is mandatory when there are multiple subagents.
 7. **Canonical research query is gospel everywhere.** Every subagent gets the verbatim query.
 8. **Hygiene rules apply to the final report only.** Workspace artifacts (scaffold, loci JSONs, interim notes, comparisons.md, patch log) can look however they need to look.
-9. **NEVER skip a step that the tier gate says to run.** For `full` tier, ALL 16 steps run. For `light`, the prescribed 5 steps run.
+9. **RESPECT THE TIER GATE — never skip or add a step.** For `full` tier, ALL 16 steps run; for `light`, the prescribed 5 steps run. Don't add steps "for thoroughness"; don't drop steps "for budget." The tier is a binding contract.
 10. **Step 10 triple-draft ensemble is MANDATORY for `full` tier.** You MUST spawn 3 `bad-research-draft-orchestrator` subagents. Writing `research/notes/final_report_<vault_tag>.md` directly in step 10 (instead of going through the synthesizer in step 11) is a PIPELINE VIOLATION for these tiers.
 11. **Step 11 synthesis is MANDATORY for `full` tier.** The synthesizer subagent (Read+Write tool-locked) writes the final report from the 3 drafts. The orchestrator does NOT write the final report itself for these tiers.
 12. **Subagents read full source text.** Draft sub-orchestrators MUST batch-read every note in their `must_read_note_ids` list before writing. Fetchers MUST chase 3-8 primary sources via citation chains.
-13. **NEVER emit a bare text response while subagent tasks are in flight.**
+13. **ARGUE, DON'T JUST REPORT** (full force for `argumentative` response_format; relaxed for `structured` and `short`). The pipeline pushes the final report toward argumentative density: loci must include ≥1 dialectical locus, depth investigators must commit to a position, step 6 forces cross-locus reconciliation, and step 11's synthesizer requires every body section that touches a tension to engage it explicitly.
+14. **NEVER EMIT BARE TEXT WHILE TASKS ARE RUNNING.** In non-interactive (`-p`) mode, a text-only response (no tool call) triggers `end_turn` — the process exits and the pipeline dies. Every response while subagent tasks are in flight MUST include a tool call; the best one is appending analytical thoughts to `research/temp/orchestrator-notes.md`. Vault count checks at most once per minute.
 
 ---
 
-## Why V8
+## Why the multi-skill chain
 
-V7 was one 1200-line skill loaded once. By Layer 4 (line ~2200 in a 3000-line conversation), context compaction had evicted the procedure. The orchestrator silently dropped Layer 3.7 (corpus critic), rewrote its todo to replace the triple-draft ensemble with a single draft, and produced a flat-scoring report. This happened in 100% of runs where the orchestrator didn't re-read the skill file.
-
-V8 makes re-reading structural. Each step skill is loaded fresh via the `Skill` tool at the moment it's needed. The procedure is in context exactly when it matters. Compaction can evict an old step's procedure — that's fine, the orchestrator never needs it again because each step is self-contained and reads its inputs from disk.
-
-The trade: 16 skill files instead of 1, plus 16 invocations of the `Skill` tool over the run. The cost is negligible; the reliability gain is the difference between Q57 (55.9, full pipeline) and Q9 (52.6, single-draft fallback).
+One monolithic skill loaded once gets compacted away mid-run, and the orchestrator silently degrades (drops the corpus critic, replaces the triple-draft ensemble with a single draft, ships a flat report). The chain makes re-reading structural: each step skill loads fresh via the `Skill` tool at the moment it's needed, is self-contained, and reads its inputs from disk — so compaction can evict an old step's procedure without harm. The cost is 16 extra `Skill` invocations per run; the reliability gain is the difference between the full pipeline (55.9) and the single-draft fallback (52.6).
 
 ---
 

@@ -1,12 +1,9 @@
 ---
 name: bad-research-0.5-clarify
 description: >
-  Stage 0.5 of the Bad Research pipeline. A triage-tier clarifier that decides
-  whether the query is ready for an expensive autonomous run or whether ONE
-  round of clarification would materially improve it. Default-to-proceed:
-  ambiguity is rare; most queries proceed silently. Skipped entirely for
-  agentic-fast mode and for --auto / wrapped runs (the GOSPEL query is binding).
-  Invoked via Skill tool from the entry skill BEFORE step 1.
+  Step 0.5 of the Bad Research pipeline — a triage-tier, default-proceed
+  clarifier (≤3 questions) that runs before decompose and writes
+  research/clarify.json. Invoked in order by the bad-research router.
 ---
 
 # Step 0.5 — Clarify (triage tier, default-proceed)

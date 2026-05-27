@@ -1,12 +1,9 @@
 ---
 name: bad-research-13-gap-fetch
 description: >
-  Step 13 of the hyperresearch V8 pipeline. Conditional fetcher wave to fill
-  vault gaps that critics identified. If a critic says "the draft ignored
-  topic X" and the vault has zero sources on X, the patcher has nothing
-  to cite. This step fetches the missing sources BEFORE patching so the
-  patcher has ammunition. Capped at 5 gaps. Invoked via Skill tool from
-  the entry skill (full tier).
+  Step 13 of the Bad Research pipeline (full tier) — a conditional fetcher wave
+  that pulls sources for critic-identified vault gaps (capped at 5) so the patcher
+  has something to cite. Invoked in order by the bad-research router.
 ---
 
 # Step 13 — Post-critic gap fetch (conditional)
@@ -63,7 +60,7 @@ Read these inputs:
      QUERY FILE: research/query-<vault_tag>.md
 
      PIPELINE POSITION: You are a step 13 (post-critic gap-fill) fetcher
-     of the hyperresearch V8 pipeline. Critics identified gaps in vault
+     of the Bad Research pipeline. Critics identified gaps in vault
      coverage; you fetch sources targeting those gaps. After you return,
      the patcher (step 14) cites your sources to address findings.
 
@@ -94,7 +91,7 @@ Read these inputs:
 
 ## Next step
 
-Return to the entry skill (`hyperresearch`). Invoke step 14:
+Return to the entry skill (`bad-research`). Invoke step 14:
 
 ```
 Skill(skill: "bad-research-14-patcher")

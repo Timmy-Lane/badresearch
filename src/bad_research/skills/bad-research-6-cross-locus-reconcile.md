@@ -1,11 +1,10 @@
 ---
 name: bad-research-6-cross-locus-reconcile
 description: >
-  Step 6 of the hyperresearch V8 pipeline. Reconciles the committed positions
-  from all depth investigators into research/comparisons.md — 3-5 named
-  cross-locus tensions with engagement guidance for the draft. This is
-  the structural step that gives the single draft argumentative density.
-  Invoked via Skill tool from the entry skill (full tier only).
+  Step 6 of the Bad Research pipeline (full tier) — reconciles the depth
+  investigators' committed positions into research/comparisons.md (named
+  cross-locus tensions with engagement guidance for the draft). Invoked in order
+  by the bad-research router.
 ---
 
 # Step 6 — Cross-locus reconciliation
@@ -75,7 +74,7 @@ You need the `## Committed position` section from every interim note in your con
 
 ## Next step
 
-Return to the entry skill (`hyperresearch`). Invoke step 7:
+Return to the entry skill (`bad-research`). Invoke step 7:
 
 ```
 Skill(skill: "bad-research-7-source-tensions")

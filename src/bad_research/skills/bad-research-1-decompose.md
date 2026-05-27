@@ -1,12 +1,10 @@
 ---
 name: bad-research-1-decompose
 description: >
-  Step 1 of the hyperresearch V8 pipeline. Decomposes the canonical research
-  query into atomic items, classifies pipeline_tier and response_format,
-  and produces the coverage matrix that downstream steps depend on. The
-  required_section_headings field this step produces is the single
-  highest-leverage input for instruction-following scores. Invoked via
-  Skill tool from the entry skill (bad-research).
+  Step 1 of the Bad Research pipeline — decomposes the canonical query into
+  atomic items, classifies pipeline_tier + response_format, and writes the
+  coverage matrix to research/prompt-decomposition.json. Invoked in order by the
+  bad-research router.
 ---
 
 # Step 1 — Prompt decomposition
@@ -167,7 +165,7 @@ Read both before starting. The vault_tag is in the scaffold's "Run config" secti
 
 ## Next step
 
-Return to the entry skill (`hyperresearch`). Read `research/prompt-decomposition.json` to learn the tier, then invoke step 2:
+Return to the entry skill (`bad-research`). Read `research/prompt-decomposition.json` to learn the tier, then invoke step 2:
 
 ```
 Skill(skill: "bad-research-2-width-sweep")

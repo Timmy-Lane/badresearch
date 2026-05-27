@@ -1,11 +1,10 @@
 ---
 name: bad-research-12-critics
 description: >
-  Step 12 of the hyperresearch V8 pipeline. Spawns 4 adversarial critics
-  in parallel against the synthesized final report from step 11. Each
-  critic produces an independent findings JSON that the patcher (step 14)
-  consumes. Critics never modify the draft directly. Invoked via Skill
-  tool from the entry skill (full tier only).
+  Step 12 of the Bad Research pipeline (full tier) — spawns 4 adversarial critics
+  in parallel against the final report, each writing a findings JSON for the
+  patcher (critics never edit the draft). Invoked in order by the bad-research
+  router.
 ---
 
 # Step 12 — Adversarial critique (parallel critics)
@@ -44,7 +43,7 @@ Read these inputs:
      QUERY FILE: research/query-<vault_tag>.md
 
      PIPELINE POSITION: You are step 12 (<critic-name> critic) of the
-     hyperresearch V8 pipeline. Step 11 (synthesizer) produced the final report at
+     Bad Research pipeline. Step 11 (synthesizer) produced the final report at
      research/notes/final_report_<vault_tag>.md. After you return, step 13 may run a
      gap-fetch wave, then step 14 (patcher) applies findings as Edit hunks.
 
@@ -70,7 +69,7 @@ Read these inputs:
 
 ## Next step
 
-Return to the entry skill (`hyperresearch`). Invoke step 13:
+Return to the entry skill (`bad-research`). Invoke step 13:
 
 ```
 Skill(skill: "bad-research-13-gap-fetch")

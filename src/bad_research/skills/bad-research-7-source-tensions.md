@@ -1,13 +1,10 @@
 ---
 name: bad-research-7-source-tensions
 description: >
-  Step 7 of the hyperresearch V8 pipeline. Extracts explicit expert
-  disagreements from the corpus into research/temp/source-tensions.json,
-  including orphan tensions that didn't surface as loci. Reads full source
-  bodies of top 8-12 sources (not summaries) to find tensions that hide
-  in nuance. The Source Tensions section in step 10's draft is the single
-  highest-leverage move for insight scores. Invoked via Skill tool from
-  the entry skill (full tier only).
+  Step 7 of the Bad Research pipeline (full tier) — reads full source bodies to
+  extract explicit expert disagreements (including orphan tensions not captured as
+  loci) into research/temp/source-tensions.json. Invoked in order by the
+  bad-research router.
 ---
 
 # Step 7 — Source tension extraction
@@ -94,7 +91,7 @@ This artifact feeds directly into step 10's mandatory Source Tensions section. E
 
 ## Next step
 
-Return to the entry skill (`hyperresearch`). Invoke step 8:
+Return to the entry skill (`bad-research`). Invoke step 8:
 
 ```
 Skill(skill: "bad-research-8-corpus-critic")

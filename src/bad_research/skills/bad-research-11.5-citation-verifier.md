@@ -1,12 +1,10 @@
 ---
 name: bad-research-11.5-citation-verifier
 description: >
-  Stage 11.5 of the Bad Research pipeline — the backward grounding pass. Runs
-  the CitationVerifier over the synthesized report: per cited sentence,
-  cheapest-first byte-identity → local NLI entailment → triage-LLM-judge for the
-  ~10% neutral band → re-fetch arbitration (gated to contradicted+critical).
-  Dispositions route to the patcher. Tool-locked [Read]. Invoked via Skill tool
-  from the entry skill after step 11 synthesize (full tier only).
+  Step 11.5 of the Bad Research pipeline (full tier only) — the backward
+  grounding pass that verifies every cited sentence against its source note and
+  writes dispositions for the patcher. Tool-locked to [Read]. Invoked in order
+  by the bad-research router.
 ---
 
 # Step 11.5 — Citation verifier (backward grounding)
@@ -37,8 +35,10 @@ This step is tool-locked to `[Read]`. Read:
    Per cited sentence it runs, cheapest-first:
    - **(A) byte-identity** — re-`find` the `quoted_support` in the cited note +
      SHA match ($0; kills fabricated quotes).
-   - **(B) NLI entailment** — local `nli-deberta-v3-base` ($0). For the ~10%
-     NLI-neutral band, a `triage`-tier LLM-judge fallback (batched ~20/call).
+   - **(B) NLI entailment** — does the note text entail the sentence? Checked by
+     a local natural-language-inference model, `nli-deberta-v3-base` ($0). For
+     the ~10% neutral band (neither entailed nor contradicted), a `triage`-tier
+     LLM-judge fallback (batched ~20/call).
    - **(C) re-fetch arbitration** — gated to contradicted + critical sentences
      only.
 

@@ -1,12 +1,10 @@
 ---
 name: bad-research-9-evidence-digest
 description: >
-  Step 9 of the hyperresearch V8 pipeline. Assembles the top load-bearing
-  claims and verbatim quotes from the claims JSONs into
-  research/temp/evidence-digest.md — a single high-fidelity evidence
-  index the draft sub-orchestrators read as primary evidence (higher
-  fidelity than fetcher summaries). Invoked via Skill tool from the
-  entry skill (full tier).
+  Step 9 of the Bad Research pipeline (full tier) — assembles the top
+  load-bearing claims and verbatim quotes into research/temp/evidence-digest.md,
+  the high-fidelity evidence index the drafters read. Invoked in order by the
+  bad-research router.
 ---
 
 # Step 9 — Evidence digest
@@ -74,7 +72,7 @@ If fewer claims exist in total, include all of them.
 
 ## Next step
 
-Return to the entry skill (`hyperresearch`). Invoke step 10:
+Return to the entry skill (`bad-research`). Invoke step 10:
 
 ```
 Skill(skill: "bad-research-10-triple-draft")

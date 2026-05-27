@@ -1,12 +1,10 @@
 ---
 name: bad-research-4-loci-analysis
 description: >
-  Step 4 of the hyperresearch V8 pipeline. Spawns 2 parallel loci-analyst
-  subagents that read the width corpus and identify 1-6 specific
-  questions where depth investigation will pay off. Deduplicates and
-  scores each locus on importance/uncertainty/disagreement/decision_impact,
-  then allocates source budgets dynamically. Invoked via Skill tool from
-  the entry skill (full tier only).
+  Step 4 of the Bad Research pipeline (full tier) — spawns 2 parallel analysts to
+  surface 1-6 loci (the contested sub-questions worth deep investigation), then
+  scores and source-budgets each into research/loci.json. Invoked in order by the
+  bad-research router.
 ---
 
 # Step 4 — Loci analysis (parallel, 2 analysts)
@@ -43,7 +41,7 @@ Survey the corpus: `$HPR search "" --tag <vault_tag> -j` to confirm width sweep 
      QUERY FILE: research/query-<vault_tag>.md
 
      PIPELINE POSITION: You are step 4 (loci-analyst, instance A or B) of
-     the hyperresearch V8 pipeline. The width sweep (step 2) populated the vault
+     the Bad Research pipeline. The width sweep (step 2) populated the vault
      tagged <vault_tag>. The contradiction graph (step 3) lives at
      research/temp/contradiction-graph.json. After you and the other
      analyst return, the orchestrator dedupes your loci and assigns budgets.
@@ -117,7 +115,7 @@ Survey the corpus: `$HPR search "" --tag <vault_tag> -j` to confirm width sweep 
 
 ## Next step
 
-Return to the entry skill (`hyperresearch`). Invoke step 5:
+Return to the entry skill (`bad-research`). Invoke step 5:
 
 ```
 Skill(skill: "bad-research-5-depth-investigation")

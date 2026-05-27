@@ -1,13 +1,10 @@
 ---
 name: bad-research-15-polish
 description: >
-  Step 15 (final) of the hyperresearch V8 pipeline. Spawns the
-  bad-research-polish-auditor subagent (TOOL-LOCKED to Read + Edit) for
-  the final hygiene + readability pass. Strips pipeline-reference leaks,
-  YAML frontmatter, scaffold sections, filler phrases, run-on sentences.
-  Escalates structural mismatches rather than fabricating content.
-  Invoked via Skill tool from the entry skill. Followed by step 16
-  (readability audit) which is the actual final step before ship.
+  Step 15 of the Bad Research pipeline — spawns the Read+Edit-locked
+  polish-auditor for the hygiene + filler pass (strips pipeline-reference leaks,
+  frontmatter, scaffold sections, filler) before the step 16 readability audit.
+  Invoked in order by the bad-research router.
 ---
 
 # Step 15 — Polish audit
@@ -50,10 +47,10 @@ prompt: |
   QUERY FILE: research/query-<vault_tag>.md
 
   PIPELINE POSITION: You are step 15 (polish auditor) of the
-  hyperresearch V8 pipeline — the final step. Step 14 (patcher) applied
+  Bad Research pipeline — the hygiene pass. Step 14 (patcher) applied
   critic findings as Edit hunks. After you return, the orchestrator
-  runs the final integrity gate and ships. You are TOOL-LOCKED to
-  [Read, Edit].
+  runs step 16 (readability audit) and the final integrity gate, then
+  ships. You are TOOL-LOCKED to [Read, Edit].
 
   YOUR INPUTS:
   - draft_path: research/notes/final_report_<vault_tag>.md
@@ -153,7 +150,7 @@ The final report lives at `research/notes/final_report_<vault_tag>.md`. The wrap
 
 ## Next step
 
-Return to the entry skill (`hyperresearch`). Invoke step 16:
+Return to the entry skill (`bad-research`). Invoke step 16:
 
 ```
 Skill(skill: "bad-research-16-readability-audit")

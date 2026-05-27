@@ -1,14 +1,10 @@
 ---
 name: bad-research-12.5-grader
 description: >
-  Stage 12.5 of the hyperresearch V8 pipeline (FULL tier only). The in-pipeline
-  grader loop: the 5-axis define_outcome judge scores the report, its failing-axis
-  defects join the critic findings, the patcher (step 14) applies them, and the
-  judge re-grades — up to MAX_GRADER_REVISIONS (3) rounds. We built the offline
-  judge (calibrate/judge.py) and never let it gate a run; this stage closes that
-  loop. Keyless: a single host-model call per round + a host loop counter. Invoked
-  via Skill tool from the entry skill, between critics/gap-fetch (12/13) and the
-  patcher's final convergence (14).
+  Step 12.5 of the Bad Research pipeline (full tier only) — the in-pipeline
+  grader loop (judge → patch → re-judge, ≤3 rounds) that scores the report on 5
+  quality axes and feeds failing-axis defects to the patcher. Invoked in order by
+  the bad-research router.
 ---
 
 # Step 12.5 — Grader loop (judge → patch → re-judge)
@@ -37,7 +33,7 @@ Read these inputs:
 - `research/query-<vault_tag>.md` — canonical research query
 
 If `route != "full"`, write nothing and return to the entry skill immediately —
-this stage does not run.
+this step does not run.
 
 ---
 
@@ -143,7 +139,7 @@ Record the non-PASS in the log for the audit trail; do NOT loop a 4th time.
 - `research/grader-log.json` exists with `rounds` set and `final_passed` recorded.
 - The grader loop ran ≤ MAX_GRADER_REVISIONS (3) rounds.
 - `research/notes/final_report_<vault_tag>.md` reflects any grader-driven patches.
-- For a `light` / `agentic-fast` route: this stage was skipped (no `grader-log.json`).
+- For a `light` / `agentic-fast` route: this step was skipped (no `grader-log.json`).
 
 ---
 

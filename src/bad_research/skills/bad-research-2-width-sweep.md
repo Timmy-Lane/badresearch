@@ -1,12 +1,10 @@
 ---
 name: bad-research-2-width-sweep
 description: >
-  Step 2 of the hyperresearch V8 pipeline. Multi-perspective search planning
-  (breadth / depth / adversarial lenses) followed by parallel fetcher waves.
-  Achieves comprehensive topical coverage with 40-100 curated sources for
-  full tier. Includes coverage check, evidence redundancy audit,
-  and source count gating. Invoked via Skill tool from the entry skill
-  after step 1 completes.
+  Step 2 of the Bad Research pipeline — multi-perspective search planning
+  (breadth / depth / adversarial lenses) plus parallel fetcher waves that build a
+  curated, coverage-checked source corpus in the vault. Invoked in order by the
+  bad-research router.
 ---
 
 # Step 2 — Width sweep
@@ -178,7 +176,7 @@ prompt: |
   QUERY FILE: research/query-<vault_tag>.md
 
   PIPELINE POSITION: You are step 2 (width-sweep fetcher) of the
-  hyperresearch V8 pipeline. The orchestrator partitioned the URL queue into
+  Bad Research pipeline. The orchestrator partitioned the URL queue into
   non-overlapping batches; you fetch ONLY the URLs in your batch. After you
   return, the orchestrator runs a coverage check (step 2.5) and may dispatch wave 2.
 
@@ -315,7 +313,7 @@ prompt: |
   QUERY FILE: research/query-<vault_tag>.md
 
   PIPELINE POSITION: You are a leaf subagent for deep end-to-end analysis
-  of ONE long source. Your digest feeds downstream hyperresearch V8 steps. You
+  of ONE long source. Your digest feeds downstream Bad Research steps. You
   do NOT spawn other subagents.
 
   YOUR INPUTS:
@@ -339,7 +337,7 @@ If you fall short after two waves, proceed anyway but ensure `coverage-gaps.md` 
 
 ## Next step
 
-Return to the entry skill (`hyperresearch`). Tier-based routing:
+Return to the entry skill (`bad-research`). Tier-based routing:
 
 - **light tier:** Skip directly to step 10 — invoke `Skill(skill: "bad-research-10-triple-draft")` (light tier writes a single draft, not the ensemble)
 - **full tier:** Invoke `Skill(skill: "bad-research-3-contradiction-graph")`

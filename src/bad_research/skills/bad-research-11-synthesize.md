@@ -1,13 +1,9 @@
 ---
 name: bad-research-11-synthesize
 description: >
-  Step 11 of the hyperresearch V8 pipeline. Reads the 3 angle-specific drafts
-  from step 10, spot-checks factual conflicts, writes a synthesis plan +
-  outline, then spawns ONE bad-research-synthesizer subagent (Read+Write
-  tool-locked) that writes the final report in TWO passes — pass 1 rough
-  integrated draft, pass 2 voice/redundancy/length cleanup. Skipped for
-  light tier (which writes a single draft directly in step 10). Invoked
-  via Skill tool from the entry skill (full tier).
+  Step 11 of the Bad Research pipeline (full tier) — plans and outlines the
+  synthesis, then spawns one Read+Write-locked synthesizer that merges the 3
+  drafts into the final report. Invoked in order by the bad-research router.
 ---
 
 # Step 11 — Synthesize the final report
@@ -180,7 +176,7 @@ prompt: |
 
   QUERY FILE: research/query-<vault_tag>.md
 
-  PIPELINE POSITION: You are step 11 of the hyperresearch V8 pipeline.
+  PIPELINE POSITION: You are step 11 of the Bad Research pipeline.
   Step 10 produced 3 angle-specific drafts. The orchestrator wrote a
   synthesis plan and outline. You read everything and write the final
   report in TWO passes (pass 1 = rough integrated draft, pass 2 = voice/
@@ -292,7 +288,7 @@ After this step, the final report is only modified by Edit hunks from the patche
 
 ## Next step
 
-Return to the entry skill (`hyperresearch`). Invoke step 12:
+Return to the entry skill (`bad-research`). Invoke step 12:
 
 ```
 Skill(skill: "bad-research-12-critics")

@@ -1,12 +1,9 @@
 ---
 name: bad-research-14-patcher
 description: >
-  Step 14 of the hyperresearch V8 pipeline. Spawns the bad-research-patcher
-  subagent (TOOL-LOCKED to Read + Edit) to apply critic findings as
-  surgical Edit hunks against the synthesized final report. Zero
-  regeneration. Pre-stubs the patch log because Edit cannot create files.
-  Handles orchestrator-escalated structural restructures inline. Invoked
-  via Skill tool from the entry skill (full tier).
+  Step 14 of the Bad Research pipeline (full tier) — spawns the Read+Edit-locked
+  patcher to apply critic, grader, and verifier findings as surgical Edit hunks
+  (patch, never regenerate). Invoked in order by the bad-research router.
 ---
 
 # Step 14 — Patch pass
@@ -74,7 +71,7 @@ prompt: |
 
   QUERY FILE: research/query-<vault_tag>.md
 
-  PIPELINE POSITION: You are step 14 (patcher) of the hyperresearch V8
+  PIPELINE POSITION: You are step 14 (patcher) of the Bad Research
   pipeline. Step 12 produced critic findings; step 13 filled vault gaps.
   After you return, step 15 (polish auditor) does the final hygiene pass.
   You are TOOL-LOCKED to [Read, Edit] — you cannot Write.
@@ -86,7 +83,7 @@ prompt: |
       research/critic-findings-depth.json,        (full tier only)
       research/critic-findings-width.json,
       research/critic-findings-instruction.json,
-      research/critic-findings-grader.json        (full tier only; Stage-12.5 grader loop, if present)
+      research/critic-findings-grader.json        (full tier only; Step 12.5 grader loop, if present)
     ]
   - patch_log_path: research/patch-log.json   (already stubbed)
   - evidence_digest_path: research/temp/evidence-digest.md
@@ -101,9 +98,9 @@ The patcher's job:
 
 ---
 
-## Step 14.2b — Confidence-band hedging (dossier 16 §7)
+## Step 14.2b — Confidence-band hedging
 
-The Stage-11.5 CitationVerifier wrote a `confidence_band` (high / medium / low)
+The step 11.5 citation verifier wrote a `confidence_band` (high / medium / low)
 per cited sentence into `research/temp/citation-verify-actions.json`, derived from
 `verify_score` × the fetcher's self-reported confidence × the independent-source
 count (`research/temp/consensus-claims.json`). The patcher MUST add a band-
@@ -177,7 +174,7 @@ For each entry:
 
 ## Next step
 
-Return to the entry skill (`hyperresearch`). Invoke step 15:
+Return to the entry skill (`bad-research`). Invoke step 15:
 
 ```
 Skill(skill: "bad-research-15-polish")

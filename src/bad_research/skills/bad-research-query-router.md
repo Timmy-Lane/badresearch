@@ -1,12 +1,9 @@
 ---
 name: bad-research-query-router
 description: >
-  Stage 1.5 of the Bad Research pipeline. Classifies the Step-1 decompose
-  output into one of three modes — agentic-fast | light | full — using a free
-  deterministic heuristic over the decomposition (no new model call). Writes the
-  chosen `route` into research/prompt-decomposition.json; the entry skill reads
-  it to pick the stage sequence. Invoked via Skill tool from the entry skill
-  after step 1 completes.
+  Step 1.5 of the Bad Research pipeline — classifies the decomposition into a
+  route (agentic-fast / light / full) and writes it to
+  research/prompt-decomposition.json. Invoked in order by the bad-research router.
 ---
 
 # Step 1.5 — Query router
@@ -17,7 +14,7 @@ contested topics, time_periods, and argumentative formats always route `full`.
 
 **Goal:** route trivial/single-domain queries to the cheap bounded ReAct
 fast-mode, mid-size structured queries to `light`, and complex/contested
-queries to the full 16-stage pipeline. The signal is Bad Research's OWN
+queries to the full 16-step pipeline. The signal is Bad Research's OWN
 Step-1 decomposition — no new classifier.
 
 ## Recover state
@@ -33,7 +30,7 @@ Read:
    ```bash
    bad route --decomposition research/prompt-decomposition.json --json
    ```
-   It applies the verbatim DR-loops §9.2 decision tree:
+   It applies this fixed decision tree (mirrors `router.py::classify_route`):
    - **agentic-fast** if atomic_items ≤ 2 AND no contradiction terms AND no
      time_periods AND response_format == "short" AND single domain
    - **light** elif response_format == "structured" OR atomic_items 3–6

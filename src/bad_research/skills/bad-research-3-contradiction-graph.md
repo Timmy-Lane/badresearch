@@ -1,19 +1,17 @@
 ---
 name: bad-research-3-contradiction-graph
 description: >
-  Step 3 of the hyperresearch V8 pipeline. Builds an explicit graph of opposing
-  claims across the corpus. Ranked fight clusters feed step 4's loci
-  analysis so that loci emerge from where evidence actually forks, not
-  from agent intuition. Also identifies consensus claims (3+ independent
-  agreements) for confident assertion in the draft. Invoked via Skill
-  tool from the entry skill after step 2 completes.
+  Step 3 of the Bad Research pipeline (full tier) — pairs opposing claims across
+  the corpus into ranked "fight" clusters (plus consensus claims), writing the
+  contradiction graph that step 4 turns into loci. Invoked in order by the
+  bad-research router.
 ---
 
 # Step 3 — Contradiction graph
 
 **Tier gate:** SKIP for `light`. Run for `full`.
 
-**Goal:** before loci analysis, build an explicit graph of opposing claims. Loci should emerge from where the evidence actually forks, not from agent intuition about what seems interesting.
+**Goal:** before loci analysis (loci = the contested focal points / sub-debates the report must engage), build an explicit graph of opposing claims. Loci should emerge from where the evidence actually forks, not from agent intuition about what seems interesting.
 
 ---
 
@@ -68,6 +66,6 @@ If no claims files exist (e.g., fetchers didn't produce them), skip this step en
 
 ## Next step
 
-Return to the entry skill (`hyperresearch`). Tier-based routing:
+Return to the entry skill (`bad-research`). Tier-based routing:
 
 - **full tier:** Invoke `Skill(skill: "bad-research-4-loci-analysis")`

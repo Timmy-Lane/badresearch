@@ -1,12 +1,9 @@
 ---
 name: bad-research-5-depth-investigation
 description: >
-  Step 5 of the hyperresearch V8 pipeline. Spawns K depth-investigator
-  subagents in parallel (one per scored locus), each producing one
-  interim note with a Committed Position section. Investigators read
-  full source bodies for their locus and may fetch additional sources
-  within their source_budget. Invoked via Skill tool from the entry
-  skill (full tier only).
+  Step 5 of the Bad Research pipeline (full tier) — spawns one depth-investigator
+  per scored locus in parallel; each reads full sources and writes an interim note
+  ending in a Committed Position. Invoked in order by the bad-research router.
 ---
 
 # Step 5 — Depth investigation (parallel, K = len(loci))
@@ -43,7 +40,7 @@ Read these inputs:
      QUERY FILE: research/query-<vault_tag>.md
 
      PIPELINE POSITION: You are step 5 (depth-investigator) of the
-     hyperresearch V8 pipeline. Step 4's loci analysts produced research/loci.json;
+     Bad Research pipeline. Step 4's loci analysts produced research/loci.json;
      after you return, step 6 will reconcile your committed position against
      the other investigators' positions in research/comparisons.md.
 
@@ -132,7 +129,7 @@ If >50% of investigators failed: stop and escalate.
 
 ## Next step
 
-Return to the entry skill (`hyperresearch`). Invoke step 6:
+Return to the entry skill (`bad-research`). Invoke step 6:
 
 ```
 Skill(skill: "bad-research-6-cross-locus-reconcile")

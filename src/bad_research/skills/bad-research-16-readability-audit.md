@@ -1,15 +1,10 @@
 ---
 name: bad-research-16-readability-audit
 description: >
-  Step 16 (final) of the hyperresearch V8 pipeline. Spawns the
-  bad-research-readability-recommender subagent (Read+Write tool-locked,
-  Opus) to audit the polished final report and write JSON
-  recommendations for paragraph merges, breaks, list/table conversions,
-  bold injection, sentence splits, and HR removal. The orchestrator
-  reads the recommendations and SELECTIVELY applies them via direct
-  Edit calls (the recommender does NOT modify the report itself).
-  Logs orchestrator decisions to a separate file. Runs for ALL tiers.
-  Invoked via Skill tool from the entry skill.
+  Step 16 (final) of the Bad Research pipeline — a readability recommender
+  writes JSON formatting suggestions and the orchestrator selectively applies
+  them via Edit, then runs the uncited + recitation ship-gates. Invoked in order
+  by the bad-research router.
 ---
 
 # Step 16 — Readability audit & selective apply (FINAL STEP)
@@ -18,7 +13,7 @@ description: >
 
 **Goal:** improve the report's visual structure, paragraph rhythm, and scannability without changing substantive content. The recommender writes a JSON list of suggested changes; YOU (the orchestrator) decide which to apply.
 
-**Why split recommender + orchestrator-applied:** an Edit-based reformatter (V7-style) sometimes makes changes that hurt the argument — converting a flowing paragraph to a bullet list when the prose was load-bearing, or merging paragraphs that addressed distinct sub-topics. By having the recommender produce JSON suggestions and the orchestrator decide what to apply, we get the recommender's pattern-matching speed plus your judgment about which changes serve the research_query.
+**Why split recommender + orchestrator-applied:** an Edit-based reformatter sometimes makes changes that hurt the argument — converting a flowing paragraph to a bullet list when the prose was load-bearing, or merging paragraphs that addressed distinct sub-topics. By having the recommender produce JSON suggestions and the orchestrator decide what to apply, we get the recommender's pattern-matching speed plus your judgment about which changes serve the research_query.
 
 ---
 
@@ -43,7 +38,7 @@ prompt: |
 
   QUERY FILE: research/query-<vault_tag>.md
 
-  PIPELINE POSITION: You are step 16 of the hyperresearch V8 pipeline —
+  PIPELINE POSITION: You are step 16 of the Bad Research pipeline —
   the final analytical pass. The final report at
   research/notes/final_report_<vault_tag>.md has been drafted (step 10),
   synthesized (step 11), critiqued (step 12), gap-filled (step 13),
@@ -209,7 +204,7 @@ bad recitation-gate --report research/notes/final_report_<vault_tag>.md \
 
 **Run this LAST — only after `bad uncited-gate` returned `{"uncited": []}` and the recitation gate is clean.** The gates validate per-sentence provenance *before* any cites are visually grouped; this pass only collapses the visual repetition.
 
-**Why:** hyperresearch's one clean readability win was paragraph-level citations. A run of consecutive sentences that all cite the same source-set renders as dense `[1][2][3]` ... `[1][2][3]` ... `[1][2][3]` — one repeated group per sentence. Collapsing a run of CONSECUTIVE sentences that share the SAME source-set into ONE trailing group cite reads better without losing any provenance.
+**Why:** paragraph-level citations read far better than per-sentence ones. A run of consecutive sentences that all cite the same source-set renders as dense `[1][2][3]` ... `[1][2][3]` ... `[1][2][3]` — one repeated group per sentence. Collapsing a run of CONSECUTIVE sentences that share the SAME source-set into ONE trailing group cite reads better without losing any provenance.
 
 **This is a DETERMINISTIC, $0 pass — use the helper, do not hand-edit cites.** Run `bad_research.grounding.render.coalesce_citations` over the report body:
 

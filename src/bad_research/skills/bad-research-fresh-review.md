@@ -1,12 +1,10 @@
 ---
 name: bad-research-fresh-review
 description: >
-  Stage 14.5 of the Bad Research pipeline. ONE bounded fresh-context reviewer
-  pass over the patched final report, before polish. A fresh Opus session with
-  zero pipeline-dispatch context catches whole-report issues the in-context
-  critics (who saw the report grow) miss — narrative drift, an unanswered
-  sub-question, a thesis the body contradicts. Single pass, NOT a loop. Invoked
-  via Skill tool from the entry skill after step 14 (full tier only).
+  Step 14.5 of the Bad Research pipeline (full tier only) — ONE fresh-context
+  reviewer pass over the patched report (single pass, not a loop) that catches
+  whole-report issues the in-context critics miss. Invoked in order by the
+  bad-research router.
 ---
 
 # Step 14.5 — Fresh-context review (single pass)
