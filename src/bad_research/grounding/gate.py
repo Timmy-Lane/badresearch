@@ -48,12 +48,50 @@ def strip_sources_section(report_md: str) -> str:
 # to the sentence it trails, not a sentence of its own.
 _CITES_ONLY = re.compile(r"^\s*(?:\[\[[^\]]+\]\]|\[\d+\])(?:\s*(?:\[\[[^\]]+\]\]|\[\d+\]))*\s*[.;,]?\s*$")
 
+# ── A-2: formatting-line skip set (false-positive guard) ─────────────────────
+# A bold-only line is a pseudo-heading (`**Key Findings 2024**`), not a sentence.
+_BOLD_ONLY = re.compile(r"^\*\*[^*].*\*\*$")
+# A markdown table row / divider: starts (after optional indent) with a pipe.
+_TABLE_ROW = re.compile(r"^\s*\|")
+# A fenced-code delimiter line: ``` or ~~~ (optionally with a language tag).
+_CODE_FENCE = re.compile(r"^\s*(?:`{3,}|~{3,})")
+# A line whose entire visible content is one inline code span (`...`).
+_CODE_SPAN_ONLY = re.compile(r"^\s*`[^`]+`\s*$")
+# A leading list marker: a bullet (`-`/`*`/`+`) or an ordinal (`1.`/`1)`),
+# stripped so a numbered item is ONE sentence (not the `1.` fragment + the rest).
+_LIST_MARKER = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
+
+
+def _is_formatting_line(line: str) -> bool:
+    """True for structural chrome that carries no factual claim: bold-only
+    pseudo-headings, markdown headings, table rows/dividers, and lone inline
+    code spans. Code-fence handling is stateful and lives in `split_sentences`."""
+    if line.startswith("#"):
+        return True
+    if _BOLD_ONLY.match(line):
+        return True
+    if _TABLE_ROW.match(line):
+        return True
+    return bool(_CODE_SPAN_ONLY.match(line))
+
 
 def split_sentences(text: str) -> list[str]:
     parts: list[str] = []
-    for line in text.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
+    in_code_fence = False
+    for raw in text.splitlines():
+        line = raw.strip()
+        if _CODE_FENCE.match(line):
+            # Toggle in/out of a fenced code block; the fence line itself is chrome.
+            in_code_fence = not in_code_fence
+            continue
+        if in_code_fence:
+            continue  # source code, not prose -- never a factual sentence
+        if not line or _is_formatting_line(line):
+            continue
+        # Strip a leading list marker so `1. Vietnam led ...` is one sentence,
+        # not the spurious fragment `1.` split off by the ordinal's period.
+        line = _LIST_MARKER.sub("", line, count=1).strip()
+        if not line:
             continue
         for piece in re.split(r"(?<=[.!?])\s+", line):
             piece = piece.strip()

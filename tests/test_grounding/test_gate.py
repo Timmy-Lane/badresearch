@@ -4,7 +4,6 @@ import sqlite3
 
 from bad_research.grounding.anchors import AnchorStore, ClaimAnchor
 from bad_research.grounding.gate import (
-    Finding,
     gate_blocks_ship,
     is_factual_claim,
     no_uncited_claim_gate,
@@ -74,5 +73,91 @@ def test_gate_ignores_sources_section():
         "## Sources\n"
         "1. https://example.com  Some uncited claim with a number 42 here.\n"
     )
+    findings = no_uncited_claim_gate(report, store)
+    assert findings == []
+
+
+# ── A-2: harden the splitter against formatting false-positives ──────────────
+
+def test_split_skips_bold_only_pseudo_heading():
+    # A bold-only line `**Market Size in 2024**` is a pseudo-heading, not a claim.
+    from bad_research.grounding.gate import split_sentences
+
+    out = split_sentences("**Market Size in 2024**\n")
+    assert out == []
+
+
+def test_split_skips_markdown_headings_of_every_level():
+    from bad_research.grounding.gate import split_sentences
+
+    out = split_sentences("## Regional Trends in 2024\n###### Sub-finding 12.4%\n")
+    assert out == []
+
+
+def test_split_skips_table_rows():
+    from bad_research.grounding.gate import split_sentences
+
+    table = (
+        "| Region | GMV 2024 | Growth |\n"
+        "| --- | --- | --- |\n"
+        "| Vietnam | 64% | leading |\n"
+    )
+    assert split_sentences(table) == []
+
+
+def test_split_skips_code_fence_and_inline_only_span():
+    from bad_research.grounding.gate import split_sentences
+
+    block = (
+        "```python\n"
+        "x = 12.4  # this is code, not a claim about Vietnam\n"
+        "```\n"
+        "`SUPPORTED_FLOOR = 0.70`\n"
+    )
+    assert split_sentences(block) == []
+
+
+def test_split_strips_list_marker_keeps_item_as_one_sentence():
+    # `1. Vietnam led at 64%.` must be ONE sentence, not the fragment `1.` + rest.
+    from bad_research.grounding.gate import split_sentences
+
+    out = split_sentences("1. Vietnam led Southeast Asia at 64% penetration.\n")
+    assert len(out) == 1
+    assert out[0].startswith("Vietnam")
+    # bullet markers too
+    assert split_sentences("- Indonesia grew 12.4% in 2024.\n")[0].startswith("Indonesia")
+    assert split_sentences("* Thailand fell 3% that year.\n")[0].startswith("Thailand")
+
+
+def test_gate_ignores_formatting_chrome_but_flags_real_uncited():
+    # A formatting-heavy report: bold heading + heading + table + a cited list item
+    # whose [N] PRECEDES the period -> all clean; ONE genuinely uncited list item flags.
+    quote = "a 12.4% YoY expansion"
+    a = ClaimAnchor("n12", 0, len(quote), "SEA GMV grew 12.4%.", quote)
+    a.verified = 1
+    store = _store_with([a])
+    report = (
+        "**Key Findings for 2024**\n"
+        "## Regional Breakdown\n"
+        "| Region | Growth |\n"
+        "| --- | --- |\n"
+        "| Vietnam | 64% |\n"
+        f"- Southeast Asian GMV grew 12.4% [[{a.anchor_id}]] in 2024.\n"  # cite BEFORE period
+        "- Indonesia reportedly led the region at 71% penetration.\n"     # genuinely uncited
+    )
+    findings = no_uncited_claim_gate(report, store)
+    # Exactly one block: the Indonesia line (everything else is chrome or cited).
+    assert len(findings) == 1
+    assert findings[0].failure_mode == "uncited-claim"
+    assert "Indonesia" in findings[0].location
+
+
+def test_gate_accepts_citation_before_terminal_period():
+    # `... grew 12.4% [[anchor]] in 2024.` — the [N] precedes the period.
+    quote = "a 12.4% YoY expansion"
+    a = ClaimAnchor("n12", 0, len(quote), "SEA GMV grew 12.4%.", quote)
+    a.verified = 1
+    store = _store_with([a])
+    report = f"Southeast Asian GMV grew 12.4% [[{a.anchor_id}]] in 2024.\n"
     findings = no_uncited_claim_gate(report, store)
     assert findings == []
