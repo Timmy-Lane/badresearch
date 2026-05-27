@@ -74,8 +74,9 @@ def test_verify_report_builds_real_llm_provider(monkeypatch, tmp_path):
             pass
 
     class _FakeVerifier:
-        def __init__(self, *, nli, llm):
+        def __init__(self, *, nli, llm, effort=None):
             built["llm"] = llm
+            built["effort"] = effort
 
         def verify(self, report_md, store, note_bodies):
             return SimpleNamespace(findings=[])

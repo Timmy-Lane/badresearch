@@ -24,6 +24,7 @@ description: >
 Read these inputs:
 - `research/scaffold.md` — vault_tag, modality, wrapper requirements
 - `research/prompt-decomposition.json` — atomic items, required_section_headings, response_format, citation_style, pipeline_tier
+- `research/temp/reflections.md` — the distilled short-term memory (≤3 claim bullets + `cited_note_ids` per round). **PLAN from this, not the raw corpus** — see Step 10.0b
 - `research/temp/evidence-digest.md` — top claims + verbatim quotes — PRIMARY EVIDENCE LAYER (full only; absent for light)
 - `research/comparisons.md` (full tier) — cross-locus tensions
 - `research/temp/source-tensions.json` (full tier) — expert disagreements
@@ -51,6 +52,39 @@ Read `response_format` and `citation_style` from `research/prompt-decomposition.
 
 ---
 
+## Step 10.0b — Plan from reflections, re-inject raw only at the end (distilled-reflection memory)
+
+**Plan from the distilled memory, batch-read raw bodies only for what you'll
+cite.** This is Tavily's "re-inject raw only at the end": the mid-pipeline carried
+only distilled reflections (linear token growth); the drafter pays the raw-body
+cost ONCE, at draft time, and only for the `note_id`s it will actually cite.
+
+1. **Plan the draft from `research/temp/reflections.md`** — the ≤3-claim-bullet
+   distilled records per round, the `open_gaps`, and the `cited_note_ids`. Decide
+   the angle, the section beats, and which claims anchor which section *from the
+   distilled reflections*, NOT by re-reading the whole raw corpus. The reflections
+   are the short-term memory; trust them.
+
+2. **Then batch-read the raw note bodies ONLY for the `note_id`s you will cite.**
+   From the reflections' `cited_note_ids` (and the curated `must_read_note_ids`
+   list in Step 10.2), read the raw bodies for just those notes
+   (`$HPR note show <id1> <id2> ... -j`) so you have the verbatim text in front of
+   you as you write. Do NOT batch-read notes you don't intend to cite — that
+   re-introduces the quadratic-context cost the reflections discipline removed.
+
+3. **Spans survive for grounding.** Re-injecting the raw body for a cited note
+   gives you its verbatim `quoted_support` span — keep the exact wording when you
+   ground a claim so the downstream `uncited-gate` / `recitation-gate` /
+   `anchors.py` verify byte-for-byte. A claim whose supporting span you cannot
+   re-locate in the re-injected raw body is dropped or hedged, never fabricated.
+
+**Light tier:** light has no `evidence-digest.md`; it still plans from
+`reflections.md` (written in step 2) and re-injects raw bodies only for the
+`cited_note_ids` it will cite (the 8–15 notes it opens — see the Light tier
+section below).
+
+---
+
 ## GENERATION-TIME GROUNDING — cite as you write (applies to ALL drafts, ALL tiers)
 
 **Ground every factual sentence in the FIRST draft. Do not draft ungrounded prose and "add citations later".** A *factual sentence* is any sentence carrying a number, a named entity, a comparative/superlative, or a causal/temporal claim. Every such sentence MUST end with its citation token placed **before the terminal period** — `… grew 12.4% in 2024 [[note-id]].` (wikilink style) or `… grew 12.4% in 2024 [3].` (inline style). One marker minimum; stack `[[a]][[b]]` when two sources back the same claim.
@@ -59,6 +93,19 @@ Read `response_format` and `citation_style` from `research/prompt-decomposition.
 - **What does NOT need a citation:** the executive-summary topic sentence, pure transitions/framing ("This section examines…"), hedge-frame openers ("In general,…"), and questions. These are non-factual by the gate's own classifier, so leave them clean — don't bolt on a decorative cite.
 - **Anchoring rule:** every `[[note-id]]`/`[N]` you emit MUST point at a source you actually read (light tier: a note you opened; full tier: a note on your `must_read_note_ids`). A claim you cannot ground to a real source is NOT written — drop it or hedge it, never fabricate a marker. The CitationVerifier checks every cite byte-for-byte afterward; fabricated cites are caught and dropped.
 - **`citation_style: "none"` exemption:** when the deliverable's `citation_style` is `"none"`, emit NO citation markers — the marker requirement above does not apply, and the uncited-gate is not a ship-block for a no-citation deliverable. The grounding *discipline* still holds at the sourcing level (only write claims you *could* cite to a real note), but the rendered draft carries no tokens.
+
+---
+
+## SOURCE-QUALITY RECONCILIATION — down-weight flagged sources (applies to ALL drafts, ALL tiers)
+
+**This is where the fetcher's `source_quality_flags` are actually reconciled** (the worker FLAGS, the lead RECONCILES — Anthropic's worker-prompt discipline; there is NO deterministic penalty in the funnel/rank code). When the per-source claims you read carry a non-empty `source_quality_flags` array in their `claims-<note-id>.json` (e.g. `["marketing_spin"]`, `["nameless_source"]`, `["cherry_picked"]`), reconcile it in the prose you write — **flag, don't suppress**:
+
+- **Never lead with a flagged-source claim.** A claim drawn from a flagged source is not the topic sentence of a section and is never the sole basis for a headline finding.
+- **Corroborate or hedge.** A flagged source's claim is only stated plainly if an *unflagged* source corroborates it (cite both, `[[flagged]][[unflagged]]`). If no unflagged source corroborates it, it is explicitly hedged ("one vendor account claims…", "an unconfirmed report suggests…") — the hedge names the weakness the flag identifies (spin / nameless source / unconfirmed / cherry-picked).
+- **A flag down-weights, it does not delete.** The flagged source can still appear — a marketing-spin page on a high-authority domain is demoted to a hedged, corroborated, or supporting mention, never a load-bearing un-caveated claim. This is the report-level analogue of "demote, never drop."
+- **An unflagged source is unchanged** (empty `source_quality_flags`) — write its claims exactly as the grounding rule above dictates.
+
+You see the `source_quality_flags` on each claim because step 10.0b re-injects the raw bodies + `claims-*.json` for the `note_id`s you cite; honor the flags as you ground.
 
 ---
 
@@ -82,7 +129,7 @@ If `pipeline_tier == "light"`: SKIP step 10.1 — 10.3 below and follow this sec
 
 4. **Hygiene.** No YAML frontmatter on the final report. No pipeline vocabulary in prose ("hyperresearch", "evidence digest", "comparisons.md", "committed reading", etc.). When `citation_style == "wikilink"`, `[[<source-note-id>]]` markers ARE the citation system and must be preserved — only strip wikilinks that point at workspace artifacts (interim-*, scaffold, comparisons). Step 15 (polish) is a backstop, not a license to leak.
 
-5. **Exit and route.** Once `research/notes/final_report_<vault_tag>.md` is written, return to the entry skill and invoke `Skill(skill: "bad-research-15-polish")`. Light tier skips steps 11–14 entirely.
+5. **Exit and route.** Once `research/notes/final_report_<vault_tag>.md` is written, return to the entry skill and invoke `Skill(skill: "bad-research-12-critics")` for the **light-tier slim single critic** (E3 — one adversarial dialectic+instruction pass, applied inline; no fan-out, no patcher), THEN `Skill(skill: "bad-research-15-polish")`. Light tier skips steps 11 + 13–14 entirely (it runs the slim step-12 critic, not the full 4-critic fan-out + patcher).
 
 ---
 
@@ -234,5 +281,5 @@ When all 3 sub-orchestrators return:
 
 Return to the entry skill (`bad-research`). Tier-based routing:
 
-- **light tier:** You already wrote `research/notes/final_report_<vault_tag>.md` directly. Skip steps 11-14 (no synthesis, no critics, no patcher) and invoke `Skill(skill: "bad-research-15-polish")`.
+- **light tier:** You already wrote `research/notes/final_report_<vault_tag>.md` directly. Skip step 11 (synthesis) and steps 13–14 (no gap-fetch, no patcher), but DO run the light-tier slim critic — invoke `Skill(skill: "bad-research-12-critics")` (its **Light-tier slim critic** section: one adversarial dialectic+instruction pass, findings applied inline), THEN `Skill(skill: "bad-research-15-polish")`. (E3: the light route used to skip straight to polish with no adversarial pass.)
 - **full tier:** Invoke `Skill(skill: "bad-research-11-synthesize")`.

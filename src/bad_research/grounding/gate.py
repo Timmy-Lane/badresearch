@@ -161,3 +161,52 @@ def no_uncited_claim_gate(report_md: str, anchors: AnchorStore) -> list[Finding]
 def gate_blocks_ship(findings: list[Finding]) -> bool:
     """A run does not ship with any open `critical` finding (dossier §5.2)."""
     return any(f.severity == "critical" for f in findings)
+
+
+# ── E9: keyless semantic span support-check — lexical pre-filter ──────────────
+# STEAL_LIST #4 (OpenAI `【ref†L42-L58】`): bind a claim to a SPECIFIC supporting
+# span, not merely "a citation exists." On the keyless path the no-op NLI passes a
+# *paraphrased* claim regardless of whether the cited span supports it. The cheap
+# lexical pre-filter below bounds the cost of catching that: claim ≈ quote (overlap
+# >= CLAIM_QUOTE_OVERLAP_SKIP) → accept on byte-identity, skip the host judge ($0);
+# below it (a genuine paraphrase) → route to the batched host-model entailment judge.
+
+# A claim whose token set is >= this fraction contained in the cited span is treated
+# as "≈ the quote" — verbatim/near-verbatim. NOTE: this band is NOT covered by Tier-A:
+# Tier-A byte-identity checks span-vs-body integrity (the quoted_support still sits at
+# [char_start:char_end] with a matching SHA), NOT report-sentence-vs-span fidelity. The
+# residual risk in this band — a >=0.8-overlap report sentence that flipped a number
+# ("grew 12%" vs a span saying "grew 21%") — is caught by the `[local]`/keyed entailment
+# lane (CrossEncoderNLI / Tier-C judge), not by Tier-A keyless. On the keyless+host
+# path we accept this near-verbatim band to bound host-token cost: the host judge adds
+# little over the lexical match and the number-flip boundary is a known keyless gap that
+# the `[local]`/keyed lane closes when installed/keyed. dossier §2.2.
+CLAIM_QUOTE_OVERLAP_SKIP = 0.8
+
+_WORD_RE = re.compile(r"[a-z0-9]+")
+# Stop tokens are stripped before overlap so two sentences are not judged "the same"
+# merely for sharing "the/of/in"; this makes the ratio track CONTENT overlap.
+_OVERLAP_STOP = frozenset({
+    "the", "a", "an", "of", "to", "in", "on", "at", "for", "and", "or", "but",
+    "is", "are", "was", "were", "be", "been", "by", "with", "as", "that", "this",
+    "these", "those", "it", "its", "from", "into", "over", "under", "than", "then", "so",
+})
+
+
+def _content_tokens(text: str) -> set[str]:
+    """Lowercased alphanumeric content tokens (stop words removed) — the unit the
+    claim↔quote overlap ratio is computed over."""
+    return {t for t in _WORD_RE.findall((text or "").lower()) if t not in _OVERLAP_STOP}
+
+
+def claim_quote_overlap(claim: str, quote: str) -> float:
+    """Fraction of the CLAIM's content tokens that also appear in the cited QUOTE
+    (token-containment, asymmetric on purpose: the question is "is the claim covered
+    by the span?", not "are the two equal in length?"). 1.0 = every claim word is in
+    the quote (verbatim/near-verbatim); ~0.0 = the claim paraphrases something the
+    span never says. An empty claim trivially overlaps (nothing to support)."""
+    c = _content_tokens(claim)
+    if not c:
+        return 1.0
+    q = _content_tokens(quote)
+    return len(c & q) / len(c)

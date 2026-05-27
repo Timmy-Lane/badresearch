@@ -32,7 +32,7 @@ def _fake_runner(query: str) -> BadRunOutput:
 
 
 def test_run_calibration_offline():
-    judge = StubJudge(scores={a: 0.88 for a in JUDGE_AXES})
+    judge = StubJudge(rails={a: "pass" for a in JUDGE_AXES})
     report = run_calibration(
         "Does X cause Y?",
         runner=_fake_runner,
@@ -47,17 +47,20 @@ def test_run_calibration_offline():
 
 
 def test_calibration_report_json_roundtrip():
-    judge = StubJudge(scores={a: 0.8 for a in JUDGE_AXES})
+    judge = StubJudge(rails={a: "pass" for a in JUDGE_AXES})
     report = run_calibration("q", runner=_fake_runner, baselines=[], judge=judge)
     blob = report.to_json()
     data = json.loads(blob)
     assert data["query"] == "q"
     assert "bad" in data and "verdict" in data["bad"] and "cost" in data["bad"]
-    assert set(data["bad"]["verdict"]["scores"].keys()) == set(JUDGE_AXES)
+    assert set(data["bad"]["verdict"]["rails"].keys()) == set(JUDGE_AXES)
+    # rails are categorical strings, never floats (E2).
+    for rail in data["bad"]["verdict"]["rails"].values():
+        assert rail in {"pass", "borderline", "fail"}
 
 
 def test_calibration_report_markdown():
-    judge = StubJudge(scores={a: 0.8 for a in JUDGE_AXES})
+    judge = StubJudge(rails={a: "pass" for a in JUDGE_AXES})
     md = run_calibration("q", runner=_fake_runner, baselines=[], judge=judge).to_markdown()
     assert "# Calibration Report" in md
     assert "factual" in md
@@ -81,14 +84,14 @@ def test_baseline_comparison_when_available():
                 corpus=[{"note_id": "b1", "url": "x", "text": "y"}],
             )
 
-    # judge scores the baseline lower than bad-research
+    # judge rails the baseline lower than bad-research (all-pass vs all-fail).
     class TieredJudge:
         def judge(self, query, report, corpus):
-            score = 0.9 if "grounded" in report or "[1]" in report else 0.6
-            from bad_research.calibrate.judge import AxisScores, JudgeVerdict
+            rail = "pass" if "grounded" in report or "[1]" in report else "fail"
+            from bad_research.calibrate.judge import AxisRails, JudgeVerdict
 
-            return JudgeVerdict.from_scores(
-                AxisScores.from_raw({a: score for a in JUDGE_AXES}), rationale="t"
+            return JudgeVerdict.from_rails(
+                AxisRails.from_raw({a: rail for a in JUDGE_AXES}), rationale="t"
             )
 
     report = run_calibration(
@@ -97,8 +100,8 @@ def test_baseline_comparison_when_available():
     assert len(report.baselines) == 1
     b = report.baselines[0]
     assert b.name == "fake"
-    # bad-research scored higher → positive delta in its favor.
-    assert report.bad.verdict.overall - b.verdict.overall > 0
+    # bad-research railed higher → positive pass-rate delta in its favor.
+    assert report.bad.verdict.pass_rate - b.verdict.pass_rate > 0
     assert (
-        abs(report.delta_vs("fake") - (report.bad.verdict.overall - b.verdict.overall)) < 1e-9
+        abs(report.delta_vs("fake") - (report.bad.verdict.pass_rate - b.verdict.pass_rate)) < 1e-9
     )

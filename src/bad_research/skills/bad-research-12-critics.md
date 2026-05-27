@@ -9,11 +9,63 @@ description: >
 
 # Step 12 — Adversarial critique (parallel critics)
 
-**Tier gate:** SKIP entirely for `light` tier — proceed directly to step 15 (polish). For `full` tier: spawn all 4 critics.
+**Tier gate:**
+- **`full` tier** → spawn all 4 critics (the fan-out below).
+- **`light` / `agentic-fast` routes** → run the SLIM single-critic section
+  (**Light-tier slim critic**, below) — ONE adversarial pass, no fan-out, no patcher —
+  then proceed to step 15 (polish). (E3: the cheap routes used to skip straight to polish
+  with no adversarial pass at all; this gives them one.)
 
-**Goal:** independent findings lists against the synthesized final report, each from a different adversarial angle. Critics complement rather than duplicate.
+**Goal:** independent findings lists against the synthesized final report, each from a
+different adversarial angle. Critics complement rather than duplicate.
 
 ---
+
+## Light-tier slim critic (`light` / `agentic-fast` routes ONLY)
+
+On the `light` and `agentic-fast` routes there is no 4-critic fan-out and no patcher
+(step 14). Instead, spawn ONE slim critic — the `bad-research-light-critic` agent — that
+merges the **dialectic** angle (ignored / straw-manned counter-evidence) and the
+**instruction** angle (atomic items the prompt named that the draft missed, under-covered,
+reordered, or reformatted) into a single adversarial pass. The full-tier fan-out below is
+NOT run on these routes.
+
+1. **Spawn the single light critic** (standard 3-piece contract):
+   ```
+   subagent_type: bad-research-light-critic
+   prompt: |
+     RESEARCH QUERY (verbatim, gospel):
+     > {{paste research/query-<vault_tag>.md body}}
+
+     QUERY FILE: research/query-<vault_tag>.md
+
+     PIPELINE POSITION: You are the light-tier step 12 (slim single critic) of the
+     Bad Research pipeline. The draft is at research/notes/final_report_<vault_tag>.md
+     (light step 10 single-draft, or the agentic-fast ReAct loop). There is NO patcher on
+     this route; after you return, the orchestrator applies your CRITICAL findings inline,
+     then runs step 15 (polish).
+
+     YOUR INPUTS:
+     - draft_path: research/notes/final_report_<vault_tag>.md
+     - decomposition_path: research/prompt-decomposition.json
+     - output_path: research/critic-findings-light.json
+     - vault_tag: <vault_tag>
+   ```
+
+2. **Apply findings inline (no patcher on this route).** Read
+   `research/critic-findings-light.json`. Apply every `critical` finding to the report
+   with a single surgical Edit each (insert a sentence / qualifier / citation, or add the
+   missing atomic item) — NEVER a regeneration (the no-regenerate invariant holds on every
+   route). Surface `major`/`minor` findings the budget can't absorb; do not force them.
+   If a `critical` finding needs a structural restructure, handle it yourself as a hand-
+   crafted Edit, exactly as step 15.3 does for polish escalations.
+
+3. **Then proceed to step 15 (polish).** The slim critic + inline application IS the
+   adversarial layer for these routes; do NOT add the full-tier fan-out below.
+
+---
+
+## Full-tier critics (`full` tier ONLY)
 
 ## Recover state
 

@@ -19,7 +19,7 @@ description: >
 
 Read these inputs:
 - `research/scaffold.md` — vault_tag
-- `research/prompt-decomposition.json` — atomic items, sub-questions
+- `research/prompt-decomposition.json` — atomic items, sub-questions, **`query_shape`** (set by step 1.5 — drives the step-5 fan-out arrangement, see step 6 below)
 - `research/temp/contradiction-graph.json` — ranked fight clusters (if step 3 ran)
 - `research/temp/coverage-gaps.md` — which atomic items have weak coverage
 
@@ -97,7 +97,13 @@ Survey the corpus: `$HPR search "" --tag <vault_tag> -j` to confirm width sweep 
    }
    ```
 
-6. **Decide investigator count.** Spawn ONE depth-investigator (in step 5) per locus with `source_budget > 0`, capped at 6. If only 1 locus passes scoring, spawn 1.
+6. **Decide investigator count AND fan-out arrangement (branch on `query_shape`).** Read `query_shape` from `research/prompt-decomposition.json` (set by step 1.5). The fan-out *shape* — orthogonal to the tier — decides how step 5's investigators are *arranged* (Claude Research `research_lead_agent.md:12-29`):
+
+   - **`breadth_first`** → investigators run **in parallel** across the independent sub-questions / loci, **importance-ordered** (highest composite-score locus first), `K = min(n_subq, cap)` capped at 6. This is the default arrangement for surveys/comparisons/collections — the loci are independent so they go wide simultaneously.
+   - **`depth_first`** → **2–4 SEQUENTIAL** perspectives on the **one** highest-impact locus. Do NOT fan out across many loci; instead pick the single most contested/load-bearing locus and queue 2–4 investigators that run one after another, each reading the prior's committed position (set up in step 5). One topic, many angles, going deep.
+   - **`straightforward`** → a **single** investigator on the one locus that matters. No ensemble.
+
+   Record the chosen arrangement (`parallel` / `sequential` / `single`) and the ordered locus list in `research/loci.json` under a top-level `"fanout"` key so step 5 dispatches accordingly. Absent a `query_shape` (older runs), default to the legacy parallel-per-locus behavior. The base rule still holds: one depth-investigator per locus with `source_budget > 0`, capped at 6; if only 1 locus passes scoring, spawn 1.
 
 **INVARIANT:** at least one `flavor: "dialectical"` locus must be present unless an analyst's `skip_loci` justifies its absence with specific evidence of a univocal corpus. No dialectical locus + no justification = re-spawn the loci-analyst with a tighter prompt.
 

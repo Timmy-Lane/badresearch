@@ -88,6 +88,7 @@ Read both before starting. The vault_tag is in the scaffold's "Run config" secti
   "scope_conditions": ["urban rail specifically, not mainline"],
   "pipeline_tier": "full",
   "response_format": "argumentative",
+  "query_shape": "depth_first",
   "citation_style": "wikilink"
 }
 ```
@@ -133,6 +134,21 @@ Read both before starting. The vault_tag is in the scaffold's "Run config" secti
 
    **Wrapper override:** if `research/wrapper_contract.json` exists and specifies `citation_style`, it overrides the default. The benchmark harness sets `"inline"` via wrapper_contract so RACE evaluators can read numbered references; everything else gets the wikilink default.
 
+7b. **Classify `query_shape`.** This is the fan-out *SHAPE* — how downstream investigators are *arranged* — and it is **orthogonal to `pipeline_tier`/`route`**: the tier decides *how many* resources (light/full), the shape decides *how they're arranged*. `query_shape` ADDS a field; it does NOT change the route. (Verbatim Claude Research taxonomy, `research_lead_agent.md:12-29`.)
+
+   | `query_shape` (verbatim Claude label) | Claude's verbatim definition | Examples | Fan-out arrangement |
+   |---|---|---|---|
+   | `"depth_first"` (**depth-first query**) | *"the problem requires multiple perspectives on the same issue, and calls for 'going deep' by analyzing a single topic from many angles… The core question remains singular but benefits from diverse approaches."* | *"What are the most effective treatments for depression?"*; *"What really caused the 2008 financial crisis?"* (economic, regulatory, behavioral, historical perspectives + steelmanning) | 2–4 **sequential** perspectives on one locus, each reading the prior's committed position |
+   | `"breadth_first"` (**breadth-first query**) | *"the problem can be broken into distinct, independent sub-questions, and calls for 'going wide'… The query naturally divides into multiple parallel research streams."* | *"Compare the economic systems of three Nordic countries"*; *"What are the net worths and names of all the CEOs of all the Fortune 500 companies?"* | **parallel** investigators across independent sub-questions, importance-ordered, `K = min(n_subq, cap)` |
+   | `"straightforward"` (**straightforward query**) | *"focused, well-defined, and can be effectively answered by a single focused investigation or fetching a single resource… Can be handled effectively by a single subagent."* | *"What is the current population of Tokyo?"*; *"Tell me about bananas"* | a **single** investigator |
+
+   **Classifier (DESIGN):**
+   - `"straightforward"` = 1–2 atomic items / a single entity, not contested, no curation breadth.
+   - `"breadth_first"` = many independent sub-questions / multiple entities (≈ a `collect`/`compare`/`survey` modality).
+   - `"depth_first"` = one contested topic, multiple perspectives (≈ a `synthesize`/`forecast` modality + high contestedness — contradiction terms, argumentative format, dispute phrasing).
+
+   Set `query_shape` honestly here; the query-router (step 1.5) re-derives it deterministically via `bad route` and writes the authoritative `query_shape` field, exactly as it does for `route`. The two are independent — a `full` route can be any of the three shapes, and a contested `depth_first` thesis can be `full` while a `breadth_first` survey down-routes to `light`.
+
 8. **Coverage matrix self-audit.** (The coverage matrix is a table mapping each verbatim query phrase to the atomic item(s) that cover it — the audit that catches dropped or narrowed scope.) Re-read the verbatim query. Walk through it phrase by phrase and extract every **significant noun phrase, proper noun, technical term, and category name**. For each:
    - Does it map to at least one atomic item in the decomposition?
    - Is the decomposition's interpretation **as broad as the phrase's natural scope**? (e.g., "SaaS applications" must not be narrowed to "POS SaaS"; "rugged tablets" must not be collapsed into "payment terminals")
@@ -159,7 +175,7 @@ Read both before starting. The vault_tag is in the scaffold's "Run config" secti
 ## Exit criterion
 
 - `research/prompt-decomposition.json` exists, is valid JSON, every atomic item traces to the research_query
-- `pipeline_tier` + `response_format` + `citation_style` are all set
+- `pipeline_tier` + `response_format` + `query_shape` + `citation_style` are all set
 - `research/temp/coverage-matrix.md` exists with **zero `Gap? = YES` rows**
 - `research/scaffold.md` includes a Tier rationale subsection
 

@@ -14,9 +14,13 @@ One batched call, pointwise JSON output, temperature=0, ~800-char truncation,
 graceful 0.0 on any parse/call failure (the three-tier blend then leans on the
 `initial` score so no candidate is silently dropped).
 
-Offline ([local] extra): BGEReranker — local cross-encoder (ms-marco-MiniLM by
-default for the keyless ``reranker="local"`` flag, dossier 15 §5.2). torch is
-imported lazily, only when a scorer is constructed.
+Offline ([local] extra): BGEReranker — local cross-encoder. The DEFAULT is the
+LIGHT ms-marco-MiniLM (``reranker="local"``/``"light"``, dossier 15 §5.2). The
+ZeroEntropy **zerank-2** opt-in (``reranker="zerank2"``, +8.7pp NDCG@10 over
+MiniLM, STEAL_LIST #6b) is supported but NOT the default — it is a 4B CC-BY-NC
+model whose ``predict()`` returns raw logits (needs ``sigmoid(score/5)``), so it
+is a documented opt-in, not a silent default swap (E14). torch is imported
+lazily, only when a scorer is constructed.
 
 Floor: the identity reranker (``reranker="none"``) — input order preserved (the
 --no-rerank speed/zero-token fallback, §5.1).
@@ -48,6 +52,8 @@ from bad_research.web.search.rerank import (
 
 __all__ = [
     "LLM_RERANK_SYSTEM",
+    "LOCAL_RERANKER_LIGHT",
+    "ZERANK2_MODEL",
     "BGEReranker",
     "ClaudeCodeReranker",
     "IdentityReranker",
@@ -57,6 +63,38 @@ __all__ = [
 
 # A local cross-encoder scorer: maps [(query, doc)] -> [relevance_score].
 Scorer = Callable[[list[tuple[str, str]]], list[float]]
+
+# ── [local] reranker models ───────────────────────────────────────────────────
+# The DEFAULT (unchanged): the LIGHT 22M-param ms-marco MiniLM cross-encoder
+# (dossier 15 §5.2). Drop-in via the plain-sigmoid loader.
+LOCAL_RERANKER_LIGHT = "ms-marco-MiniLM-L-6-v2"
+
+# E14 / STEAL_LIST #6b — the ZeroEntropy zerank-2 cross-encoder (+8.7pp NDCG@10
+# over MiniLM, core/13:271-321). Documented OPT-IN, *not* the default. Verified
+# 2026-05-27 via the HF API: `zeroentropy/zerank-2-reranker` exists, gated=false,
+# `config_sentence_transformers.json` model_type=CrossEncoder (so CrossEncoder
+# CAN load it). Two reasons it is NOT made the default:
+#   1. License is **CC-BY-NC-4.0 (non-commercial)** — the README states a
+#      commercial license must be obtained separately. A non-commercial model is
+#      not a safe silent default for the [local] extra.
+#   2. It is a 4B-param Qwen3 reranker whose `predict()` returns RAW "Yes" logits,
+#      NOT a [0,1] probability (README breaking change, May 2026). The [0,1] map
+#      is a TEMPERATURE-SCALED sigmoid `sigmoid(score/5)` (_zerank2_sigmoid),
+#      *not* the plain sigmoid MiniLM's loader applies — so it needs its own
+#      normalization or scores are mis-scaled (a broken default).
+# Opt in via `reranker="zerank2"` (CLI/config); the loader below wires the correct
+# sigmoid so the opt-in path is not broken. Keyless: a local download, no API key.
+ZERANK2_MODEL = "zeroentropy/zerank-2-reranker"
+
+
+def _zerank2_sigmoid(logit: float) -> float:
+    """Map a zerank-2 raw "Yes" logit to a [0,1] score: sigmoid(logit / 5).
+
+    zerank-2 (post May-2026) returns the raw "Yes"-token logit from `predict()`,
+    not a probability. The README's documented conversion is a temperature-scaled
+    sigmoid with T=5 (e.g. logit 5.4062 -> 0.746, logit -4.5 -> 0.289). The plain
+    sigmoid MiniLM uses would mis-scale these, so zerank-2 gets its own."""
+    return 1.0 / (1.0 + math.exp(-logit / 5.0))
 
 
 def _build_user_message(query: str, docs: list[str]) -> str:
@@ -142,8 +180,17 @@ class IdentityReranker:
 def _default_bge_scorer(model: str) -> Scorer:
     """Build a local cross-encoder scorer ([local] extra). Lazy import so the
     module imports cleanly with no torch installed. Prefer FlagEmbedding; fall
-    back to sentence-transformers CrossEncoder (sigmoid-normalized to [0,1])."""
-    repo = model if model.startswith(("BAAI/", "cross-encoder/")) else f"cross-encoder/{model}"
+    back to sentence-transformers CrossEncoder.
+
+    Normalization to [0,1] is MODEL-AWARE: the zerank-2 opt-in returns raw "Yes"
+    logits and needs the temperature-scaled `sigmoid(score/5)` (_zerank2_sigmoid);
+    every other cross-encoder (MiniLM default) uses the plain sigmoid. Using the
+    wrong sigmoid mis-scales scores — that mismatch is exactly why zerank-2 is an
+    explicit opt-in, not the silent default (E14 / STEAL_LIST #6b)."""
+    repo = model if model.startswith(("BAAI/", "cross-encoder/", "zeroentropy/")) \
+        else f"cross-encoder/{model}"
+    norm = _zerank2_sigmoid if model == ZERANK2_MODEL else \
+        (lambda s: 1.0 / (1.0 + math.exp(-float(s))))
     try:
         from FlagEmbedding import FlagReranker  # type: ignore
 
@@ -153,14 +200,16 @@ def _default_bge_scorer(model: str) -> Scorer:
         from sentence_transformers import CrossEncoder  # type: ignore
 
         ce = CrossEncoder(repo)
-        return lambda pairs: [1.0 / (1.0 + math.exp(-float(s))) for s in ce.predict(pairs)]
+        return lambda pairs: [norm(float(s)) for s in ce.predict(pairs)]
 
 
 class BGEReranker:
     """Local cross-encoder ([local]). Default model is the LIGHT ms-marco MiniLM
-    (dossier 15 §5.2 — not the 560 MB m3) for the keyless ``reranker="local"``."""
+    (LOCAL_RERANKER_LIGHT, dossier 15 §5.2 — not the 560 MB m3) for the keyless
+    ``reranker="local"``/``"light"``. Pass ``model=ZERANK2_MODEL`` for the
+    documented zerank-2 opt-in (E14 / STEAL_LIST #6b)."""
 
-    def __init__(self, *, model: str = "ms-marco-MiniLM-L-6-v2",
+    def __init__(self, *, model: str = LOCAL_RERANKER_LIGHT,
                  scorer: Scorer | None = None):
         self.model = model
         self._scorer = scorer if scorer is not None else _default_bge_scorer(model)
@@ -177,9 +226,12 @@ class BGEReranker:
 def get_reranker(config: Any, *, llm: Any = None,
                  bge_scorer: Scorer | None = None) -> Reranker:
     """Keyless reranker factory (INTERFACES_KEYLESS §5.3):
-      "host"  → ClaudeCodeReranker (default; host model, no key)
-      "local" → BGEReranker(ms-marco-MiniLM-L-6-v2) ([local] extra)
-      "none"  → IdentityReranker (the --no-rerank floor)
+      "host"    → ClaudeCodeReranker (default; host model, no key)
+      "local"   → BGEReranker(LOCAL_RERANKER_LIGHT = ms-marco-MiniLM) ([local])
+      "light"   → alias of "local" — the documented lightweight fallback name
+      "zerank2" → BGEReranker(ZERANK2_MODEL) — the E14 zerank-2 opt-in ([local];
+                  +8.7pp NDCG@10, CC-BY-NC, model-aware sigmoid wired in the loader)
+      "none"    → IdentityReranker (the --no-rerank floor)
     ``config.reranker`` selects; falls back to "host". The ``llm`` kwarg injects a
     host provider for tests/headless; if absent on the "host" path the provider is
     resolved LAZILY on first rerank() (no key is read at factory time for any
@@ -187,7 +239,9 @@ def get_reranker(config: Any, *, llm: Any = None,
     choice = getattr(config, "reranker", "host")
     if choice == "none":
         return IdentityReranker()
-    if choice == "local":
-        return BGEReranker(scorer=bge_scorer)
+    if choice in ("local", "light"):
+        return BGEReranker(model=LOCAL_RERANKER_LIGHT, scorer=bge_scorer)
+    if choice == "zerank2":
+        return BGEReranker(model=ZERANK2_MODEL, scorer=bge_scorer)
     # "host" (default): ClaudeCodeReranker resolves the host LLM lazily (llm may be None).
     return ClaudeCodeReranker(llm=llm)

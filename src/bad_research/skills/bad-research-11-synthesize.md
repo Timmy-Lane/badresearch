@@ -22,6 +22,7 @@ description: >
 Read these inputs:
 - `research/scaffold.md` — vault_tag
 - `research/prompt-decomposition.json` — atomic items, required_section_headings, response_format, citation_style
+- `research/temp/reflections.md` — the distilled short-term memory (≤3 claim bullets + `cited_note_ids` per round). **The synthesizer plans from this; cap the distilled context at ≤10K tokens — see Step 11.4b**
 - `research/temp/draft-a.md`, `research/temp/draft-b.md`, `research/temp/draft-c.md` — the 3 angle-specific drafts from step 10
 - `research/comparisons.md` (full tier) — cross-locus tensions
 - `research/temp/source-tensions.json` (full tier) — expert disagreements
@@ -128,20 +129,47 @@ The outline is short (50-200 words total). It's the structural anchor that preve
 
 ---
 
-## Step 11.4b — Pull grounded evidence for the synthesizer
+## Step 11.4b — Pull grounded evidence for the synthesizer (≤10K distilled + targeted raw spans)
 
-The synthesizer writes only from evidence, never from the orchestrator's
-reasoning (the Perplexity planner→writer split). Before spawning it, pull the
-top-ranked grounded chunks for each planned section so the synthesizer cites
-against `claim_anchors`, not its own recall:
+**Plan from the distilled reflections; re-inject raw spans only for what gets
+cited (Tavily "re-inject raw only at the end" + Chroma ≤10K-token ceiling).** The
+mid-pipeline carried only distilled reflections; the synthesizer pays the raw-span
+cost once, at the end, and only for the cited `note_id`s.
 
-```bash
-bad retrieve "<section topic / sub-question>" --mode full --top-k 20 --json
-```
+1. **Plan the synthesis from `research/temp/reflections.md`** — its distilled ≤3
+   claim bullets per round and its `cited_note_ids`. **Cap the distilled
+   synthesis context at ≤10K tokens** (the Chroma context-rot ceiling — context
+   past ~10K degrades synthesis quality). If `reflections.md` exceeds the ceiling,
+   compact it first (`retrieval/reflections.py::ReflectionLog.compact` drops the
+   oldest records, keeping the most-recent live findings/gaps).
 
-For each returned chunk, the `note_id` + `char_start`/`char_end` are the
-citation anchor. Write the section→chunks map to
-`research/temp/synthesis-evidence.md`; pass its path to the synthesizer.
+2. **Then re-inject raw spans ONLY for the `note_id`s the synthesizer will
+   cite.** For each planned section, pull the top-ranked grounded chunks — the
+   verbatim spans — for the relevant cited notes so the synthesizer cites against
+   `claim_anchors`, not its own recall:
+
+   ```bash
+   bad retrieve "<section topic / sub-question>" --mode full --top-k 20 --json
+   ```
+
+   For each returned chunk, the `note_id` + `char_start`/`char_end` are the
+   citation anchor; its `quoted_support` is the verbatim span. Write the
+   section→chunks map to `research/temp/synthesis-evidence.md`; pass its path to
+   the synthesizer. The total context handed to the synthesizer is the ≤10K-token
+   distilled plan **plus** these targeted raw spans — not the whole corpus.
+
+   **Carry each cited note's `source_quality_flags` into `synthesis-evidence.md`.**
+   When you pull the spans for a note, read its `claims-<note-id>.json` and copy any
+   non-empty `source_quality_flags` array (e.g. `["marketing_spin"]`) next to the
+   chunk in the section→chunks map. The synthesizer reconciles these flags in prose
+   (worker flags, lead reconciles — there is NO deterministic penalty); it needs to
+   see the flag to down-weight/caveat the source.
+
+3. **Spans preserved for grounding.** Re-injecting the verbatim `quoted_support`
+   spans for the cited notes is exactly what keeps the `uncited-gate` /
+   `recitation-gate` / `anchors.py` lane able to verify each cite byte-for-byte —
+   the distilled-reflection discipline never weakens grounding, it just defers the
+   raw re-injection to this final step.
 
 **Grounded citation rendering** (added to the synthesizer's spawn instructions):
 - Every `[[note-id]]` / `[N]` the synthesizer emits MUST correspond to a chunk
@@ -225,6 +253,21 @@ prompt: |
   rule above doesn't apply, and the uncited-gate is not a ship-block) —
   the discipline survives only as sourcing: write claims you *could*
   cite, but render no tokens.
+
+  SOURCE-QUALITY RECONCILIATION (non-negotiable): synthesis-evidence.md
+  carries each cited note's source_quality_flags (the fetcher's per-source
+  epistemic judgment — marketing_spin / nameless_source / unconfirmed /
+  cherry_picked / etc.). This is where those flags are RECONCILED (the
+  worker flags, the lead reconciles — there is NO deterministic penalty
+  upstream). When a chunk's source carries any flag: NEVER lead with its
+  claim; state it plainly ONLY if an unflagged source corroborates it
+  (cite both); otherwise HEDGE it explicitly, naming the weakness the flag
+  identifies ("one vendor account claims…", "an unconfirmed report
+  suggests…"). A flag down-weights and caveats — it does not delete (a
+  spin page on a high-authority domain becomes a hedged/supporting mention,
+  never a load-bearing un-caveated claim). An unflagged source (empty
+  flags) is written exactly as the grounding rule dictates. Flag, don't
+  suppress.
 
   **Citation rendering:**
   - If citation_style == "wikilink" (default): every citation is a

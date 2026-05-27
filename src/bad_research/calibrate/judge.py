@@ -1,90 +1,127 @@
 """The 5-axis LLM-judge rubric (dossier 09 §B7; CLAUDE_RESEARCH.md:39; SPEC §14).
 
 A SINGLE strong-model call per report - NOT an ensemble (ensemble tested WORSE,
-dossier 09 §B7). Scores five axes 0.0-1.0; PASS iff every axis >= AXIS_PASS_THRESHOLD
-AND the mean >= OVERALL_PASS_THRESHOLD. OFFLINE calibration only - never a per-run gate.
+dossier 09 §B7). OFFLINE calibration only - never a per-run gate.
+
+E2 — CATEGORICAL RAILS, not numeric scores. Arize (verbatim,
+TRANSCRIPTS_DEEPLEARNINGAI.md:L4528-4532): "use categorical labels, NOT numeric
+scores — LLMs hallucinate numbers; rails = the allowed output labels." Each axis
+reads a rail in {pass, borderline, fail}; rails map to a pass-rate (pass=1.0,
+borderline=0.5, fail=0.0) for reporting. PASS iff NO axis is `fail` AND the
+pass-rate >= PASS_RATE_THRESHOLD. The grounding CitationVerifier's categorical
+`VerifyVerdict` is the model this follows.
 """
 
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Protocol
 
 from bad_research.calibrate.constants import (
-    AXIS_PASS_THRESHOLD,
     JUDGE_AXES,
     JUDGE_MAX_TOKENS,
     JUDGE_TEMPERATURE,
     JUDGE_TIER,
-    OVERALL_PASS_THRESHOLD,
+    PASS_RATE_THRESHOLD,
+    RAIL_CREDIT,
 )
 from bad_research.llm.base import LLMMessage, LLMProvider
 
 
-@dataclass
-class AxisScores:
-    factual: float
-    citation: float
-    completeness: float
-    source_quality: float
-    efficiency: float
+class JudgeRail(StrEnum):
+    """The Arize-style categorical rail set — words, not numbers. Mirrors the
+    grounding `VerifyVerdict` categorical model. Any token the model returns that
+    is not one of these reads as FAIL (a hallucinated label is a failure to grade,
+    treated conservatively)."""
 
-    def as_dict(self) -> dict[str, float]:
-        return {a: getattr(self, a) for a in JUDGE_AXES}
-
-    @staticmethod
-    def _clamp(x: float) -> float:
-        return max(0.0, min(1.0, float(x)))
+    PASS = "pass"
+    BORDERLINE = "borderline"
+    FAIL = "fail"
 
     @classmethod
-    def from_raw(cls, raw: dict) -> AxisScores:
-        return cls(**{a: cls._clamp(raw.get(a, 0.0)) for a in JUDGE_AXES})
+    def coerce(cls, token: object) -> JudgeRail:
+        try:
+            return cls(str(token).strip().lower())
+        except ValueError:
+            return cls.FAIL
+
+
+@dataclass
+class AxisRails:
+    """One categorical rail per axis (replaces the pre-E2 0.0-1.0 AxisScores)."""
+
+    factual: JudgeRail
+    citation: JudgeRail
+    completeness: JudgeRail
+    source_quality: JudgeRail
+    efficiency: JudgeRail
+
+    def as_dict(self) -> dict[str, JudgeRail]:
+        return {a: getattr(self, a) for a in JUDGE_AXES}
+
+    def as_str_dict(self) -> dict[str, str]:
+        return {a: getattr(self, a).value for a in JUDGE_AXES}
+
+    @classmethod
+    def from_raw(cls, raw: Mapping[str, object]) -> AxisRails:
+        """Coerce a {axis: rail-token} mapping into rails. Missing axes and
+        unknown/garbage tokens both degrade to FAIL — never a float, never a crash."""
+        return cls(**{a: JudgeRail.coerce(raw.get(a, "fail")) for a in JUDGE_AXES})
 
 
 @dataclass
 class JudgeVerdict:
-    scores: AxisScores
-    overall: float
+    """A categorical verdict: a rail per axis + the derived pass-rate + pass flag."""
+
+    rails: AxisRails
+    pass_rate: float
     passed: bool
     rationale: str
 
     @classmethod
-    def from_scores(cls, scores: AxisScores, *, rationale: str) -> JudgeVerdict:
-        vals = list(scores.as_dict().values())
-        overall = round(sum(vals) / len(vals), 9)
-        passed = (
-            all(v >= AXIS_PASS_THRESHOLD for v in vals) and overall >= OVERALL_PASS_THRESHOLD
-        )
-        return cls(scores=scores, overall=overall, passed=passed, rationale=rationale)
+    def from_rails(cls, rails: AxisRails, *, rationale: str) -> JudgeVerdict:
+        vals = list(rails.as_dict().values())
+        credit = [RAIL_CREDIT[r.value] for r in vals]
+        pass_rate = round(sum(credit) / len(credit), 9)
+        no_hard_fail = all(r is not JudgeRail.FAIL for r in vals)
+        passed = no_hard_fail and pass_rate >= PASS_RATE_THRESHOLD
+        return cls(rails=rails, pass_rate=pass_rate, passed=passed, rationale=rationale)
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, object]:
         return {
-            "scores": self.scores.as_dict(),
-            "overall": self.overall,
+            "rails": self.rails.as_str_dict(),
+            "pass_rate": self.pass_rate,
             "passed": self.passed,
             "rationale": self.rationale,
         }
 
 
 class Judge(Protocol):
-    def judge(self, query: str, report: str, corpus: list[dict]) -> JudgeVerdict: ...
+    def judge(self, query: str, report: str, corpus: list[dict[str, object]]) -> JudgeVerdict: ...
 
 
 @dataclass
 class StubJudge:
-    """Deterministic judge for tests/offline use. No LLM call."""
+    """Deterministic judge for tests/offline use. No LLM call, no keys.
 
-    scores: dict[str, float]
+    Accepts `rails={axis: "pass"|"borderline"|"fail"}`."""
 
-    def judge(self, query: str, report: str, corpus: list[dict]) -> JudgeVerdict:
-        s = AxisScores.from_raw(self.scores)
-        return JudgeVerdict.from_scores(s, rationale="stub")
+    rails: dict[str, str]
+
+    def judge(self, query: str, report: str, corpus: list[dict[str, object]]) -> JudgeVerdict:
+        r = AxisRails.from_raw(self.rails)
+        return JudgeVerdict.from_rails(r, rationale="stub")
 
 
 JUDGE_SYSTEM = (
-    "You are a rigorous, calibrated research-report judge. Score the report on five "
-    "axes, each from 0.0 to 1.0. Be strict; reserve >0.9 for excellent work.\n"
+    "You are a rigorous, calibrated research-report judge. Grade the report on five "
+    "axes. For EACH axis return ONE categorical label (a 'rail'), never a number — "
+    "rails are 'pass', 'borderline', or 'fail'. Be strict; reserve 'pass' for axes "
+    "that genuinely meet the bar, 'borderline' for partial/uncertain, 'fail' for a "
+    "clear miss.\n"
     "Axes:\n"
     "- factual: are claims accurate and supported by the provided corpus?\n"
     "- citation: does every non-trivial claim carry a citation that the corpus supports "
@@ -92,29 +129,30 @@ JUDGE_SYSTEM = (
     "- completeness: does the report cover the question's sub-parts using the corpus?\n"
     "- source_quality: are the cited sources authoritative and on-topic?\n"
     "- efficiency: is the report concise — no padding, no redundancy, right length?\n"
-    "Return ONLY a JSON object: "
-    '{"factual":0-1,"citation":0-1,"completeness":0-1,"source_quality":0-1,'
-    '"efficiency":0-1,"rationale":"<=2 sentences"}. No prose outside the JSON.'
+    'Return ONLY a JSON object: {"factual":"pass|borderline|fail",'
+    '"citation":"pass|borderline|fail","completeness":"pass|borderline|fail",'
+    '"source_quality":"pass|borderline|fail","efficiency":"pass|borderline|fail",'
+    '"rationale":"<=2 sentences"}. No numbers. No prose outside the JSON.'
 )
 
 
 @dataclass
 class LLMJudge:
-    """Single-call 5-axis judge over an LLMProvider (Plan 01 seam)."""
+    """Single-call 5-axis categorical judge over an LLMProvider (Plan 01 seam)."""
 
     provider: LLMProvider
     tier: str = JUDGE_TIER
 
-    def judge(self, query: str, report: str, corpus: list[dict]) -> JudgeVerdict:
+    def judge(self, query: str, report: str, corpus: list[dict[str, object]]) -> JudgeVerdict:
         corpus_block = "\n".join(
-            f"[{c.get('note_id', i)}] {c.get('url', '')}\n{c.get('text', '')[:1200]}"
+            f"[{c.get('note_id', i)}] {c.get('url', '')}\n{str(c.get('text', ''))[:1200]}"
             for i, c in enumerate(corpus)
         )
         user = (
             f"QUERY:\n{query}\n\n"
             f"CORPUS (the evidence the report had access to):\n{corpus_block}\n\n"
             f"REPORT TO JUDGE:\n{report}\n\n"
-            "Score now. JSON only."
+            "Grade now — one rail per axis. JSON only."
         )
         resp = self.provider.complete(
             [
@@ -126,29 +164,41 @@ class LLMJudge:
             temperature=JUDGE_TEMPERATURE,
         )
         raw = _extract_json(resp.text)
-        scores = AxisScores.from_raw(raw)
-        return JudgeVerdict.from_scores(scores, rationale=str(raw.get("rationale", "")))
+        rails = AxisRails.from_raw(raw)
+        return JudgeVerdict.from_rails(rails, rationale=str(raw.get("rationale", "")))
 
 
-def _extract_json(text: str) -> dict:
+def _extract_json(text: str) -> dict[str, object]:
     """Tolerant JSON extraction — handles ```json fences and leading/trailing prose."""
     text = text.strip()
     if "```" in text:
-        # take the content of the first fenced block that parses
+        # take the content of the first fenced block that parses to an object
         parts = text.split("```")
         for part in parts:
             part = part.removeprefix("json").strip()
             try:
-                return json.loads(part)
+                obj = json.loads(part)
             except json.JSONDecodeError:
                 continue
+            if isinstance(obj, dict):
+                return obj
     start, end = text.find("{"), text.rfind("}")
     if start != -1 and end != -1:
         try:
-            return json.loads(text[start : end + 1])
+            obj = json.loads(text[start : end + 1])
         except json.JSONDecodeError:
-            pass
-    return {a: 0.0 for a in JUDGE_AXES}
+            obj = None
+        if isinstance(obj, dict):
+            return obj
+    # No parseable object -> every axis fails (conservative; never floats).
+    return {a: "fail" for a in JUDGE_AXES}
 
 
-__all__ = ["AxisScores", "Judge", "JudgeVerdict", "LLMJudge", "StubJudge"]
+__all__ = [
+    "AxisRails",
+    "Judge",
+    "JudgeRail",
+    "JudgeVerdict",
+    "LLMJudge",
+    "StubJudge",
+]

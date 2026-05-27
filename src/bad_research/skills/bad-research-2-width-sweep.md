@@ -188,8 +188,32 @@ prompt: |
   OBJECTIVE: fetch and ground every URL in your batch into vault notes tagged
   <vault_tag>, chasing 3–8 primary sources via citation chains.
 
+  SOURCE-QUALITY NEGATIVE SIGNALS (down-weight or FLAG, do NOT suppress):
+  As you read each source, judge it against this list (Anthropic worker-prompt
+  discipline — the things a regex/domain check CANNOT see). FLAG the source; do NOT
+  silently drop it (the lead reconciles flags downstream — flag, don't suppress):
+  - news aggregators rather than original sources       -> flag `aggregator`
+  - false authority (cites authority it lacks / misattributes)  -> `false_authority`
+  - passive voice with nameless sources ("experts say", "it is reported")  -> `nameless_source`
+  - general qualifiers without specifics ("many", "often", "significant")  -> `vague_qualifier`
+  - unconfirmed reports (rumor not yet verified)        -> flag `unconfirmed`
+  - marketing language / spin language (promotional, sales copy)  -> `marketing_spin`
+  - speculation presented as finding                    -> flag `speculation`
+  - cherry-picked data (selective evidence, no counter-data)  -> `cherry_picked`
+  A source with NONE of these gets no flags (it is unchanged). A primary filing or
+  peer-reviewed paper is almost never flagged; a vendor "X is the best" listicle on a
+  good domain SHOULD be flagged `marketing_spin` even though its domain tier is high.
+
   OUTPUT_SHAPE: for each note, emit the claims JSON the binding consumes —
-  a JSON array of {claim, note_id, quoted_support, char_start, char_end}.
+  a JSON array of {claim, note_id, quoted_support, char_start, char_end,
+  source_quality_flags}. `source_quality_flags` is a (possibly empty) JSON array of
+  the flag strings above — e.g. [] for a clean primary, ["marketing_spin"] for a
+  vendor spin page. This field is ADDITIVE: downstream consumers (the anchor binding,
+  the uncited-gate) ignore unknown/extra fields. The flags are reconciled at SYNTHESIS:
+  the drafter/synthesizer down-weights and caveats any flagged source (a flagged claim
+  must be corroborated by an unflagged source or explicitly hedged, and is never the
+  lead) — flag, don't suppress. There is NO deterministic penalty; this is the
+  worker-flags / lead-reconciles discipline, applied in prose at draft+synthesis time.
 
   TOOLS_ALLOWED: ["fetch_url", "web_search", "execute_python"]
 
@@ -281,6 +305,66 @@ items (same well/adequate/thin/uncovered logic as before):
 
 ---
 
+## Step 2.7 — Distill each round into reflections (distilled-reflection memory)
+
+**Why this step exists:** between rounds the loop must carry only **distilled
+reflections**, never the raw source corpus. Re-reading every fetched note body on
+each re-retrieve round makes inter-round token growth *quadratic*
+(`n·m·(m+1)/2`); carrying a compact distilled memory keeps it **linear** (`n·m`) —
+a ~−66% token win (Tavily). The raw bodies stay on disk in the vault, retrievable
+by `note_id`; they are NOT re-injected until synthesis (step 10/11), and even then
+only for the `note_id`s a section will cite. The data to do this already exists —
+each fetcher emits `research/temp/claims-<note-id>.json` of shape
+`{claim, note_id, quoted_support, char_start, char_end}`, i.e. the distilled
+claims are already separated from the raw note body.
+
+After each fetch wave (the funnel return in Step 2.2, and again after each gap
+fetch in Step 2.5), **distill, then drop the raw body from working context**:
+
+1. **Distill each kept source to ≤3 claim bullets + its `note_id`.** Read the
+   source's `research/temp/claims-<note-id>.json` (the distilled claims — NOT the
+   raw note body). Pick the ≤3 most load-bearing claim bullets for the current
+   sub-question. The bullets are distilled claims, never raw prose.
+
+2. **Append one record per round / sub-question to `research/temp/reflections.md`**
+   (append-only — never overwrite a prior round's record; that is what keeps
+   growth linear). Each record:
+   ```markdown
+   ### Round <n> — <sub_question>
+
+   **Key findings (distilled):**
+   - <≤3 distilled claim bullets, each traceable to a claims-*.json claim>
+
+   **Open gaps:**
+   - <atomic items still thin/uncovered, contradictions still unresolved>
+
+   **Cited notes (vault):** <note_id>, <note_id>, …
+   <!-- reflection {"round": <n>, "sub_question": "...", "key_findings": [...], "open_gaps": [...], "cited_note_ids": [...]} -->
+   ```
+   The deterministic helper `retrieval/reflections.py` (`ReflectionLog.append`)
+   writes this block; the trailing HTML comment is the machine-parseable payload.
+
+3. **DROP the raw note body from working context.** Once a source is distilled to
+   its reflection bullets, do NOT keep its raw body (or the funnel's full
+   `top_chunks` text) in context. The raw body stays on disk in the vault, keyed
+   by `note_id` — that is the "disk is memory, context is scratchpad" invariant.
+
+4. **The re-retrieve decision + next-round query planning read
+   `research/temp/reflections.md` + its `open_gaps` — NOT the raw corpus.** When
+   deciding whether to fire another gap fetch (Step 2.5) and what to search for,
+   read the reflections artifact and the aggregated `open_gaps`; do NOT re-read
+   the raw note bodies. Re-reading the corpus each round is the quadratic-growth
+   anti-pattern this step exists to prevent. If `reflections.md` grows past the
+   ≤10K-token synthesis ceiling, compact it (`ReflectionLog.compact` drops the
+   oldest records, keeping the most-recent live gaps).
+
+**Grounding is preserved:** dropping the raw body from *context* does not drop the
+verbatim `quoted_support` spans — those live in `claims-*.json` + the vault note,
+and synthesis (step 10/11) re-injects them for the cited `note_id`s so the
+`uncited-gate` / `recitation-gate` / `anchors.py` still verify byte-for-byte.
+
+---
+
 ## Source count targets
 
 | Tier | Minimum sources | Target sources | Fetchers per wave | Waves |
@@ -316,6 +400,19 @@ prompt: |
   of ONE long source. Your digest feeds downstream Bad Research steps. You
   do NOT spawn other subagents.
 
+  SOURCE-QUALITY NEGATIVE SIGNALS (down-weight or FLAG, do NOT suppress):
+  Judge this long source against the Anthropic negative-signal list — flag, don't
+  suppress (the lead reconciles): news aggregators rather than original sources
+  (`aggregator`), false authority (`false_authority`), passive voice with nameless
+  sources (`nameless_source`), general qualifiers without specifics
+  (`vague_qualifier`), unconfirmed reports (`unconfirmed`), marketing/spin language
+  (`marketing_spin`), speculation presented as finding (`speculation`), cherry-picked
+  data (`cherry_picked`). Record any that apply as `source_quality_flags: [...]` (empty
+  if none) in your digest header so the synthesizer can reconcile it at draft time —
+  a flagged source is down-weighted and caveated (corroborated by an unflagged source
+  or explicitly hedged, never the lead), so a spin page on a high-authority domain is
+  still demoted in the report. Flag, don't suppress; there is no deterministic penalty.
+
   YOUR INPUTS:
   - source_note_id: <vault note id of the long source>
   - output_path: research/temp/source-analysis-<source_note_id>.md
@@ -329,6 +426,7 @@ prompt: |
 - Minimum source count met (per tier table)
 - Coverage check shows no `uncovered` atomic items (thin is acceptable)
 - `research/temp/coverage-gaps.md` written
+- `research/temp/reflections.md` written — one distilled record per round, raw bodies dropped from context
 - (For std/full): `research/temp/redundancy-audit.md` written if any claim files existed
 
 If you fall short after two waves, proceed anyway but ensure `coverage-gaps.md` lists what's missing so the drafter handles it.

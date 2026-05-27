@@ -8,10 +8,18 @@ from __future__ import annotations
 
 # --- The 5-axis LLM-judge rubric (dossier 09 §B7, CLAUDE_RESEARCH.md:39; SPEC §14) ---
 # Single strong-model call (NOT an ensemble — ensemble tested WORSE, dossier 09 §B7).
-# Each axis scored 0.0-1.0; PASS iff every axis >= AXIS_PASS_THRESHOLD AND mean >= OVERALL_PASS_THRESHOLD.
+#
+# E2 (Arize, TRANSCRIPTS_DEEPLEARNINGAI.md:L4528-4532): the judge emits a
+# CATEGORICAL RAIL per axis, NOT a 0.0-1.0 float — "LLMs hallucinate numbers;
+# words like correct/incorrect produce consistent labels. Rails = allowed output
+# labels." Each axis reads `pass | borderline | fail`; rails map to a pass-rate
+# (pass=1.0, borderline=0.5, fail=0.0) for reporting. PASS iff NO axis is `fail`
+# AND the pass-rate >= PASS_RATE_THRESHOLD. (The pre-E2 numeric floors are gone;
+# the CitationVerifier's categorical VerifyVerdict is the model we follow.)
 JUDGE_AXES = ("factual", "citation", "completeness", "source_quality", "efficiency")
-AXIS_PASS_THRESHOLD = 0.70  # per-axis floor                          [SPEC §8 0.70 bar reuse]
-OVERALL_PASS_THRESHOLD = 0.75  # mean across axes                     [dossier 09 §B7]
+JUDGE_RAILS = ("pass", "borderline", "fail")  # Arize: words, not numbers
+RAIL_CREDIT = {"pass": 1.0, "borderline": 0.5, "fail": 0.0}  # rail -> reporting credit
+PASS_RATE_THRESHOLD = 0.75  # mean rail-credit floor for a PASS      [was OVERALL 0.75]
 JUDGE_TIER = "heavy"  # Opus; Sonnet acceptable (dossier 09 §A4 table L223)
 JUDGE_MAX_TOKENS = 2048
 JUDGE_TEMPERATURE = 0.0  # deterministic scoring                      [cookbook]

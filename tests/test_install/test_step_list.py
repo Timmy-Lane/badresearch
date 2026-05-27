@@ -18,7 +18,8 @@ def test_step_list_has_new_stages():
         _BAD_RESEARCH_STEP_SKILLS.index("bad-research-query-router")
 
 
-def test_step_list_has_21_entries():
-    # 16 kept + 5 new
-    assert len(_BAD_RESEARCH_STEP_SKILLS) == 21
-    assert len(set(_BAD_RESEARCH_STEP_SKILLS)) == 21  # no dupes
+def test_step_list_has_22_entries():
+    # 16 kept + 5 prior new + 1 E11 plan-gate (bad-research-1.6-plan-gate)
+    assert len(_BAD_RESEARCH_STEP_SKILLS) == 22
+    assert len(set(_BAD_RESEARCH_STEP_SKILLS)) == 22  # no dupes
+    assert "bad-research-1.6-plan-gate" in _BAD_RESEARCH_STEP_SKILLS

@@ -27,7 +27,10 @@ def tiny_corpus() -> list[dict]:
 
 
 class StubLLM:
-    """Returns a canned 5-axis JSON verdict; records the prompt for assertions."""
+    """Returns a canned 5-axis JSON verdict; records the prompt for assertions.
+
+    E2 — the verdict is categorical RAILS (pass|borderline|fail per axis), not
+    0.0-1.0 floats."""
 
     name = "stub-llm"
 
@@ -35,11 +38,11 @@ class StubLLM:
         self.last_messages = None
         self.call_count = 0
         self._verdict = verdict or {
-            "factual": 0.9,
-            "citation": 0.85,
-            "completeness": 0.8,
-            "source_quality": 0.78,
-            "efficiency": 0.95,
+            "factual": "pass",
+            "citation": "pass",
+            "completeness": "pass",
+            "source_quality": "borderline",
+            "efficiency": "pass",
             "rationale": "well grounded",
         }
 

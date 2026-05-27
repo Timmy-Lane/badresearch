@@ -15,6 +15,10 @@ from typing import Any, Literal
 from bad_research.skills import routing_constants as R  # noqa: N812
 
 Route = Literal["agentic-fast", "light", "full"]
+QueryShape = Literal["straightforward", "breadth_first", "depth_first"]
+
+# The 3-way Claude Research fan-out-shape taxonomy (research_lead_agent.md:12-29).
+QUERY_SHAPES: tuple[QueryShape, ...] = ("straightforward", "breadth_first", "depth_first")
 
 
 def _atomic_count(decomp: dict[str, Any]) -> int:
@@ -171,6 +175,134 @@ def route_reason(decomp: dict[str, Any]) -> str:
     return f"light: {n} atomic item(s) / structured coverage, no full-tier trigger"
 
 
+def plan_gate_fires(
+    decomp: dict[str, Any],
+    *,
+    interactive: bool = False,
+    wrapped: bool = False,
+    auto: bool = False,
+    est_cost: float | None = None,
+) -> bool:
+    """E11 user-editable plan-gate trigger (Gemini collaborative_planning,
+    STEAL_LIST #3). Decides whether step bad-research-1.6-plan-gate should emit a
+    plan and pause for "approve / edit / proceed" before step 2 runs.
+
+    **This is a SEPARATE gate step — it does NOT and MUST NOT influence
+    classify_route.** It reads the same decomposition only to ask "is this run
+    expensive enough to be worth a human approval round-trip?"; the route output is
+    untouched (it merely reads `classify_route`'s decision, never mutates it).
+
+    Fires iff ALL of:
+      * `interactive` — a human is at the keyboard to approve/edit. The DEFAULT is
+        ``False`` so an automated caller (the eval gate, the test suite, any `-p`
+        run that doesn't opt in) NEVER gates.
+      * not `wrapped` and not `auto` — a wrapped run (`research/wrapper_contract.json`
+        present) or an `--auto` run carries a binding GOSPEL query that must not be
+        questioned (mirrors exactly how 0.5-clarify skips for wrapper/auto).
+      * EXPENSIVE — the route is `full`, OR the atomic-item count exceeds
+        `ROUTER_LIGHT_MAX_ATOMIC` (a broad survey the modality gate spared from
+        full but which is still wide enough to mis-scope), OR an explicit
+        `est_cost` is at/above `PLAN_GATE_COST_THRESHOLD`. A cheap bounded run
+        (agentic-fast / small light, no cost over threshold) is below the bar: a
+        wrong sub-question there costs less than the approval round-trip.
+
+    The interactivity flags are supplied by the orchestrator at step 1.6 (it knows
+    whether the session is interactive and whether wrapper_contract.json exists);
+    this keeps the predicate a pure, unit-testable function with no I/O.
+    """
+    if not interactive or wrapped or auto:
+        return False
+    route = classify_route(decomp)
+    return bool(
+        route == "full"
+        or _atomic_count(decomp) > R.ROUTER_LIGHT_MAX_ATOMIC
+        or (est_cost is not None and est_cost >= R.PLAN_GATE_COST_THRESHOLD)
+    )
+
+
+def _n_independent_subq(decomp: dict[str, Any]) -> int:
+    """The count of independent sub-questions the breadth-first parallel fan-out
+    can split across. Uses the atomic count (sub_questions + entities) — the same
+    taxonomy classify_route uses, so the two stay consistent without coupling."""
+    return _atomic_count(decomp)
+
+
+def classify_query_shape(decomp: dict[str, Any]) -> QueryShape:
+    """Classify the query's FAN-OUT SHAPE (E12, Claude Research
+    research_lead_agent.md:12-29) — ORTHOGONAL to the cost tier classify_route
+    decides. This determines how investigators are ARRANGED (single / parallel /
+    sequential), never how many resources the run gets.
+
+    **This function does NOT and MUST NOT influence classify_route.** It reads the
+    same decompose signals (modality + contestedness + atomic count) but feeds a
+    separate `query_shape` field; the route output is unchanged. (DESIGN classifier
+    from STEAL_LIST #2.)
+
+    Decision order:
+      1. depth_first  — one contested topic, multiple perspectives. A genuinely
+         contested query (contestedness >= floor) on a DEEP modality is depth-first
+         regardless of how few atomic items it carries: "going deep" on a singular
+         core question (research_lead_agent.md:13). Sequential perspectives.
+      2. straightforward — focused/well-defined: <= 2 atomic items / a single
+         entity, no curation breadth, not contested. One investigation.
+      3. breadth_first — the default for the rest: many independent sub-questions
+         / multiple entities (typically a collect/compare/survey modality).
+         Parallel, importance-ordered.
+    """
+    n = _n_independent_subq(decomp)
+    modality = detect_modality(decomp)
+    contested = contestedness_score(decomp) >= R.CONTESTEDNESS_FULL_FLOOR
+
+    # 1. depth-first: one topic, many perspectives. Contested + a deep (non-
+    #    breadth) modality = "go deep" on a singular core question.
+    if contested and modality not in R.BREADTH_MODALITIES:
+        return "depth_first"
+
+    # 2. straightforward: a focused, bounded single investigation.
+    if (n <= R.SHAPE_STRAIGHTFORWARD_MAX_ATOMIC
+            and modality not in R.BREADTH_MODALITIES
+            and not contested):
+        return "straightforward"
+
+    # 3. breadth-first: independent sub-questions / multiple entities → go wide.
+    #    This is the natural shape for collect/compare/survey and for any query
+    #    that splits into many parallel streams.
+    if modality in R.BREADTH_MODALITIES or n > R.SHAPE_STRAIGHTFORWARD_MAX_ATOMIC:
+        return "breadth_first"
+
+    # Fallback: a small, deep, uncontested query → single investigation.
+    return "straightforward"
+
+
+def shape_reason(decomp: dict[str, Any]) -> str:
+    """A one-line rationale for the chosen query_shape (the router skill writes it
+    next to the route rationale; the `bad route` CLI carries it as `shape_reason`)."""
+    shape = classify_query_shape(decomp)
+    n = _n_independent_subq(decomp)
+    modality = detect_modality(decomp)
+    if shape == "depth_first":
+        return (f"depth_first: one contested topic ({modality} modality), "
+                f"{R.SHAPE_DEPTH_MIN_PERSPECTIVES}-{R.SHAPE_DEPTH_MAX_PERSPECTIVES} "
+                "sequential perspectives on one locus")
+    if shape == "breadth_first":
+        k = min(n, R.SHAPE_BREADTH_K_CAP)
+        return (f"breadth_first: {n} independent sub-question(s) ({modality}), "
+                f"K={k} parallel investigators, importance-ordered")
+    return (f"straightforward: {n} atomic item(s), single focused investigation "
+            "(1 investigator)")
+
+
+def shape_fanout(decomp: dict[str, Any]) -> dict[str, Any]:
+    """Resolve SHAPE_FANOUT for this decomposition: the arrangement + the concrete
+    investigator count K. For breadth_first, K = min(n_independent_subq, cap)."""
+    shape = classify_query_shape(decomp)
+    spec = dict(R.SHAPE_FANOUT[shape])
+    if shape == "breadth_first":
+        spec["k"] = min(_n_independent_subq(decomp), R.SHAPE_BREADTH_K_CAP)
+    spec["shape"] = shape
+    return spec
+
+
 def effort_overrides(effort: str | None) -> dict[str, Any] | None:
     """Translate the `--reasoning-effort` dial (minimal/low/medium/high) into the
     router overrides the orchestrator applies on top of the auto-classified route.
@@ -187,7 +319,30 @@ def effort_overrides(effort: str | None) -> dict[str, Any] | None:
 
 def degrade_order() -> tuple[str, ...]:
     """The Claude token-ceiling degrade order (dossier 16 §6.2): cut tool-call
-    redundancy, then fan-out width, then model tier — NEVER the synthesis/grounding
-    token budget (the 80%-variance core). The orchestrator walks this list when a
-    run approaches its --max-tokens ceiling."""
+    redundancy, then fan-out width, then model tier, then — as the TERMINAL action
+    (E10 / STEAL_LIST #6c) — short_circuit_to_synthesis. NEVER the synthesis/grounding
+    token budget itself (the 80%-variance core). The orchestrator walks this list when
+    a run approaches its --max-tokens ceiling; the terminal step is taken when
+    should_short_circuit() fires."""
     return R.DEGRADE_ORDER
+
+
+def should_short_circuit(cumulative_tokens: int, ceiling: int | None) -> bool:
+    """E10 / STEAL_LIST #6c — the per-step short-circuit-to-synthesis predicate
+    (Perplexity "reserve budget for synthesis", PERPLEXITY_COMPUTER.md:434).
+
+    After each retrieval/critic ROUND the orchestrator calls this with the running
+    `cumulative_tokens` and the opt-in `--max-tokens` `ceiling`. It returns True when
+    the budget left for the rest of the run has fallen BELOW the reserved synthesis +
+    grounding budget — i.e. ``ceiling - cumulative < RESERVE_FOR_SYNTHESIS``. On True,
+    the orchestrator stops stepping (skips remaining retrieval/critic stages), takes
+    the terminal ``short_circuit_to_synthesis`` step of `degrade_order`, and jumps to
+    step 10/11 with whatever's been gathered — shipping a smaller-corpus grounded
+    report instead of dying mid-pipeline.
+
+    Inert when there is no ceiling (the `--max-tokens` cap is opt-in; ``None``/``0`` →
+    nothing to reserve → never short-circuit). The comparison is STRICT: a remaining
+    budget exactly equal to the reserve is still enough, so it does not fire."""
+    if not ceiling:   # None or 0 → no opt-in ceiling, never short-circuit
+        return False
+    return (ceiling - cumulative_tokens) < R.RESERVE_FOR_SYNTHESIS

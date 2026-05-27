@@ -61,6 +61,7 @@ When you invoke a Skill, that skill's full procedure is loaded into your context
 |---|---|---|---|
 | 0.5 | `bad-research-0.5-clarify` | Triage clarifier — ≤3 default-proceed questions before decompose | all (skipped only on `--auto`/wrapped runs) |
 | 1.5 | `bad-research-query-router` | Classify the decomposition into a route (`agentic-fast` / `light` / `full`) | all |
+| 1.6 | `bad-research-1.6-plan-gate` | User-editable plan-gate — emit the plan, pause for approve/edit/proceed | interactive + expensive only (skipped on non-interactive / `--auto` / wrapped / cheap runs) |
 | 11.5 | `bad-research-11.5-citation-verifier` | Backward grounding — bind every claim to a source note | full |
 | 12.5 | `bad-research-12.5-grader` | In-pipeline grader loop (judge → patch → re-judge, ≤3) — runs AFTER 13 despite its number (see the route table) | full |
 | 14.5 | `bad-research-fresh-review` | One fresh-context review pass | full |
@@ -69,11 +70,11 @@ When you invoke a Skill, that skill's full procedure is loaded into your context
 **Complete pipeline order (full tier), half-steps included:**
 
 ```
-0.5 → 1 → 1.5 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 11.5
+0.5 → 1 → 1.5 → 1.6 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 11.5
     → 12 → 13 → 12.5 → 14 → 14.5 → 15 → 16(+gate)
 ```
 
-`light` runs `0.5 → 1 → 1.5 → 2 → 10 → 15 → 16(+gate)`; `agentic-fast` runs `1 → 1.5 → agentic-fast → 15 → 16(+gate)`. See the per-route table below for cost/time.
+`light` runs `0.5 → 1 → 1.5 → 1.6 → 2 → 10 → 12(slim critic) → 15 → 16(+gate)`; `agentic-fast` runs `1 → 1.5 → agentic-fast → 12(slim critic) → 15 → 16(+gate)`. Step 1.6 (plan-gate) is present in the interactive expensive path and is a no-op (skipped) on every non-interactive / `--auto` / wrapped / cheap run. Step 12 on the light/agentic-fast routes is the **slim single adversarial critic** (E3) — one dialectic+instruction pass, no 4-critic fan-out, no patcher — NOT the full-tier critique. See the per-route table below for cost/time.
 
 ---
 
@@ -89,15 +90,26 @@ deep path (triple-draft ensemble + synthesis + adversarial critics + grader loop
 
 | Route | Step sequence | Cost | Time |
 |---|---|---|---|
-| `agentic-fast` | 0.5 → 1 → 1.5 → agentic-fast → 15 → 16(+gate) | ~$1–5 | <3 min |
-| `light` | 0.5 → 1 → 1.5 → 2(funnel) → 10(single draft) → 15 → 16(+gate) | ~$5–15 | ~30–40 min |
-| `full` | 0.5 → 1 → 1.5 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 11.5 → 12 → 13 → 12.5(grader loop) → 14 → 14.5(fresh-review) → 15 → 16(+gate+recitation) | ~$60–120 | ~1.5–2.5 h |
+| `agentic-fast` | 0.5 → 1 → 1.5 → agentic-fast → 12(slim critic) → 15 → 16(+gate) | ~$1–5 | <3 min |
+| `light` | 0.5 → 1 → 1.5 → 1.6 → 2(funnel) → 10(single draft) → 12(slim critic) → 15 → 16(+gate) | ~$5–15 | ~30–40 min |
+| `full` | 0.5 → 1 → 1.5 → 1.6 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 11.5 → 12 → 13 → 12.5(grader loop) → 14 → 14.5(fresh-review) → 15 → 16(+gate+recitation) | ~$60–120 | ~1.5–2.5 h |
 
 **On 0.5 (clarify):** the route — including `agentic-fast` — is only decided at step 1.5, *after* 0.5 has already run, so 0.5 normally runs first on every interactive run. 0.5 is skipped **only on `--auto`/wrapped runs** (a wrapped run is one where `research/wrapper_contract.json` is present and the query is binding GOSPEL not to be questioned). `16(+gate)` is shorthand for "step 16 plus the deterministic no-uncited-claim ship-gate that runs after it on every route" — a *ship-gate* is a blocking quality check that must pass before the report can be delivered.
+
+**On 1.6 (plan-gate):** runs AFTER the route is known (step 1.5), only on an
+**interactive + expensive** run — it emits the plan (sub-questions + per-sub-q source
+strategy + route + a rough cost/time estimate) and pauses for approve/edit/proceed.
+It is **skipped (a no-op) on every non-interactive / `--auto` / wrapped / cheap run** —
+exactly the runs that must flow straight through (the eval gate, the test suite, any
+`-p` pipeline). The deterministic trigger is `router.py::plan_gate_fires` (surfaced by
+`bad route --interactive --json` as `plan_gate.would_gate`). It is a **separate gate**:
+it NEVER changes the route, and on edit it patches only the `sub_questions` the
+downstream steps research — not the cost tier.
 
 Where the half-step numbers map to:
 - 0.5 → `Skill(skill: "bad-research-0.5-clarify")` (triage clarifier; runs first on every interactive run, skipped only on `--auto`/wrapped runs)
 - 1.5 → `Skill(skill: "bad-research-query-router")` (the route decision)
+- 1.6 → `Skill(skill: "bad-research-1.6-plan-gate")` (user-editable plan-gate; interactive + expensive only, skipped on non-interactive / `--auto` / wrapped / cheap runs)
 - agentic-fast → `Skill(skill: "bad-research-agentic-fast")` (bounded-ReAct = a step-capped Reason+Act loop; replaces 2–14)
 - 11.5 → `Skill(skill: "bad-research-11.5-citation-verifier")` (backward grounding = binding each report claim back to its source note; full only)
 - 12.5 → `Skill(skill: "bad-research-12.5-grader")` (in-pipeline grader loop: judge→patch→re-judge ≤3; full only — slots between critics/gap-fetch and the patcher's final convergence)
@@ -131,7 +143,17 @@ in **Claude's order — cut tokens LAST** (`skills/router.py::degrade_order`):
 1. cut tool-call redundancy first (skip the redundancy-audit sub-step)
 2. then cut fan-out width (fewer fetchers / fewer loci)
 3. then cut model tier (heavy → light on non-critical steps)
-4. NEVER cut the synthesis / grounding token budget — that's the 80%-variance core.
+4. **terminal — short-circuit to synthesis** (`short_circuit_to_synthesis`): after
+   **each retrieval/critic round**, call
+   `skills/router.py::should_short_circuit(cumulative_tokens, ceiling)`. When it
+   returns true — i.e. `ceiling − cumulative < RESERVE_FOR_SYNTHESIS`
+   (`skills/routing_constants.py::RESERVE_FOR_SYNTHESIS`) — **stop stepping**: skip
+   the remaining retrieval/critic stages and jump straight to step 10/11 (synthesis)
+   with whatever's been gathered. You ship a smaller-corpus *grounded* report rather
+   than dying mid-pipeline. This is Perplexity's "reserve budget for synthesis."
+5. NEVER cut the synthesis / grounding token budget itself — that's the 80%-variance
+   core. The short-circuit above *protects* that reserved budget; it never spends it
+   on more retrieval.
 
 The ceiling is opt-in; the default is the existing per-tier budget. We surface a
 count, not a billing system.
@@ -203,11 +225,20 @@ Before you invoke any step skill, do this:
    It runs `bad route --apply` over the decomposition and writes the `route`
    field into `research/prompt-decomposition.json`.
 
-After step 1.5 returns, read `research/prompt-decomposition.json` for the `route`,
-then continue invoking step skills per the mode table above. For `agentic-fast`,
-invoke `Skill(skill: "bad-research-agentic-fast")` then jump to step 15 polish +
-step 16 gate. After each step's exit criterion is met, mark its todo complete and
-move to the next.
+10. **Invoke step 1.6 (the plan-gate)** for `light`/`full` routes:
+    `Skill(skill: "bad-research-1.6-plan-gate")`. It self-decides via
+    `bad route --interactive --json` (`plan_gate.would_gate`) whether to pause:
+    on an interactive + expensive run it emits the plan and waits for
+    approve/edit/proceed; on a non-interactive / `--auto` / wrapped / cheap run it
+    is a no-op and returns immediately. **Skip it for `agentic-fast`** (a cheap
+    bounded run is never gated). This step never changes the route.
+
+After step 1.5 (and the 1.6 plan-gate where it applies) returns, read
+`research/prompt-decomposition.json` for the `route`, then continue invoking step
+skills per the mode table above. For `agentic-fast`, invoke
+`Skill(skill: "bad-research-agentic-fast")` then jump to step 15 polish + step 16
+gate. After each step's exit criterion is met, mark its todo complete and move to
+the next.
 
 ---
 

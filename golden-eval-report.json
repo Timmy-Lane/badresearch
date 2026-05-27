@@ -1,0 +1,179 @@
+{
+  "pass_rate": 1.0,
+  "total": 8,
+  "components": {
+    "decompose": 1.0,
+    "retrieval": 1.0,
+    "synthesis": 1.0
+  },
+  "cases": [
+    {
+      "id": "01_causal_light",
+      "passed": true,
+      "verdict": {
+        "rails": {
+          "factual": "pass",
+          "citation": "pass",
+          "completeness": "pass",
+          "source_quality": "pass",
+          "efficiency": "pass"
+        },
+        "pass_rate": 1.0,
+        "passed": true,
+        "rationale": "deterministic offline rubric"
+      },
+      "components": {
+        "decompose": true,
+        "retrieval": true,
+        "synthesis": true
+      }
+    },
+    {
+      "id": "02_comparison",
+      "passed": true,
+      "verdict": {
+        "rails": {
+          "factual": "pass",
+          "citation": "pass",
+          "completeness": "pass",
+          "source_quality": "pass",
+          "efficiency": "pass"
+        },
+        "pass_rate": 1.0,
+        "passed": true,
+        "rationale": "deterministic offline rubric"
+      },
+      "components": {
+        "decompose": true,
+        "retrieval": true,
+        "synthesis": true
+      }
+    },
+    {
+      "id": "03_multidomain_full",
+      "passed": true,
+      "verdict": {
+        "rails": {
+          "factual": "pass",
+          "citation": "pass",
+          "completeness": "pass",
+          "source_quality": "pass",
+          "efficiency": "pass"
+        },
+        "pass_rate": 1.0,
+        "passed": true,
+        "rationale": "deterministic offline rubric"
+      },
+      "components": {
+        "decompose": true,
+        "retrieval": true,
+        "synthesis": true
+      }
+    },
+    {
+      "id": "04_contested_argumentative",
+      "passed": true,
+      "verdict": {
+        "rails": {
+          "factual": "pass",
+          "citation": "pass",
+          "completeness": "pass",
+          "source_quality": "pass",
+          "efficiency": "pass"
+        },
+        "pass_rate": 1.0,
+        "passed": true,
+        "rationale": "deterministic offline rubric"
+      },
+      "components": {
+        "decompose": true,
+        "retrieval": true,
+        "synthesis": true
+      }
+    },
+    {
+      "id": "05_definitional",
+      "passed": true,
+      "verdict": {
+        "rails": {
+          "factual": "pass",
+          "citation": "pass",
+          "completeness": "pass",
+          "source_quality": "pass",
+          "efficiency": "pass"
+        },
+        "pass_rate": 1.0,
+        "passed": true,
+        "rationale": "deterministic offline rubric"
+      },
+      "components": {
+        "decompose": true,
+        "retrieval": true,
+        "synthesis": true
+      }
+    },
+    {
+      "id": "06_recency_temporal",
+      "passed": true,
+      "verdict": {
+        "rails": {
+          "factual": "pass",
+          "citation": "pass",
+          "completeness": "pass",
+          "source_quality": "pass",
+          "efficiency": "pass"
+        },
+        "pass_rate": 1.0,
+        "passed": true,
+        "rationale": "deterministic offline rubric"
+      },
+      "components": {
+        "decompose": true,
+        "retrieval": true,
+        "synthesis": true
+      }
+    },
+    {
+      "id": "07_breadth_list",
+      "passed": true,
+      "verdict": {
+        "rails": {
+          "factual": "pass",
+          "citation": "pass",
+          "completeness": "pass",
+          "source_quality": "pass",
+          "efficiency": "pass"
+        },
+        "pass_rate": 1.0,
+        "passed": true,
+        "rationale": "deterministic offline rubric"
+      },
+      "components": {
+        "decompose": true,
+        "retrieval": true,
+        "synthesis": true
+      }
+    },
+    {
+      "id": "08_numeric_precise",
+      "passed": true,
+      "verdict": {
+        "rails": {
+          "factual": "pass",
+          "citation": "pass",
+          "completeness": "pass",
+          "source_quality": "pass",
+          "efficiency": "pass"
+        },
+        "pass_rate": 1.0,
+        "passed": true,
+        "rationale": "deterministic offline rubric"
+      },
+      "components": {
+        "decompose": true,
+        "retrieval": true,
+        "synthesis": true
+      }
+    }
+  ]
+}

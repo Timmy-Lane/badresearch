@@ -23,19 +23,58 @@ if TYPE_CHECKING:
 def route_cmd(
     decomposition: str = typer.Option(..., "--decomposition"),
     apply: bool = typer.Option(False, "--apply"),
+    interactive: bool = typer.Option(False, "--interactive"),
+    wrapped: bool = typer.Option(False, "--wrapped"),
+    auto: bool = typer.Option(False, "--auto"),
+    est_cost: float | None = typer.Option(None, "--est-cost"),
     json_output: bool = typer.Option(False, "--json", "-j"),
 ) -> None:
-    """Classify a Step-1 decomposition into a pipeline route (agentic-fast|light|full)."""
-    from bad_research.skills.router import classify_route, route_reason
+    """Classify a Step-1 decomposition into a pipeline route (agentic-fast|light|full).
+
+    Also emits `query_shape` (E12, Claude Research) — the fan-out SHAPE
+    (straightforward|breadth_first|depth_first), ORTHOGONAL to the route. The
+    shape ADDS the investigator arrangement (single|parallel|sequential); it does
+    NOT change the route decision.
+
+    Emits `plan_gate.would_gate` (E11, Gemini collaborative_planning) — whether step
+    1.6 should pause to show a plan for approval. It is a SEPARATE gate signal; it
+    NEVER changes the route. The flags default OFF, so a run that does NOT pass
+    `--interactive` (the eval gate, the test suite, any wrapped/`--auto` run) reports
+    `would_gate: false` and flows straight through.
+    """
+    from bad_research.skills.router import (
+        classify_query_shape,
+        classify_route,
+        plan_gate_fires,
+        route_reason,
+        shape_reason,
+    )
 
     path = Path(decomposition)
     decomp = json.loads(path.read_text(encoding="utf-8"))
     route = classify_route(decomp)
+    shape = classify_query_shape(decomp)
+    would_gate = plan_gate_fires(
+        decomp, interactive=interactive, wrapped=wrapped, auto=auto, est_cost=est_cost
+    )
     if apply:
         decomp["route"] = route
+        decomp["query_shape"] = shape
         path.write_text(json.dumps(decomp, indent=2), encoding="utf-8")
-    out = {"route": route, "reason": route_reason(decomp), "applied": apply}
-    typer.echo(json.dumps(out) if json_output else f"route: {route}")
+    out = {
+        "route": route,
+        "reason": route_reason(decomp),
+        "query_shape": shape,
+        "shape_reason": shape_reason(decomp),
+        "applied": apply,
+        "plan_gate": {
+            "would_gate": would_gate,
+            "interactive": interactive,
+            "wrapped": wrapped,
+            "auto": auto,
+        },
+    }
+    typer.echo(json.dumps(out) if json_output else f"route: {route}  shape: {shape}")
 
 
 # ── funnel-gather (Task 6/9/12) — the §6 scraper funnel ──────────────────────
@@ -218,7 +257,9 @@ def _build_embedder(cfg: object) -> object | None:
 
 def _build_reranker(cfg: object) -> object:
     """Keyless default reranker = ClaudeCodeReranker (host-model LLM-rerank, KR-5).
-    config.reranker selects host|local|none; the factory resolves it. Cohere is GONE."""
+    config.reranker selects host|local|light|zerank2|none; the factory resolves it.
+    "local"/"light" → ms-marco-MiniLM ([local]); "zerank2" → the zerank-2 opt-in
+    ([local], +8.7pp NDCG@10, CC-BY-NC; E14). Cohere is GONE."""
     from bad_research.retrieval.rerank import get_reranker
 
     return get_reranker(cfg)
@@ -245,8 +286,14 @@ def retrieve_cmd(
 
 
 # ── verify-citations (Task 8/11/12) — backward grounding ─────────────────────
-def _verify_report(report_path: str, vault_tag: str) -> list[dict]:
-    """Adapter: load report + AnchorStore + note bodies, run CitationVerifier."""
+def _verify_report(
+    report_path: str, vault_tag: str, *, effort: str | None = None
+) -> list[dict]:
+    """Adapter: load report + AnchorStore + note bodies, run CitationVerifier.
+
+    `effort` is threaded into the verifier (E4): on `effort="high"` the Tier-C
+    high-stakes band is decided by the N-sample self-consistency vote rather than the
+    single batched judge. None / minimal / low / medium keep the default judge."""
     import sqlite3
     from dataclasses import asdict, is_dataclass
 
@@ -274,9 +321,13 @@ def _verify_report(report_path: str, vault_tag: str) -> list[dict]:
 
     # get_llm_provider(name, **kwargs) forwards kwargs to AnthropicProvider, whose
     # signature is AnthropicProvider(api_key=None, config=None) — pass cfg via config=.
-    # default_nli() auto-selects the real cross-encoder entailment lane when the
-    # [local] stack is installed, else the keyless citation-present no-op (no torch).
-    verifier = CitationVerifier(nli=default_nli(), llm=get_llm_provider("anthropic", config=cfg))
+    # default_nli(llm=…) auto-selects the entailment lane: real cross-encoder when the
+    # [local] stack is installed; else the keyless HostJudgeNLI (E9) — the lexical
+    # pre-filter routes the paraphrase band into the host model's batched judge so
+    # citation-drift on paraphrased claims is caught keyless (no new key/$). Threading
+    # the same host provider into both the NLI and the verifier keeps one model seam.
+    llm = get_llm_provider("anthropic", config=cfg)
+    verifier = CitationVerifier(nli=default_nli(llm=llm), llm=llm, effort=effort)
     result = verifier.verify(report_md, store, note_bodies)
     findings = getattr(result, "findings", result)
     out = []
@@ -288,10 +339,22 @@ def _verify_report(report_path: str, vault_tag: str) -> list[dict]:
 def verify_citations_cmd(
     report: str = typer.Option(..., "--report"),
     vault_tag: str = typer.Option(..., "--vault-tag"),
+    reasoning_effort: str = typer.Option(
+        None, "--reasoning-effort", "--effort",
+        help="minimal|low|medium|high; 'high' enables the E4 self-consistency vote on "
+             "high-stakes (NLI-ambiguous) claims (N host samples; keyless).",
+    ),
     json_output: bool = typer.Option(False, "--json", "-j"),
 ) -> None:
-    """Run the CitationVerifier over a report. Returns per-sentence dispositions."""
-    typer.echo(json.dumps({"results": _verify_report(report, vault_tag)}, default=str))
+    """Run the CitationVerifier over a report. Returns per-sentence dispositions.
+
+    `--effort high` turns on the self-consistency lane (E4): the Tier-C band is decided by
+    an N-sample vote (universal self-consistency) instead of the single batched judge.
+    Default effort is unchanged (no extra calls)."""
+    typer.echo(json.dumps(
+        {"results": _verify_report(report, vault_tag, effort=reasoning_effort)},
+        default=str,
+    ))
 
 
 # ── uncited-gate (Task 9/12) — deterministic ship-block, $0 ──────────────────

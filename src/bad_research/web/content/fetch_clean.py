@@ -23,7 +23,8 @@ import platformdirs
 from bs4 import BeautifulSoup
 
 # --- frozen constants (docs/INTERFACES_KEYLESS.md §8 + dossier 12) -------------
-CACHE_TTL = 14 * 86400          # 14-day content cache TTL (dossier 12 §9 step 9)
+CACHE_TTL = 14 * 86400          # 14-day content-cache TTL (dossier 12 §9 step 9) — the
+                                # single enforced freshness window for the url->content cache.
 PRUNING_THRESHOLD = 0.48        # PruningContentFilter dynamic threshold (dossier 12 §3.3)
 NEEDS_JS_FLOOR = 200            # visible-text char floor to escalate to JS render (§1.1)
 MAIN_CONTENT_FLOOR = 200        # trafilatura fallback when pruning yields < this (§3.5)
@@ -476,6 +477,62 @@ def llm_clean(markdown: str) -> str:
     )
 
 
+_INDEX_FILES = ("index.html", "index.htm", "index.php", "index.asp", "index.aspx",
+                "default.html", "default.htm", "default.asp", "default.aspx")
+
+
+def normalize_url(url: str) -> str:
+    """Firecrawl-style URL canonicalization for the content-cache key (STEAL_LIST
+    #6a / E13). Two URLs that fetch the SAME page must collapse to ONE cache key,
+    so the cache serves all variants of a page from a single live fetch.
+
+    Normalization (verbatim Firecrawl rules):
+      * force the scheme to https (http/https serve the same content; treating
+        them as distinct doubles the miss rate),
+      * lowercase the HOST only (the path is case-significant; never touch it),
+      * strip a leading ``www.`` from the host,
+      * drop the default port (``:80``/``:443``),
+      * strip the fragment (``#…`` is client-only, never sent to the server),
+      * strip a trailing directory-index file (``…/index.html`` ≡ ``…/``).
+
+    Query strings are PRESERVED (``?id=2`` is a different page than ``?id=3``).
+    A malformed URL returns unchanged (the SSRF guard on the live path is the
+    real gatekeeper; normalization is only the cache key)."""
+    from urllib.parse import urlsplit, urlunsplit
+
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return url
+    host = (parts.hostname or "").lower()
+    if host.startswith("www."):
+        host = host[4:]
+    # IPv6 literal: urlsplit().hostname strips the brackets — re-add them so the
+    # reassembled netloc is valid (cache-key only; the live fetch uses the raw URL).
+    hostpart = f"[{host}]" if ":" in host else host
+    # keep an explicit non-default port; drop :80/:443
+    port = parts.port
+    netloc = f"{hostpart}:{port}" if port is not None and port not in (80, 443) else hostpart
+    # carry userinfo through unchanged if present (rare, but don't silently drop)
+    if parts.username:
+        cred = parts.username + (f":{parts.password}" if parts.password else "")
+        netloc = f"{cred}@{netloc}"
+    path = parts.path
+    for idx in _INDEX_FILES:
+        if path.endswith("/" + idx):
+            path = path[: -len(idx)]   # …/index.html -> …/
+            break
+        if path == "/" + idx:
+            path = "/"
+            break
+    return urlunsplit(("https", netloc, path, parts.query, ""))
+
+
+def _url_key(url: str) -> str:
+    """The cache primary key: sha256 of the NORMALIZED url (E13)."""
+    return hashlib.sha256(normalize_url(url).encode()).hexdigest()
+
+
 def _cache_conn() -> sqlite3.Connection:
     CACHE_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(CACHE_DB_PATH)
@@ -487,12 +544,15 @@ def _cache_conn() -> sqlite3.Connection:
 
 
 def cache_get(url: str) -> dict[str, Any] | None:
-    """Return a cached result dict if present and within CACHE_TTL, else None (§0 rung 0)."""
+    """Return a cached result dict if present and within CACHE_TTL, else None (§0 rung 0).
+
+    The key is ``sha256(normalize_url(url))`` so http/https/www/fragment/default-port
+    variants of the same page all hit the one entry (E13 / STEAL_LIST #6a)."""
     conn = _cache_conn()
     try:
         row = conn.execute(
             "SELECT payload, ts FROM content_cache WHERE url_hash = ?",
-            (hashlib.sha256(url.encode()).hexdigest(),),
+            (_url_key(url),),
         ).fetchone()
     finally:
         conn.close()
@@ -509,7 +569,7 @@ def cache_put(url: str, result: dict[str, Any]) -> None:
     try:
         conn.execute(
             "INSERT OR REPLACE INTO content_cache (url_hash, payload, ts) VALUES (?,?,?)",
-            (hashlib.sha256(url.encode()).hexdigest(), json.dumps(result), int(time.time())),
+            (_url_key(url), json.dumps(result), int(time.time())),
         )
         conn.commit()
     finally:

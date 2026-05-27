@@ -21,7 +21,7 @@ def source_id(url: str) -> str:
     return hashlib.sha256(canon.encode("utf-8")).hexdigest()[:16]
 
 
-def build_source_row(result: WebResult, *, fetch_provider: str, fetch_tier: int) -> dict:
+def build_source_row(result: WebResult, *, fetch_provider: str, fetch_tier: int) -> dict[str, object]:
     """Build the `sources` row dict for a fetched WebResult.
 
     fetch_tier is the Tier 0-3 fetch ladder level (browse/base.fetch_tiered), distinct

@@ -31,7 +31,7 @@ class BadRunOutput:
     """What the bad-research runner returns for one query."""
 
     report: str
-    corpus: list[dict]
+    corpus: list[dict[str, object]]
     cost: CostMeter
 
 
@@ -55,13 +55,13 @@ class CalibrationReport:
     baselines: list[SystemResult] = field(default_factory=list)
 
     def delta_vs(self, baseline_name: str) -> float:
-        """bad-research overall minus the named baseline's overall (positive = we win)."""
+        """bad-research pass-rate minus the named baseline's (positive = we win)."""
         for b in self.baselines:
             if b.name == baseline_name:
-                return round(self.bad.verdict.overall - b.verdict.overall, 9)
+                return round(self.bad.verdict.pass_rate - b.verdict.pass_rate, 9)
         raise KeyError(baseline_name)
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, object]:
         return {
             "query": self.query,
             "bad": {
@@ -86,24 +86,24 @@ class CalibrationReport:
             f"**Query:** {self.query}",
             "",
             "## bad-research",
-            f"- overall: **{v.overall:.3f}** — {'PASS' if v.passed else 'FAIL'}",
+            f"- pass-rate: **{v.pass_rate:.3f}** — {'PASS' if v.passed else 'FAIL'}",
             f"- cost: **${self.bad.cost_usd:.4f}**",
-            "- axes:",
+            "- axes (categorical rails):",
         ]
-        for axis, score in v.scores.as_dict().items():
-            lines.append(f"  - {axis}: {score:.2f}")
+        for axis, rail in v.rails.as_str_dict().items():
+            lines.append(f"  - {axis}: {rail}")
         lines.append(f"- rationale: {v.rationale}")
         if self.baselines:
             lines += [
                 "",
                 "## Baselines",
                 "",
-                "| system | overall | pass | cost | delta (bad-base) |",
+                "| system | pass-rate | pass | cost | delta (bad-base) |",
                 "|---|---|---|---|---|",
             ]
             for b in self.baselines:
                 lines.append(
-                    f"| {b.name} | {b.verdict.overall:.3f} | "
+                    f"| {b.name} | {b.verdict.pass_rate:.3f} | "
                     f"{'PASS' if b.verdict.passed else 'FAIL'} | ${b.cost_usd:.4f} | "
                     f"{self.delta_vs(b.name):+.3f} |"
                 )

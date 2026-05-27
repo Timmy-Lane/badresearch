@@ -40,6 +40,82 @@ def test_route_apply_idempotent_and_reason_present(tmp_path):
     assert out["reason"]
 
 
+def test_route_command_emits_query_shape(tmp_path):
+    # E12: the route CLI also emits query_shape (fan-out shape) + shape_reason,
+    # ORTHOGONAL to the route. A single-entity factual is `straightforward`.
+    d = tmp_path / "decomp.json"
+    d.write_text(json.dumps({"sub_questions": ["what is the population of Tokyo"],
+                             "entities": ["Tokyo"], "response_format": "short",
+                             "time_periods": [], "contradiction_terms": [],
+                             "domains": ["geo"]}))
+    res = runner.invoke(app, ["route", "--decomposition", str(d), "--json"])
+    assert res.exit_code == 0
+    out = json.loads(res.stdout)
+    assert out["query_shape"] == "straightforward"
+    assert out["shape_reason"]
+    # the route field is still the unchanged agentic-fast classification
+    assert out["route"] == "agentic-fast"
+
+
+def test_route_apply_writes_query_shape_field(tmp_path):
+    # a multi-entity survey applies a `breadth_first` shape WITHOUT changing route
+    d = tmp_path / "decomp.json"
+    d.write_text(json.dumps({"sub_questions": [f"metric {i}" for i in range(8)],
+                             "entities": ["Norway", "Sweden", "Denmark"],
+                             "response_format": "structured", "modality": "compare",
+                             "time_periods": [], "contradiction_terms": [],
+                             "domains": ["econ"]}))
+    res = runner.invoke(app, ["route", "--decomposition", str(d), "--apply", "--json"])
+    assert res.exit_code == 0
+    written = json.loads(d.read_text())
+    assert written["query_shape"] == "breadth_first"
+    # route is whatever it was before E12 (the B-5 survey down-route still holds)
+    assert written["route"] == "light"
+
+
+# ── E11 plan-gate: route CLI reports the gate decision (default = no gate) ─────
+
+def test_route_plan_gate_default_is_false(tmp_path):
+    # Default (no interactivity flag): non-interactive → plan_gate.would_gate False,
+    # even for a full-tier query. This is what keeps automated runs flowing through.
+    d = tmp_path / "decomp.json"
+    d.write_text(json.dumps({"sub_questions": [f"q{i}" for i in range(8)],
+                             "entities": [], "response_format": "argumentative",
+                             "time_periods": [], "contradiction_terms": ["vs"],
+                             "domains": ["a"]}))
+    res = runner.invoke(app, ["route", "--decomposition", str(d), "--json"])
+    assert res.exit_code == 0
+    out = json.loads(res.stdout)
+    assert out["route"] == "full"
+    assert out["plan_gate"]["would_gate"] is False
+
+
+def test_route_plan_gate_interactive_full_fires(tmp_path):
+    d = tmp_path / "decomp.json"
+    d.write_text(json.dumps({"sub_questions": [f"q{i}" for i in range(8)],
+                             "entities": [], "response_format": "argumentative",
+                             "time_periods": [], "contradiction_terms": ["vs"],
+                             "domains": ["a"]}))
+    res = runner.invoke(app, ["route", "--decomposition", str(d),
+                              "--interactive", "--json"])
+    assert res.exit_code == 0
+    out = json.loads(res.stdout)
+    assert out["plan_gate"]["would_gate"] is True
+
+
+def test_route_plan_gate_interactive_but_wrapped_does_not_fire(tmp_path):
+    d = tmp_path / "decomp.json"
+    d.write_text(json.dumps({"sub_questions": [f"q{i}" for i in range(8)],
+                             "entities": [], "response_format": "argumentative",
+                             "time_periods": [], "contradiction_terms": ["vs"],
+                             "domains": ["a"]}))
+    res = runner.invoke(app, ["route", "--decomposition", str(d),
+                              "--interactive", "--wrapped", "--json"])
+    assert res.exit_code == 0
+    out = json.loads(res.stdout)
+    assert out["plan_gate"]["would_gate"] is False
+
+
 def test_uncited_gate_command_registered():
     res = runner.invoke(app, ["uncited-gate", "--help"])
     assert res.exit_code == 0
@@ -106,3 +182,63 @@ def test_all_research_subcommands_registered():
     for cmd in ("route", "funnel-gather", "retrieve", "verify-citations", "uncited-gate"):
         res = runner.invoke(app, [cmd, "--help"])
         assert res.exit_code == 0, cmd
+
+
+def test_verify_citations_accepts_effort_flag():
+    # E4: verify-citations exposes --effort so the high-effort self-consistency lane
+    # can be turned on for high-stakes verification (--effort high). The flag is
+    # documented in the command help.
+    res = runner.invoke(app, ["verify-citations", "--help"])
+    assert res.exit_code == 0
+    assert "--effort" in res.stdout or "--reasoning-effort" in res.stdout
+
+
+def test_verify_report_threads_effort_into_verifier(tmp_path, monkeypatch):
+    # The --effort value reaches CitationVerifier.effort (so the high-effort vote
+    # actually fires on a real run, not just when constructed directly in a test).
+    import bad_research.cli.research as research_mod
+    from bad_research.grounding import verifier as verifier_mod
+
+    captured: dict[str, object] = {}
+    real_init = verifier_mod.CitationVerifier.__init__
+
+    def _spy_init(self, *, nli, llm, effort=None):
+        captured["effort"] = effort
+        real_init(self, nli=nli, llm=llm, effort=effort)
+
+    monkeypatch.setattr(verifier_mod.CitationVerifier, "__init__", _spy_init)
+
+    # Stub the heavy adapter pieces so _verify_report runs offline.
+    class _Vault:
+        root = str(tmp_path)
+
+    monkeypatch.setattr(research_mod, "_verify_report", research_mod._verify_report)
+    from bad_research.core.vault import Vault
+
+    monkeypatch.setattr(Vault, "discover", classmethod(lambda cls: _Vault()))
+
+    class _Cfg:
+        @staticmethod
+        def load():
+            return _Cfg()
+
+    from bad_research.config import BadResearchConfig
+
+    monkeypatch.setattr(BadResearchConfig, "load", staticmethod(lambda: _Cfg()))
+
+    class _LLM:
+        name = "stub"
+
+        def complete(self, *a, **k):  # never called on an empty report
+            raise AssertionError("no LLM expected on an empty report")
+
+    monkeypatch.setattr(research_mod, "get_llm_provider", lambda *a, **k: _LLM(), raising=False)
+    import bad_research.llm.base as llm_base
+
+    monkeypatch.setattr(llm_base, "get_llm_provider", lambda *a, **k: _LLM())
+
+    report = tmp_path / "report.md"
+    report.write_text("Just an intro with no citations.\n", encoding="utf-8")
+
+    research_mod._verify_report(str(report), "tag-1", effort="high")
+    assert captured["effort"] == "high"

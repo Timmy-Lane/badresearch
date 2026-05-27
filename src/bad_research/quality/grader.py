@@ -11,20 +11,22 @@ from dataclasses import dataclass
 from typing import Any
 
 from bad_research.calibrate.constants import JUDGE_MAX_TOKENS, JUDGE_TEMPERATURE, JUDGE_TIER
-from bad_research.calibrate.judge import JUDGE_SYSTEM, AxisScores, JudgeVerdict, _extract_json
+from bad_research.calibrate.judge import JUDGE_SYSTEM, AxisRails, JudgeVerdict, _extract_json
 from bad_research.grounding.gate import Finding
 from bad_research.llm.base import LLMMessage, LLMProvider
 
 # The one clause appended to the offline JUDGE_SYSTEM rubric to make the verdict
-# patcher-compatible (dossier 16 §4.1). The findings array maps each <0.8 axis
-# defect to the {failure_mode, severity, location, recommendation} shape the
-# patcher, critics, and gate all share.
+# patcher-compatible (dossier 16 §4.1). The findings array maps each NON-passing
+# axis (rail = borderline | fail; E2 — categorical, no numbers) to the
+# {failure_mode, severity, location, recommendation} shape the patcher, critics,
+# and gate all share.
 GRADER_FINDINGS_CLAUSE = (
-    'Also output "findings": a JSON array of the SPECIFIC defects behind any axis < 0.8, '
-    'each {"axis","severity":"critical|major|minor","failure_mode":"missing|under-covered|'
-    'miscited|misordered","location":"<H2 or sentence>","recommendation":"<surgical fix>"}. '
-    "A critical finding is one that, left unfixed, makes an axis fail. Map completeness "
-    "misses to the decomposition's required_section_headings + atomic items."
+    'Also output "findings": a JSON array of the SPECIFIC defects behind any axis '
+    'whose rail is "borderline" or "fail", each {"axis","severity":"critical|major|'
+    'minor","failure_mode":"missing|under-covered|miscited|misordered","location":'
+    '"<H2 or sentence>","recommendation":"<surgical fix>"}. A critical finding is '
+    "one that, left unfixed, makes an axis fail. Map completeness misses to the "
+    "decomposition's required_section_headings + atomic items."
 )
 
 GRADER_SYSTEM = JUDGE_SYSTEM + "\n" + GRADER_FINDINGS_CLAUSE
@@ -42,7 +44,7 @@ class GraderVerdict:
         return self.verdict.passed
 
     def to_dict(self) -> dict[str, Any]:
-        d = self.verdict.to_dict()  # includes scores, overall, passed, rationale
+        d = self.verdict.to_dict()  # includes rails, pass_rate, passed, rationale
         d["findings"] = [
             {
                 "failure_mode": f.failure_mode,
@@ -108,8 +110,8 @@ class Grader:
             temperature=JUDGE_TEMPERATURE,
         )
         raw = _extract_json(resp.text)
-        scores = AxisScores.from_raw(raw)
-        verdict = JudgeVerdict.from_scores(scores, rationale=str(raw.get("rationale", "")))
+        rails = AxisRails.from_raw(raw)
+        verdict = JudgeVerdict.from_rails(rails, rationale=str(raw.get("rationale", "")))
         return GraderVerdict(verdict=verdict, findings=_parse_findings(raw))
 
 

@@ -79,5 +79,8 @@ answer in ONE pass:
 
 ## Next step
 
-Return to the entry skill (`bad-research`). Agentic-fast skips straight to
-polish: `Skill(skill: "bad-research-15-polish")`, then the step-16 gate.
+Return to the entry skill (`bad-research`). Agentic-fast runs the light-tier
+slim single critic before polish (E3 — one adversarial dialectic+instruction
+pass, findings applied inline; no fan-out, no patcher): invoke
+`Skill(skill: "bad-research-12-critics")` (its **Light-tier slim critic** section),
+THEN `Skill(skill: "bad-research-15-polish")`, then the step-16 gate.

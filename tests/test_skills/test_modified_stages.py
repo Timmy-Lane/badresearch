@@ -131,3 +131,59 @@ def test_step16_coalescing_runs_after_both_gates(skills_dir):
     assert "after" in low and ("both gate" in low or "gates pass" in low
                                or "after the uncited" in low
                                or "after both gate" in low)
+
+
+# ── E5: distilled-reflection memory (Tavily) — skill-prose discipline ──────────
+# The reflections artifact + the read-from-reflections discipline must live in the
+# skill prose: width-sweep distills each kept source to ≤3 claim bullets + note_id
+# into research/temp/reflections.md and DROPS the raw body from working context;
+# the re-retrieve / next-round planning reads reflections.md + open_gaps, NOT the
+# raw corpus; synthesis re-injects raw bodies ONLY for the cited note_ids ("re-
+# inject raw only at the end") so the verbatim quoted_support spans survive for the
+# uncited-/recitation-gate. Asserting the literal anchors freezes the wording.
+_REFLECTIONS_ARTIFACT = "research/temp/reflections.md"
+
+
+def test_width_sweep_distills_to_reflections_and_drops_raw_body(skills_dir):
+    body = (skills_dir / "bad-research-2-width-sweep.md").read_text()
+    low = body.lower()
+    assert _REFLECTIONS_ARTIFACT in body
+    # ≤3 distilled claim bullets + note_id, sourced from claims-*.json (not raw text)
+    assert "claims-" in body  # the distilled-claims source
+    assert "distill" in low
+    assert "note_id" in low or "note id" in low
+    # the raw body is DROPPED from working context (it stays on disk in the vault)
+    assert "drop" in low and ("raw body" in low or "raw note" in low or "raw page" in low)
+    # the re-retrieve / next-round planning reads reflections + open_gaps, NOT corpus
+    assert "open_gaps" in low or "open gaps" in low
+    assert "not" in low and ("raw corpus" in low or "re-read" in low or "reread" in low)
+
+
+def test_width_sweep_token_growth_is_linear(skills_dir):
+    # the whole point: linear (n·m) inter-round growth, not quadratic
+    low = (skills_dir / "bad-research-2-width-sweep.md").read_text().lower()
+    assert "linear" in low
+
+
+def test_triple_draft_plans_from_reflections_reinjects_raw_for_cited(skills_dir):
+    body = (skills_dir / "bad-research-10-triple-draft.md").read_text()
+    low = body.lower()
+    assert _REFLECTIONS_ARTIFACT in body
+    # drafter plans from reflections, then re-injects raw note bodies ONLY for the
+    # note_ids it will cite ("re-inject raw only at the end")
+    assert "re-inject" in low or "reinject" in low or "re-injects" in low
+    assert "cited" in low or "cite" in low
+    # spans must survive for the grounding gates
+    assert "quoted_support" in body or "span" in low
+
+
+def test_synthesize_caps_distilled_context_and_reinjects_spans(skills_dir):
+    body = (skills_dir / "bad-research-11-synthesize.md").read_text()
+    low = body.lower()
+    assert _REFLECTIONS_ARTIFACT in body
+    # ≤10K distilled-synthesis-context ceiling (Chroma context-rot)
+    assert "10k" in low or "10,000" in low or "10000" in low
+    # re-inject raw spans only at the end, for the cited note_ids — preserves the
+    # verbatim quoted_support the uncited-/recitation-gate / anchors.py need
+    assert "re-inject" in low or "reinject" in low or "re-injects" in low
+    assert "quoted_support" in body or "span" in low

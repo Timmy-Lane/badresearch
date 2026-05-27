@@ -1,10 +1,16 @@
 """`bad calibrate <query>` — OFFLINE calibration harness (SPEC §14; keyless).
 
-Runs a query through bad-research, judges it on the 5-axis rubric, and writes
-calibration-report.{json,md}. Calibration, NOT a per-run gate (SPEC §10 Excluded).
+Runs a query through bad-research, judges it on the categorical (E2) rubric, and
+writes calibration-report.{json,md}. Calibration, NOT a per-run gate (SPEC §10).
 
 `--offline` forces a deterministic stub runner + StubJudge so the command runs
 with ZERO keys and ZERO network — this is the tested path.
+
+`--gate` (E1) runs the STORED golden corpus (`calibrate/golden/`) through the
+categorical judge + the per-component split (decompose / retrieval / synthesis)
+and EXITS NON-ZERO when the corpus pass-rate drops below `--floor` or below a
+`--baseline` — the regression gate every later enhancement runs against. It is
+keyless (the deterministic RubricJudge) and ignores QUERY.
 
 The live path drives the KEYLESS `pipeline.run_query` (host WebSearch + ddgs +
 crawl4ai + FTS5/BM25 + host-model LLM-rerank — no third-party key) and a single
@@ -25,16 +31,56 @@ from bad_research.models.output import success
 
 
 def calibrate(
-    query: str = typer.Argument(..., help="The research query to calibrate on."),
+    query: str | None = typer.Argument(
+        None, help="The research query to calibrate on (omit with --gate)."
+    ),
     out: str = typer.Option(".", "--out", "-o", help="Output dir for the calibration report."),
     offline: bool = typer.Option(
         False,
         "--offline",
         help="Use a deterministic stub runner + stub judge (no keys, no network).",
     ),
+    gate: bool = typer.Option(
+        False,
+        "--gate",
+        help="Run the golden corpus through the regression gate; exit non-zero on regression.",
+    ),
+    golden_dir: str | None = typer.Option(
+        None, "--golden-dir", help="Override the golden-corpus dir (default: the shipped seed set)."
+    ),
+    floor: float | None = typer.Option(
+        None, "--floor", help="Gate pass-rate floor (default: GATE_FLOOR)."
+    ),
+    baseline: float | None = typer.Option(
+        None, "--baseline", help="Gate also fails if the pass-rate regresses below this baseline."
+    ),
     json_output: bool = typer.Option(False, "--json", "-j", help="JSON output."),
 ) -> None:
-    """Score bad-research vs. baselines on QUERY (offline 5-axis judge)."""
+    """Score bad-research on QUERY (offline categorical judge), or run the
+    golden-corpus regression gate with --gate."""
+    out_dir = Path(out).resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    if gate:
+        _run_gate(
+            out_dir,
+            golden_dir=golden_dir,
+            floor=floor,
+            baseline=baseline,
+            json_output=json_output,
+        )
+        return
+
+    if query is None:
+        msg = "calibrate needs a QUERY (or pass --gate to run the golden corpus gate)."
+        if json_output:
+            from bad_research.models.output import error
+
+            output(error(msg, "NO_QUERY"), json_mode=True)
+        else:
+            console.print(f"[red]Error:[/] {msg}")
+        raise typer.Exit(2)
+
     from bad_research.calibrate import (
         CostMeter,
         StubJudge,
@@ -43,9 +89,6 @@ def calibrate(
     )
     from bad_research.calibrate.constants import JUDGE_AXES
     from bad_research.calibrate.harness import BadRunOutput
-
-    out_dir = Path(out).resolve()
-    out_dir.mkdir(parents=True, exist_ok=True)
 
     if offline:
         # Deterministic, key-free path: a stub runner + stub judge.
@@ -65,7 +108,7 @@ def calibrate(
                 cost=meter,
             )
 
-        judge = StubJudge(scores={a: 0.85 for a in JUDGE_AXES})
+        judge = StubJudge(rails={a: "pass" for a in JUDGE_AXES})
         report = run_calibration(query, runner=_stub_runner, baselines=[], judge=judge)
     else:
         # Live path: real runner + LLM judge + key-gated baselines.
@@ -108,13 +151,62 @@ def calibrate(
     v = report.bad.verdict
     console.print(f"[bold]Calibration:[/] {query}")
     console.print(
-        f"  bad-research overall: [bold]{v.overall:.3f}[/] "
+        f"  bad-research pass-rate: [bold]{v.pass_rate:.3f}[/] "
         f"({'[green]PASS[/]' if v.passed else '[red]FAIL[/]'})  "
         f"cost ${report.bad.cost_usd:.4f}"
     )
     for b in report.baselines:
-        console.print(f"  {b.name}: {b.verdict.overall:.3f}  (Δ {report.delta_vs(b.name):+.3f})")
+        console.print(f"  {b.name}: {b.verdict.pass_rate:.3f}  (Δ {report.delta_vs(b.name):+.3f})")
     console.print(f"\n[green]Wrote[/] {json_path}\n[green]Wrote[/] {md_path}")
+
+
+def _run_gate(
+    out_dir: Path,
+    *,
+    golden_dir: str | None,
+    floor: float | None,
+    baseline: float | None,
+    json_output: bool,
+) -> None:
+    """E1 — the golden-corpus regression gate. Keyless: the deterministic
+    RubricJudge. Exits non-zero iff the corpus pass-rate < floor (or < baseline)."""
+    import json as _json
+
+    from bad_research.calibrate.golden import (
+        GATE_FLOOR,
+        evaluate_corpus,
+        load_golden_corpus,
+    )
+
+    use_floor = GATE_FLOOR if floor is None else floor
+    cases = load_golden_corpus(golden_dir)
+    report = evaluate_corpus(cases)  # keyless deterministic categorical judge
+    ok = report.gate_ok(floor=use_floor, baseline=baseline)
+
+    rep_path = out_dir / "golden-eval-report.json"
+    rep_path.write_text(_json.dumps(report.to_dict(), indent=2), encoding="utf-8")
+
+    if json_output:
+        payload = report.to_dict()
+        payload["gate_ok"] = ok
+        payload["floor"] = use_floor
+        envelope = success(payload, count=report.total, vault=str(out_dir))
+        output(envelope, json_mode=True)
+    else:
+        verb = "[green]PASS[/]" if ok else "[red]FAIL[/]"
+        console.print(
+            f"[bold]Golden gate:[/] pass-rate [bold]{report.pass_rate:.3f}[/] "
+            f"over {report.total} cases (floor {use_floor:.2f}) {verb}"
+        )
+        for name, rate in report.components.items():
+            console.print(f"  {name}: {rate:.3f}")
+        for c in report.cases:
+            if not c.passed:
+                console.print(f"  [red]regression[/] {c.id}: {c.verdict.rails.as_str_dict()}")
+        console.print(f"\n[green]Wrote[/] {rep_path}")
+
+    if not ok:
+        raise typer.Exit(1)
 
 
 __all__ = ["calibrate"]
