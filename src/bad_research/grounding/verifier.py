@@ -41,15 +41,57 @@ class CitationPresentNLI:
         return {"entailment": 1.0, "neutral": 0.0, "contradiction": 0.0}
 
 
-def default_nli() -> NLIModel:
-    """The ship-path NLI: the real cross-encoder when `[local]` is installed (the
-    $0/local entailment lane auto-on, SUPPORTED_FLOOR=0.70), else the
-    citation-present no-op (keyless, no torch). Wiring the factory here keeps the
-    auto-on decision in one place for both the CLI and MCP verify seams."""
+class HostJudgeNLI:
+    """E9 (STEAL_LIST #4) — the keyless semantic span support-check.
+
+    On the fully-keyless path the Tier-B lane has no neural NLI, so a *paraphrased*
+    claim (its text is not a substring of the cited span) used to read as entailed via
+    the CitationPresentNLI no-op — citation-drift slipped through. HostJudgeNLI closes
+    that gap WITHOUT a new key/$ (it costs host tokens, reached via the LLMProvider
+    seam already wired into the verifier):
+
+      * claim ≈ quote (lexical overlap >= CLAIM_QUOTE_OVERLAP_SKIP) -> ENTAILMENT
+        softmax. This is the byte-identity/near-verbatim band Tier-A already covers;
+        the judge would add nothing, so we SKIP it ($0, no token cost).
+      * genuine paraphrase (overlap < CLAIM_QUOTE_OVERLAP_SKIP) -> NEUTRAL softmax.
+        NEUTRAL is exactly the band the CitationVerifier escalates to its *batched*
+        Tier-C host-model judge (Pass 2) — so all queued paraphrase pairs share ONE
+        entailment call, and a non-supporting span is caught.
+
+    This class is a pure lexical *router*; it touches NO torch and makes NO LLM call
+    itself (the batched judge runs in the verifier). It carries `llm` only so a caller
+    can confirm a host judge is wired (default_nli gates on its presence)."""
+
+    def __init__(self, llm: LLMProvider) -> None:
+        self.llm = llm
+
+    def predict(self, premise: str, hypothesis: str) -> dict[str, float]:
+        # premise = quoted_support (the cited span); hypothesis = report sentence (claim).
+        from .gate import CLAIM_QUOTE_OVERLAP_SKIP, claim_quote_overlap
+
+        if claim_quote_overlap(hypothesis, premise) >= CLAIM_QUOTE_OVERLAP_SKIP:
+            # claim ≈ quote -> Tier-A already proved byte-identity; accept, skip judge.
+            return {"entailment": 1.0, "neutral": 0.0, "contradiction": 0.0}
+        # genuine paraphrase -> NEUTRAL so the verifier escalates it to the batched judge.
+        return {"entailment": 0.0, "neutral": 1.0, "contradiction": 0.0}
+
+
+def default_nli(llm: LLMProvider | None = None) -> NLIModel:
+    """The ship-path NLI factory. Resolution order (auto-on decision in one place
+    for both the CLI and MCP verify seams):
+
+      1. `[local]` installed -> the real cross-encoder (the $0/local entailment lane,
+         SUPPORTED_FLOOR=0.70). UNCHANGED by E9.
+      2. keyless + a host judge available (`llm` provided) -> HostJudgeNLI: the
+         lexical pre-filter routes the paraphrase band into the batched host judge
+         (E9; keyless, costs host tokens not $).
+      3. keyless + NO host judge -> CitationPresentNLI, the absolute fallback no-op."""
     if nli_available():
         from .nli import CrossEncoderNLI  # lazy: only when [local] is present
 
         return CrossEncoderNLI()
+    if llm is not None:
+        return HostJudgeNLI(llm)
     return CitationPresentNLI()
 
 

@@ -293,9 +293,13 @@ def _verify_report(report_path: str, vault_tag: str) -> list[dict]:
 
     # get_llm_provider(name, **kwargs) forwards kwargs to AnthropicProvider, whose
     # signature is AnthropicProvider(api_key=None, config=None) — pass cfg via config=.
-    # default_nli() auto-selects the real cross-encoder entailment lane when the
-    # [local] stack is installed, else the keyless citation-present no-op (no torch).
-    verifier = CitationVerifier(nli=default_nli(), llm=get_llm_provider("anthropic", config=cfg))
+    # default_nli(llm=…) auto-selects the entailment lane: real cross-encoder when the
+    # [local] stack is installed; else the keyless HostJudgeNLI (E9) — the lexical
+    # pre-filter routes the paraphrase band into the host model's batched judge so
+    # citation-drift on paraphrased claims is caught keyless (no new key/$). Threading
+    # the same host provider into both the NLI and the verifier keeps one model seam.
+    llm = get_llm_provider("anthropic", config=cfg)
+    verifier = CitationVerifier(nli=default_nli(llm=llm), llm=llm)
     result = verifier.verify(report_md, store, note_bodies)
     findings = getattr(result, "findings", result)
     out = []
