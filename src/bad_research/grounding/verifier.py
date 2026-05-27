@@ -333,11 +333,23 @@ class CitationVerifier:
                 # E4 high-effort lane: each high-stakes pair is decided by an N-sample
                 # self-consistency VOTE (universal self-consistency). Costs N host calls
                 # per pair (keyless) — only paid on effort=high, hence the gate above.
-                for stub, claim, quote in pending:
+                # Cap the vote at SELF_CONSISTENCY_MAX_PAIRS pairs (bounds worst-case
+                # cost on a pathological large neutral band); the overflow falls back to
+                # the single batched judge — every pair is still judged.
+                from bad_research.quality.consistency import SELF_CONSISTENCY_MAX_PAIRS
+
+                voted, overflow = pending[:SELF_CONSISTENCY_MAX_PAIRS], pending[SELF_CONSISTENCY_MAX_PAIRS:]
+                for stub, claim, quote in voted:
                     verdict, score, _votes = self_consistency_vote(claim, quote, self.llm)
                     stub.verdict = verdict
                     stub.score = score
                     findings.append(stub)
+                if overflow:
+                    judged = tier_c_judge([(c, q) for _, c, q in overflow], self.llm)
+                    for (stub, _, _), (verdict, score) in zip(overflow, judged, strict=True):
+                        stub.verdict = verdict
+                        stub.score = score
+                        findings.append(stub)
             else:
                 # Default path: the SINGLE batched judge (one call). Unchanged.
                 pairs = [(claim, quote) for _, claim, quote in pending]

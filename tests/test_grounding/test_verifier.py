@@ -325,6 +325,38 @@ def test_verifier_high_effort_outvotes_single_dissenting_sample():
     assert store.get(a.anchor_id).verified == 0
 
 
+def test_verifier_high_effort_caps_the_vote_overflow_falls_back_to_batched_judge(monkeypatch):
+    # The N-sample vote is capped at SELF_CONSISTENCY_MAX_PAIRS pairs; the overflow
+    # of the neutral band falls back to the SINGLE batched judge. With MAX=1 and a
+    # 2-pair neutral band: pair-1 is voted (3 calls), pair-2 batched (1 call) = 4
+    # total — NOT 6 (3x2). Every pair is still judged.
+    import json
+
+    from tests.test_quality.test_consistency import ScriptedLLM
+
+    monkeypatch.setattr("bad_research.quality.consistency.SELF_CONSISTENCY_MAX_PAIRS", 1)
+    qA = "Adoption grew across several markets in the period"
+    qB = "Spending rose in the second half of the year"
+    a = ClaimAnchor("nA", 0, len(qA), "Adoption grew.", qA)
+    b = ClaimAnchor("nB", 0, len(qB), "Spending rose.", qB)
+    store = _store_with([a, b])
+    nli = StubNLI({
+        qA: {"entailment": 0.55, "neutral": 0.40, "contradiction": 0.05},
+        qB: {"entailment": 0.55, "neutral": 0.40, "contradiction": 0.05},
+    })
+    scripted = ScriptedLLM([
+        json.dumps({"verdict": "supported", "score": 0.9}),    # vote sample 1 (pair 1)
+        json.dumps({"verdict": "supported", "score": 0.85}),   # vote sample 2 (pair 1)
+        json.dumps({"verdict": "unsupported", "score": 0.2}),  # vote sample 3 (pair 1)
+        json.dumps([{"id": 0, "verdict": "partial", "score": 0.5}]),  # batched judge (pair 2)
+    ])
+    report = f"Adoption grew. [[{a.anchor_id}]]\nSpending rose. [[{b.anchor_id}]]\n"
+    verifier = CitationVerifier(nli=nli, llm=scripted, effort="high")
+    result = verifier.verify(report, store, {"nA": "Adoption grew across several markets in the period.", "nB": "Spending rose in the second half of the year."})
+    assert len(scripted.calls) == 4  # 3 vote + 1 batched, NOT 6 — the cap held
+    assert len(result.findings) == 2  # both pairs judged (vote + overflow)
+
+
 def test_verify_checks_report_sentence_not_stored_claim(fake_llm):
     # The anchor's stored claim is FAITHFUL to the support, but the report
     # SENTENCE that cites it says the opposite. The verifier must judge the

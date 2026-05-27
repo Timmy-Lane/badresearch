@@ -31,6 +31,11 @@ SELF_CONSISTENCY_N = 3
 # does not greedy-decode). 0.7 is the standard self-consistency sampling temperature.
 SELF_CONSISTENCY_TEMPERATURE = 0.7
 
+# Cap how many neutral-band pairs get the N-call VOTE on the high-effort lane: the most
+# uncertain pairs are voted, the overflow falls back to the single batched judge. Bounds
+# worst-case high-effort cost to N*MAX host calls instead of N*(unbounded band).
+SELF_CONSISTENCY_MAX_PAIRS = 24
+
 # One sampled judgment of a single (claim, quote) pair. Mirrors the verifier's Tier-C
 # JUDGE_SYSTEM contract (verdict ∈ the 4 VerifyVerdict labels + a 0..1 confidence) but
 # asks for ONE pair so each sample is an independent vote, not a batch.
