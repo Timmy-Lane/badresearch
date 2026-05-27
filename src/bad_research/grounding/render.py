@@ -78,7 +78,13 @@ def coalesce_citations(text: str) -> str:
       * uncited sentences pass through unchanged and also break a run.
 
     Set-equality, not sequence-equality: {1,2} and {2,1} coalesce. Works for both
-    numeric [N] and [[wikilink]] tokens."""
+    numeric [N] and [[wikilink]] tokens.
+
+    CONTRACT: call this ONLY as the final visual pass, AFTER the per-sentence
+    `no_uncited_claim_gate` and the recitation gate have passed — it groups cites
+    across sentences, so a per-sentence uncited check run afterwards would
+    false-positive on the now-grouped sentences. (Step 16.8 enforces this ordering;
+    a code caller must honour it too.)"""
     # Split into sentence units, each carrying its own (optional) trailing cites.
     # _UNIT consumes `<prose up to a terminator><that sentence's cite tail>`; any
     # trailing remainder with no terminator (e.g. a dangling fragment) is kept.
