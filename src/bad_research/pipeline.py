@@ -27,10 +27,13 @@ the honest result is an empty corpus + a no-evidence report, never a fabrication
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from bad_research.config import BadResearchConfig
+
+_LOG = logging.getLogger("bad_research.pipeline")
 
 Route = Literal["agentic-fast", "light", "full"]
 Tier = Literal["triage", "work", "heavy"]
@@ -83,7 +86,8 @@ class SimpleCostMeter:
             "usd": round(cost, 6),
         })
 
-    def record_response(self, *, stage: str, tier: Tier, usage: dict, search_queries: int = 0) -> None:
+    def record_response(self, *, stage: str, tier: Tier, usage: dict[str, Any],
+                        search_queries: int = 0) -> None:
         """Record from an LLM response `usage` dict (input/output/reasoning/citation token fields)."""
         self.record(
             stage=stage, tier=tier,
@@ -97,7 +101,7 @@ class SimpleCostMeter:
     def total_usd(self) -> float:
         return round(self._usd, 6)
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {"total_usd": self.total_usd(), "stages": self.stages}
 
 
@@ -107,7 +111,7 @@ class RunResult:
     and adds the chosen `route` for observability. Plan 09's BadRunner adapts this."""
 
     report: str
-    corpus: list[dict] = field(default_factory=list)
+    corpus: list[dict[str, Any]] = field(default_factory=list)
     route: Route = "light"
     cost: Any = None  # the cost meter that was populated
 
@@ -127,20 +131,33 @@ def _route(query: str, cfg: BadResearchConfig, cm: Any) -> Route:
     return classify_route(decomp)
 
 
-def _gather(query: str, mode: str, cfg: BadResearchConfig, cm: Any) -> list[dict]:
-    """Run the funnel; returns top_chunks as dicts. Degrades to [] with no providers."""
+def _gather(query: str, mode: str, cfg: BadResearchConfig, cm: Any) -> list[dict[str, Any]]:
+    """Run the funnel; returns top_chunks as dicts. Degrades to [] with no providers.
+
+    Degradation is INTENTIONAL (a genuine no-providers run must still yield the
+    honest no-evidence report), but a wiring break — e.g. the funnel→engine seam
+    handing the wrong type to index — must NOT be silent. We log the swallowed
+    exception (warn-once-idiom-adjacent to rerank.py) so a real crash is visible
+    in logs while the empty corpus still flows through to the honest report."""
     try:
         from bad_research.cli.research import run_funnel
 
         env = run_funnel(query, mode=mode, vault_tag="")
         return list(env.get("top_chunks", []))
-    except Exception:
+    except Exception as e:
+        _LOG.warning("gather failed (%s); degrading to an empty corpus — if this is "
+                     "not a genuine no-providers run, it is a wiring break.", e,
+                     exc_info=True)
         return []
 
 
-def _retrieve(query: str, mode: str, cfg: BadResearchConfig, cm: Any) -> list[dict]:
+def _retrieve(query: str, mode: str, cfg: BadResearchConfig, cm: Any) -> list[dict[str, Any]]:
     """Rerank the gathered corpus against the verbatim query. Degrades to [] when
-    the retrieval backend (embedder/lance) is unavailable."""
+    the retrieval backend (embedder/lance) is unavailable.
+
+    As in _gather: degradation stays (no-vault / no-backend must not crash), but the
+    swallowed exception is LOGGED so a wiring break (e.g. a bad engine build) is
+    observable rather than silently turning into an empty rerank."""
     try:
         from dataclasses import asdict
 
@@ -149,13 +166,18 @@ def _retrieve(query: str, mode: str, cfg: BadResearchConfig, cm: Any) -> list[di
 
         engine = _build_engine(cfg, Vault.discover())
         norm_mode = "full" if mode == "full" else "light"
-        chunks = engine.search(query, mode=norm_mode, top_k=20)
+        # engine is the duck-typed RetrievalEngine seam (typed `object` by the builder).
+        chunks = engine.search(query, mode=norm_mode, top_k=20)  # type: ignore[attr-defined]
         return [asdict(c) for c in chunks]
-    except Exception:
+    except Exception as e:
+        _LOG.warning("retrieve failed (%s); degrading to no rerank — if this is not "
+                     "a genuine no-vault/no-backend run, it is a wiring break.", e,
+                     exc_info=True)
         return []
 
 
-def _synthesize(query: str, chunks: list[dict], route: Route, cfg: BadResearchConfig, cm: Any) -> str:
+def _synthesize(query: str, chunks: list[dict[str, Any]], route: Route,
+                cfg: BadResearchConfig, cm: Any) -> str:
     """Single-call synthesis over the top-chunks with per-sentence [N] citations.
 
     Degrades to an honest no-evidence report when no LLM key / no chunks — never
