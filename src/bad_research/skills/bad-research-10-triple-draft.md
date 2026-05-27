@@ -96,6 +96,19 @@ section below).
 
 ---
 
+## SOURCE-QUALITY RECONCILIATION — down-weight flagged sources (applies to ALL drafts, ALL tiers)
+
+**This is where the fetcher's `source_quality_flags` are actually reconciled** (the worker FLAGS, the lead RECONCILES — Anthropic's worker-prompt discipline; there is NO deterministic penalty in the funnel/rank code). When the per-source claims you read carry a non-empty `source_quality_flags` array in their `claims-<note-id>.json` (e.g. `["marketing_spin"]`, `["nameless_source"]`, `["cherry_picked"]`), reconcile it in the prose you write — **flag, don't suppress**:
+
+- **Never lead with a flagged-source claim.** A claim drawn from a flagged source is not the topic sentence of a section and is never the sole basis for a headline finding.
+- **Corroborate or hedge.** A flagged source's claim is only stated plainly if an *unflagged* source corroborates it (cite both, `[[flagged]][[unflagged]]`). If no unflagged source corroborates it, it is explicitly hedged ("one vendor account claims…", "an unconfirmed report suggests…") — the hedge names the weakness the flag identifies (spin / nameless source / unconfirmed / cherry-picked).
+- **A flag down-weights, it does not delete.** The flagged source can still appear — a marketing-spin page on a high-authority domain is demoted to a hedged, corroborated, or supporting mention, never a load-bearing un-caveated claim. This is the report-level analogue of "demote, never drop."
+- **An unflagged source is unchanged** (empty `source_quality_flags`) — write its claims exactly as the grounding rule above dictates.
+
+You see the `source_quality_flags` on each claim because step 10.0b re-injects the raw bodies + `claims-*.json` for the `note_id`s you cite; honor the flags as you ground.
+
+---
+
 ## Light tier ONLY: single-draft path
 
 If `pipeline_tier == "light"`: SKIP step 10.1 — 10.3 below and follow this section instead.

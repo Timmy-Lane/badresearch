@@ -209,8 +209,11 @@ prompt: |
   source_quality_flags}. `source_quality_flags` is a (possibly empty) JSON array of
   the flag strings above — e.g. [] for a clean primary, ["marketing_spin"] for a
   vendor spin page. This field is ADDITIVE: downstream consumers (the anchor binding,
-  the uncited-gate) ignore unknown/extra fields, and `quality/rank.py` folds the flags
-  into an epistemic-penalty multiplier ALONGSIDE the domain-tier multiplier.
+  the uncited-gate) ignore unknown/extra fields. The flags are reconciled at SYNTHESIS:
+  the drafter/synthesizer down-weights and caveats any flagged source (a flagged claim
+  must be corroborated by an unflagged source or explicitly hedged, and is never the
+  lead) — flag, don't suppress. There is NO deterministic penalty; this is the
+  worker-flags / lead-reconciles discipline, applied in prose at draft+synthesis time.
 
   TOOLS_ALLOWED: ["fetch_url", "web_search", "execute_python"]
 
@@ -405,8 +408,10 @@ prompt: |
   (`vague_qualifier`), unconfirmed reports (`unconfirmed`), marketing/spin language
   (`marketing_spin`), speculation presented as finding (`speculation`), cherry-picked
   data (`cherry_picked`). Record any that apply as `source_quality_flags: [...]` (empty
-  if none) in your digest header so `quality/rank.py` can apply the epistemic penalty
-  alongside the domain tier — a spin page on a high-authority domain is still demoted.
+  if none) in your digest header so the synthesizer can reconcile it at draft time —
+  a flagged source is down-weighted and caveated (corroborated by an unflagged source
+  or explicitly hedged, never the lead), so a spin page on a high-authority domain is
+  still demoted in the report. Flag, don't suppress; there is no deterministic penalty.
 
   YOUR INPUTS:
   - source_note_id: <vault note id of the long source>

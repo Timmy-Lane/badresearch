@@ -14,43 +14,6 @@ import sqlite3
 from bad_research.quality.prefilter import canonical_url, domain_tier
 from bad_research.web.base import WebResult
 
-# ── E8: source-quality epistemic penalty (STEAL_LIST #5) ──────────────────────
-# Anthropic's worker prompts carry a verbatim negative-signal list (research_subagent
-# pattern): "news aggregators rather than original sources, false authority, passive
-# voice with nameless sources, general qualifiers without specifics, unconfirmed
-# reports, marketing language, spin language, speculation, cherry-picked data." The
-# discipline is FLAG, not suppress (the fetcher flags; rank.py reconciles). The
-# DOMAIN_TIER/seo_farm layer catches what regex/domain can see; these flags catch the
-# epistemic junk a regex can't (a marketing-spin page on a GOOD domain). Each flag is
-# an independent multiplicative down-weight applied ALONGSIDE the domain-tier multiplier,
-# so a spin page on docs.* still drops below a clean primary. Penalties are tuned so a
-# single hard flag (marketing_spin/nameless_source) roughly cancels a one-tier authority
-# bump; soft flags (vague_qualifier/speculation) nudge. Provenance: each flag maps to one
-# named signal in the verbatim list above.
-EPISTEMIC_PENALTY: dict[str, float] = {
-    "aggregator": 0.70,       # news aggregator, not the original source
-    "false_authority": 0.55,  # cites authority it doesn't actually have / misattributes
-    "nameless_source": 0.60,  # passive voice w/ nameless sources ("experts say")
-    "vague_qualifier": 0.80,  # general qualifiers without specifics ("many", "often")
-    "unconfirmed": 0.65,      # unconfirmed reports / rumor not yet verified
-    "marketing_spin": 0.50,   # marketing language + spin language (hardest down-weight)
-    "speculation": 0.75,      # speculation presented as finding
-    "cherry_picked": 0.60,    # cherry-picked data / selective evidence
-}
-
-
-def epistemic_multiplier(flags: list[str] | None) -> float:
-    """Compound the EPISTEMIC_PENALTY for each recognized source-quality flag. No
-    flags -> 1.0 (flag, don't suppress: an unflagged source is unchanged). Unknown
-    flags are ignored (forward-compatible: a future prompt's new flag never silently
-    zeroes a source). Multiplicative because flags are independent evidence of junk."""
-    if not flags:
-        return 1.0
-    mult = 1.0
-    for f in flags:
-        mult *= EPISTEMIC_PENALTY.get(f, 1.0)
-    return mult
-
 
 def source_id(url: str) -> str:
     """16-char SHA-256 hex of the canonical URL (INTERFACES.md `sources.source_id`)."""

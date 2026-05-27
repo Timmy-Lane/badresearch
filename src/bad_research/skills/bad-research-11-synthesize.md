@@ -158,6 +158,13 @@ cost once, at the end, and only for the cited `note_id`s.
    the synthesizer. The total context handed to the synthesizer is the ≤10K-token
    distilled plan **plus** these targeted raw spans — not the whole corpus.
 
+   **Carry each cited note's `source_quality_flags` into `synthesis-evidence.md`.**
+   When you pull the spans for a note, read its `claims-<note-id>.json` and copy any
+   non-empty `source_quality_flags` array (e.g. `["marketing_spin"]`) next to the
+   chunk in the section→chunks map. The synthesizer reconciles these flags in prose
+   (worker flags, lead reconciles — there is NO deterministic penalty); it needs to
+   see the flag to down-weight/caveat the source.
+
 3. **Spans preserved for grounding.** Re-injecting the verbatim `quoted_support`
    spans for the cited notes is exactly what keeps the `uncited-gate` /
    `recitation-gate` / `anchors.py` lane able to verify each cite byte-for-byte —
@@ -246,6 +253,21 @@ prompt: |
   rule above doesn't apply, and the uncited-gate is not a ship-block) —
   the discipline survives only as sourcing: write claims you *could*
   cite, but render no tokens.
+
+  SOURCE-QUALITY RECONCILIATION (non-negotiable): synthesis-evidence.md
+  carries each cited note's source_quality_flags (the fetcher's per-source
+  epistemic judgment — marketing_spin / nameless_source / unconfirmed /
+  cherry_picked / etc.). This is where those flags are RECONCILED (the
+  worker flags, the lead reconciles — there is NO deterministic penalty
+  upstream). When a chunk's source carries any flag: NEVER lead with its
+  claim; state it plainly ONLY if an unflagged source corroborates it
+  (cite both); otherwise HEDGE it explicitly, naming the weakness the flag
+  identifies ("one vendor account claims…", "an unconfirmed report
+  suggests…"). A flag down-weights and caveats — it does not delete (a
+  spin page on a high-authority domain becomes a hedged/supporting mention,
+  never a load-bearing un-caveated claim). An unflagged source (empty
+  flags) is written exactly as the grounding rule dictates. Flag, don't
+  suppress.
 
   **Citation rendering:**
   - If citation_style == "wikilink" (default): every citation is a
