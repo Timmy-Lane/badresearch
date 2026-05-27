@@ -11,9 +11,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
+
+if TYPE_CHECKING:
+    from bad_research.grounding.anchors import AnchorStore
 
 
 # ── route (Task 2/5/12) — deterministic, $0, no heavy deps ───────────────────
@@ -292,11 +295,12 @@ def verify_citations_cmd(
 
 
 # ── uncited-gate (Task 9/12) — deterministic ship-block, $0 ──────────────────
-def _standalone_store_from_bodies(note_bodies: dict[str, str]) -> object:
+def _standalone_store_from_bodies(note_bodies: dict[str, str]) -> AnchorStore:
     """An in-memory AnchorStore seeded from `{note_id: body}` — the standalone
     path (no pre-populated vault, mirrors recitation-gate's --note-bodies). Each
     body becomes a verified anchor keyed by BOTH its note_id (so `[[note-id]]`
-    wiki-links resolve) AND its 1-based ordinal (so numeric `[N]` resolve). The
+    wiki-links resolve) AND its 1-based ordinal (so numeric `[N]` resolve — `[1]`
+    is the FIRST key in the JSON map's insertion order, `[2]` the second, …). The
     whole body is the quoted_support, so Tier-A byte-identity holds if the
     verifier is ever run over the same store. verified=1: the standalone gate
     treats a provided source as authoritative (its job is "is there a real
@@ -327,7 +331,7 @@ def _standalone_store_from_bodies(note_bodies: dict[str, str]) -> object:
     return store
 
 
-def _uncited_gate(report_path: str, vault_tag: str, note_bodies_path: str | None) -> list[dict]:
+def _uncited_gate(report_path: str, vault_tag: str, note_bodies_path: str | None) -> list[dict[str, Any]]:
     """Run the deterministic no-uncited-claim gate over the report.
 
     Standalone-safe: `--note-bodies` (a JSON `{note_id: body}` map) seeds an
@@ -344,7 +348,7 @@ def _uncited_gate(report_path: str, vault_tag: str, note_bodies_path: str | None
 
     if note_bodies_path:
         bodies = json.loads(Path(note_bodies_path).read_text(encoding="utf-8"))
-        store: object = _standalone_store_from_bodies(bodies)
+        store: AnchorStore = _standalone_store_from_bodies(bodies)
     else:
         # Vault path; if there is no vault (standalone, no --note-bodies), fall
         # back to an empty in-memory store so the gate still runs (every factual
@@ -364,7 +368,7 @@ def _uncited_gate(report_path: str, vault_tag: str, note_bodies_path: str | None
         # in-memory DB) has no claim_anchors table. init_schema is idempotent.
         store.init_schema()
 
-    findings = no_uncited_claim_gate(report_md, store)  # type: ignore[arg-type]
+    findings = no_uncited_claim_gate(report_md, store)
     return [
         {"sentence": getattr(f, "location", ""), "reason": getattr(f, "failure_mode", "uncited")}
         for f in findings
@@ -374,14 +378,19 @@ def _uncited_gate(report_path: str, vault_tag: str, note_bodies_path: str | None
 def uncited_gate_cmd(
     report: str = typer.Option(..., "--report"),
     vault_tag: str = typer.Option(..., "--vault-tag"),
-    note_bodies: str = typer.Option(None, "--note-bodies", "--sources"),
+    note_bodies: str = typer.Option(
+        None, "--note-bodies", "--sources",
+        help="JSON {note_id: body} map. `[[note-id]]` resolves by id; numeric `[N]` "
+             "resolves to the N-th key in insertion order ([1] = first key).",
+    ),
     json_output: bool = typer.Option(False, "--json", "-j"),
 ) -> None:
     """Deterministic ($0) no-uncited-claim ship gate. Non-zero exit when it blocks.
 
     Standalone (outside Claude Code): pass `--note-bodies`/`--sources` (a JSON
     `{note_id: body}` map) to resolve `[N]`/`[[note-id]]` citations with no
-    pre-populated vault — mirrors recitation-gate. With neither a vault nor
+    pre-populated vault — mirrors recitation-gate. Numeric `[N]` resolves
+    positionally ([1] = first key in the map). With neither a vault nor
     --note-bodies, the gate auto-inits an empty store (clean "0 anchors")."""
     uncited = _uncited_gate(report, vault_tag, note_bodies)
     typer.echo(json.dumps({"uncited": uncited}))

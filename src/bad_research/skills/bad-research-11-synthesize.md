@@ -224,6 +224,10 @@ prompt: |
   step-16 `bad uncited-gate` a cheap VERIFIER over a clean draft (0–few
   blocks) instead of a heavy block-and-patch rewriter — the ~2× cost the
   benchmark exposed when drafts were grounded after the fact.
+  EXEMPTION: when citation_style == "none", emit NO markers (the
+  rule above doesn't apply, and the uncited-gate is not a ship-block) —
+  the discipline survives only as sourcing: write claims you *could*
+  cite, but render no tokens.
 
   **Citation rendering:**
   - If citation_style == "wikilink" (default): every citation is a
