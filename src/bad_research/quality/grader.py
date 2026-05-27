@@ -44,7 +44,7 @@ class GraderVerdict:
         return self.verdict.passed
 
     def to_dict(self) -> dict[str, Any]:
-        d = self.verdict.to_dict()  # includes scores, overall, passed, rationale
+        d = self.verdict.to_dict()  # includes rails, pass_rate, passed, rationale
         d["findings"] = [
             {
                 "failure_mode": f.failure_mode,

@@ -79,7 +79,12 @@ def load_golden_corpus(directory: Path | str | None = None) -> list[GoldenCase]:
     d = Path(directory) if directory is not None else GOLDEN_DIR
     cases: list[GoldenCase] = []
     for fp in sorted(d.glob("*.json")):
-        cases.append(GoldenCase.from_json(json.loads(fp.read_text(encoding="utf-8"))))
+        try:
+            cases.append(GoldenCase.from_json(json.loads(fp.read_text(encoding="utf-8"))))
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+            # Fail closed with a clear message instead of a raw traceback — the
+            # drop-in-a-file extensibility path should name the bad fixture.
+            raise ValueError(f"golden fixture {fp.name} is malformed: {e}") from e
     return cases
 
 
@@ -117,6 +122,14 @@ class RubricJudge:
         host); borderline if a source lacks a url.
       - efficiency: pass unless the report is empty (fail) or pathologically long
         (borderline > 6000 chars with little corpus to back it).
+
+    SCOPE (do not oversell): the `factual` axis is a grounding-OVERLAP proxy
+    (content-word overlap with the corpus), NOT entailment. It catches uncited /
+    ungrounded / overclaiming text, but it CANNOT catch a well-cited claim that
+    *contradicts* its source (a report sharing the corpus's vocabulary passes).
+    So this keyless gate guards judge + router + retrieval determinism and
+    citation/grounding presence — not synthesis-correctness drift. Catching a
+    cited contradiction needs the opt-in `LLMJudge` (host-model entailment) path.
     """
 
     def judge(self, query: str, report: str, corpus: list[dict[str, Any]]) -> JudgeVerdict:

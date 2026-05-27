@@ -73,10 +73,13 @@ def test_gate_baseline_regression_trips_the_gate(tmp_path: Path):
 
 
 def test_gate_respects_an_explicit_floor(tmp_path: Path):
-    # A floor of 1.0 is stricter than the seed corpus achieves on the judge -> trips
-    # only if any case is below-perfect; we assert the flag is wired (exit code is a
-    # function of the floor, not hard-coded).
-    strict = runner.invoke(
+    # The --floor exit code is a function of the floor, not hard-coded: a floor the
+    # corpus clears -> exit 0; a floor above the corpus's pass-rate -> exit != 0.
+    ok = runner.invoke(
         app, ["calibrate", "--gate", "--floor", "0.0", "--out", str(tmp_path)]
     )
-    assert strict.exit_code == 0, strict.output
+    assert ok.exit_code == 0, ok.output
+    strict = runner.invoke(
+        app, ["calibrate", "--gate", "--floor", "1.01", "--out", str(tmp_path)]
+    )
+    assert strict.exit_code != 0, strict.output  # unreachable floor trips the gate
