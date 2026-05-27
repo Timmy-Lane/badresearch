@@ -24,6 +24,55 @@ ROUTER_AGENTIC_MAX_ATOMIC = 2
 ROUTER_LIGHT_MAX_ATOMIC = 6
 
 
+# ── B-5 modality factor (2026-05-27 post-benchmark) ──────────────────────────
+# Benchmark bug: q1 ("best tech stack") up-routed to `full` purely because the
+# decomposition carried 17 atomic items, then ran the contradiction-graph / loci
+# / depth machinery on what is a SURVEY — ~2x the cost on a broad-but-shallow
+# curation query. The fix: factor query MODALITY + CONTESTEDNESS alongside the
+# atomic-item count so breadth ALONE no longer forces `full`. The genuine
+# full-tier triggers (time_periods, argumentative format, contradiction terms,
+# multi-domain) are untouched and still escalate regardless of modality.
+
+# Broad-curation modalities. A query whose work is collecting / comparing /
+# surveying options does not benefit from adversarial dialectics — it benefits
+# from coverage. These modalities can absorb the breadth-only full trigger when
+# contestedness is low (mirrors decompose's `light`+`structured` survey class,
+# bad-research-1-decompose §7 response_format table).
+BREADTH_MODALITIES = ("collect", "compare", "survey")
+
+# Phrasing markers that signal a curation/survey intent (used by detect_modality
+# when the decompose step did not set an explicit `modality` field). Kept lower-
+# case; matched against the joined sub_questions text. Conservative on purpose —
+# only escalate-defeating when a clear curation cue is present.
+SURVEY_PHRASE_MARKERS = (
+    "best ", "top ", "list of", "list the", "overview of", "landscape",
+    "options for", "alternatives to", "which ", "what are the",
+)
+COMPARE_PHRASE_MARKERS = ("compare ", " vs ", " vs. ", "versus ", "difference between")
+
+# Contestedness signal weights (0..1 score). A query clears CONTESTEDNESS_FULL_FLOOR
+# when it carries genuine source-tension signals; below the floor, a broad-curation
+# query is allowed to down-route. Contradiction terms are the strongest signal
+# (they ARE the decompose contradiction taxonomy), so a single one clears the floor.
+CONTESTEDNESS_W_CONTRADICTION = 0.60   # any contradiction_terms entry
+CONTESTEDNESS_W_ARGUMENTATIVE = 0.50   # response_format == "argumentative"
+CONTESTEDNESS_W_DISPUTE_PHRASE = 0.40  # dispute phrasing in sub_questions
+CONTESTEDNESS_FULL_FLOOR = 0.50        # >= floor → genuinely contested → keep full
+
+# Dispute phrasing markers (the contested-topic cues from decompose §7 "full" row).
+DISPUTE_PHRASE_MARKERS = (
+    "disputed", "controversial", "debate", "evaluate whether", "is it true",
+    "should ", "trade-off", "tradeoff", "pros and cons", "for or against",
+)
+
+# A broad-curation survey may carry MORE atomic items in `light` before it is
+# forced `full` by breadth — the whole point of B-5 (17 items of "best X" is a
+# survey, not a thesis). This raised ceiling applies ONLY when modality is a
+# BREADTH_MODALITY and contestedness is below the floor; the deep-modality path
+# keeps ROUTER_LIGHT_MAX_ATOMIC unchanged.
+ROUTER_SURVEY_MAX_ATOMIC = 40
+
+
 # ── KR-6 loop levers (dossier 16; INTERFACES_KEYLESS §8 frozen table) ─────────
 
 # Grader loop — judge -> patch -> re-judge, capped (patch-not-regenerate => 3 is
