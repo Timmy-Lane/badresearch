@@ -110,6 +110,8 @@ Read both before starting. The vault_tag is in the scaffold's "Run config" secti
 
    **Default is `"full"`.** When uncertain, tier up. Running the full pipeline on a simple query wastes money; running the light pipeline on a complex query produces a bad report.
 
+   **Survey vs. deep — the discriminator is the WORK, not the wording.** A query is a shallow breadth **survey** (→ `light` / `structured`) only when the work is *enumerating a set of independent options/entities*, where each item is one thing to characterize — e.g. "best tech stacks for a startup", "top 10 PM tools", "list the major cloud providers" (≈17 independent options, each gets a row). A query is **deep** (→ `full`) when the work is *investigating multiple facets of ONE subject and justifying recommendations* — e.g. "best tRPC patterns", "best practices for Kubernetes security", "best architecture for a real-time chat system" — even when phrased "best/top X". Here "best" introduces ONE subject whose ~8 facets must each be investigated and traded off, not a list of options to enumerate. The discriminator is **independent-options-to-enumerate (wide → survey/light)** vs **facets-of-one-subject-to-investigate (deep → full)**, NOT the superlative wording. If a "best/top X" query has a single core subject, it is deep — tier it `full`.
+
    **`response_format`** — how the output is shaped:
 
    | Format | When to use | Characteristics |

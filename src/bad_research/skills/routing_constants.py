@@ -44,6 +44,14 @@ BREADTH_MODALITIES = ("collect", "compare", "survey")
 # when the decompose step did not set an explicit `modality` field). Kept lower-
 # case; matched against the joined sub_questions text. Conservative on purpose —
 # only escalate-defeating when a clear curation cue is present.
+#
+# [SEMANTIC-TIERING 2026-05-28] A LEXICALLY-inferred breadth modality (matched
+# here, with no explicit `modality` field on the decomp) NO LONGER buys the raised
+# survey ceiling. Lexical "best/top/what-are-the" phrasing can't tell "best tech
+# *stack*" (enumerate ~17 independent options → shallow/wide) from "best tRPC
+# *patterns*" (investigate ~8 facets of ONE subject → deep). detect_modality still
+# returns a modality for shape/other uses, but the survey-ceiling down-route now
+# gates on `_explicit_breadth_modality` (router.py) — an EXPLICIT `modality` field.
 SURVEY_PHRASE_MARKERS = (
     "best ", "top ", "list of", "list the", "overview of", "landscape",
     "options for", "alternatives to", "which ", "what are the",
