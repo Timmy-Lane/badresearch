@@ -18,14 +18,14 @@ never requirements.
 Bad Research is a small CLI that registers itself as a Claude Code skill. No API keys. Requires Python 3.11–3.13.
 
 ```bash
-# 1. Download + install the CLI (pipx keeps it in its own isolated env)
+# Download + install the CLI (pipx or uv — either works)
 pipx install git+https://github.com/LeventySeven/badresearch.git
-#    └─ or:  uv tool install git+https://github.com/LeventySeven/badresearch.git
+uv tool install git+https://github.com/LeventySeven/badresearch.git
 
-# 2. Register the /bad-research skill into ~/.claude (one time, applies to every project)
+# Register the /bad-research skill into ~/.claude
 bad install
 
-# 3. Verify — keyless capability report, no key needed
+# Verify
 bad doctor
 ```
 
