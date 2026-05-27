@@ -57,6 +57,19 @@ def test_explicit_quotation_with_adjacent_cite_is_exempt():
     assert recitation_findings(report, {"note-1": src}) == []
 
 
+def test_stray_unrelated_quote_does_not_launder_verbatim_copy():
+    # The carve-out is per-RUN: copying a 13+-word source verbatim OUTSIDE the quotes
+    # and tacking on an unrelated "quote" + [N] must STILL flag (closed false-negative).
+    src = ("Transformers replace recurrence with self attention allowing the model to "
+           "weigh every token against every other token in parallel during training.")
+    report = ("Transformers replace recurrence with self attention allowing the model to "
+              "weigh every token against every other token in parallel during training, as "
+              'the so-called "paper" notes [1].')
+    findings = recitation_findings(report, {"note-1": src})
+    assert len(findings) == 1  # the verbatim run is outside the "paper" quote -> not exempt
+    assert findings[0].failure_mode == "recitation"
+
+
 def test_sources_section_excluded():
     src = "Alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi."
     report = ("# Title\n\nA short paraphrase here [1].\n\n## Sources\n"

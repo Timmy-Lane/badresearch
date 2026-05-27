@@ -17,11 +17,11 @@ RECITATION_MAX_OVERLAP = 0.50  # >50% of a sentence's tokens are one contiguous 
 
 _WORD = re.compile(r"[\w']+", re.UNICODE)
 _CITE_TOKEN = re.compile(r"\[\[[^\]]+\]\]|\[\d+\]")
-# A run that lives inside an explicit "..." quotation that also carries a [N]
-# citation is exempt (Gemini's public-domain / direct-quote-with-attribution
-# carve-out, dossier §5.1). An attributed direct quote is allowed to be verbatim:
-# the sentence must contain BOTH a quoted span AND a citation token (the citation
-# need not sit immediately after the closing quote — "…" the author wrote [1]).
+# Carve-out (Gemini's direct-quote-with-attribution rule, dossier §5.1): a verbatim
+# run is exempt ONLY when that run lies INSIDE an explicit "..." quotation AND the
+# sentence carries a [N] citation — i.e. it IS an attributed direct quote. The
+# exemption is per-RUN, not per-sentence: a sentence that copies a source verbatim
+# OUTSIDE its quotes cannot launder the copy by appending an unrelated "quote" [1].
 _QUOTED_SPAN = re.compile(r'"[^"]+"')
 
 
@@ -53,11 +53,25 @@ def longest_common_contiguous_run(a: list[str], b: list[str]) -> list[str]:
     return a[best_end - best_len:best_end]
 
 
-def _is_exempt_quotation(sent: str) -> bool:
-    """True iff the sentence carries BOTH an explicit "..." quotation AND a
-    citation token — the attributed-direct-quote carve-out. Either ordering is
-    accepted (quote-then-cite or quote ... attribution + cite)."""
-    return bool(_QUOTED_SPAN.search(sent)) and bool(_CITE_TOKEN.search(sent))
+def _is_contiguous_sublist(needle: list[str], haystack: list[str]) -> bool:
+    """True iff `needle` appears as a contiguous run inside `haystack`."""
+    n = len(needle)
+    if n == 0 or n > len(haystack):
+        return False
+    return any(haystack[i:i + n] == needle for i in range(len(haystack) - n + 1))
+
+
+def _run_is_attributed_quote(run: list[str], sent: str) -> bool:
+    """True iff the verbatim `run` lies entirely within one of the sentence's
+    explicit "..." quoted spans AND the sentence carries a citation token — an
+    attributed direct quote, which is allowed to be verbatim (Gemini §5.1).
+
+    A run OUTSIDE every quoted span is recitation even if the sentence happens to
+    contain some other (unrelated) quote — closing the "append a stray quote to
+    escape the gate" false-negative."""
+    if not _CITE_TOKEN.search(sent):
+        return False
+    return any(_is_contiguous_sublist(run, words(span)) for span in _QUOTED_SPAN.findall(sent))
 
 
 def recitation_findings(report_md: str, note_bodies: dict[str, str]) -> list[Finding]:
@@ -68,14 +82,14 @@ def recitation_findings(report_md: str, note_bodies: dict[str, str]) -> list[Fin
     findings: list[Finding] = []
     body_words = {nid: words(body) for nid, body in note_bodies.items()}
     for sent in split_sentences(strip_sources_section(report_md)):
-        if _is_exempt_quotation(sent):
-            continue
         toks = words(sent)
         if not toks:
             continue
         for bw in body_words.values():
             run = longest_common_contiguous_run(toks, bw)
-            if len(run) > RECITATION_MAX_NGRAM or len(run) / len(toks) > RECITATION_MAX_OVERLAP:
+            too_long = len(run) > RECITATION_MAX_NGRAM
+            too_dense = len(run) / len(toks) > RECITATION_MAX_OVERLAP
+            if (too_long or too_dense) and not _run_is_attributed_quote(run, sent):
                 findings.append(
                     Finding(
                         failure_mode="recitation",

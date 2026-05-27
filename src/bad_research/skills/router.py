@@ -10,19 +10,19 @@ tree is verbatim from DR-loops §9.2:
 """
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from bad_research.skills import routing_constants as R  # noqa: N812
 
 Route = Literal["agentic-fast", "light", "full"]
 
 
-def _atomic_count(decomp: dict) -> int:
+def _atomic_count(decomp: dict[str, Any]) -> int:
     # atomic items = sub_questions + named entities (the Step-1 taxonomy)
     return len(decomp.get("sub_questions") or []) + len(decomp.get("entities") or [])
 
 
-def _full_triggers(decomp: dict) -> list[str]:
+def _full_triggers(decomp: dict[str, Any]) -> list[str]:
     """The reasons (if any) a query MUST route full. Empty list → not forced full."""
     n = _atomic_count(decomp)
     fmt = decomp.get("response_format", "structured")
@@ -43,7 +43,7 @@ def _full_triggers(decomp: dict) -> list[str]:
     return reasons
 
 
-def classify_route(decomp: dict) -> Route:
+def classify_route(decomp: dict[str, Any]) -> Route:
     n = _atomic_count(decomp)
     fmt = decomp.get("response_format", "structured")
     time_periods = decomp.get("time_periods") or []
@@ -65,7 +65,7 @@ def classify_route(decomp: dict) -> Route:
     return "light"
 
 
-def route_reason(decomp: dict) -> str:
+def route_reason(decomp: dict[str, Any]) -> str:
     """A one-line, human-readable rationale for the chosen route.
 
     Used by the router skill to write the `## Route rationale` line and by the
@@ -81,7 +81,7 @@ def route_reason(decomp: dict) -> str:
     return f"light: {n} atomic item(s) / structured coverage, no full-tier trigger"
 
 
-def effort_overrides(effort: str | None) -> dict | None:
+def effort_overrides(effort: str | None) -> dict[str, Any] | None:
     """Translate the `--reasoning-effort` dial (minimal/low/medium/high) into the
     router overrides the orchestrator applies on top of the auto-classified route.
 
