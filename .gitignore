@@ -11,3 +11,11 @@ build/
 .coverage
 htmlcov/
 .DS_Store
+
+# dev-only build artifacts — not shipped (kept on disk for dev, out of the prod repo)
+docs/plans/
+docs/investigation/
+docs/INTERFACES.md
+docs/INTERFACES_KEYLESS.md
+docs/KEYLESS_REBUILD_PLAN_OUTLINE.md
+docs/SPEC.md

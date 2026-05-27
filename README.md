@@ -42,7 +42,6 @@ Bad Research takes hyperresearch as its base and enhances each stage with patter
 drawn from the best deep-research systems — Perplexity, Gemini, Firecrawl, Stagehand,
 AgentQL, and others — reimplemented to run **keyless** on the host model. The full
 write-up, stage by stage with provenance, is in
-[**docs/HOW_IT_WORKS.md**](docs/HOW_IT_WORKS.md). The design spec is in
-[`docs/SPEC.md`](docs/SPEC.md).
+[**docs/HOW_IT_WORKS.md**](docs/HOW_IT_WORKS.md).
 
 MIT licensed.
