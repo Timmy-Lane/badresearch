@@ -229,11 +229,18 @@ def test_real_build_engine_reranks_through_host_llm(monkeypatch, tmp_path):
         return Note(meta=NoteMeta(title=nid, id=nid, source=f"https://ex.com/{nid}",
                                   status="evergreen"),
                     body=body, path=f"research/{nid}.md")
+    # Graded term-frequency over the query terms (all docs recalled) so the min-max-
+    # normed BM25 proxy spans E6's bands: the top doc is auto-kept by the cascade and
+    # the weakest auto-dropped, but the MIDDLE docs land in the UNCERTAIN band and MUST
+    # hit the host-model reranker seam — which is exactly what this test verifies (a
+    # wrong-class / Cohere wiring would crash here, post-E6 it must still be reached).
     engine.index([
-        _note("a", "# A\n\nresearch synthesis grounding pipeline keyless retrieval explained\n"),
-        _note("b", "# B\n\nunrelated rust ownership borrow checker lifetimes memory model\n"),
+        _note("a", "# A\n\n" + "research synthesis grounding " * 12 + "\n"),
+        _note("m1", "# M1\n\n" + "research synthesis grounding " * 7 + ("pad " * 30) + "\n"),
+        _note("m2", "# M2\n\n" + "research synthesis grounding " * 4 + ("pad " * 60) + "\n"),
+        _note("z", "# Z\n\n" + "research synthesis grounding " * 1 + ("pad " * 120) + "\n"),
     ])
-    hits = engine.search("research synthesis grounding", mode="light", top_k=2)
+    hits = engine.search("research synthesis grounding", mode="light", top_k=4)
     assert hits, "real FTS+host-rerank engine returned no hits on a matching query"
     assert mock_llm.rerank_calls >= 1, "the host-model reranker seam was never called"
 
