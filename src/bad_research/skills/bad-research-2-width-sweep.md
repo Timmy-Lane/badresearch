@@ -188,8 +188,29 @@ prompt: |
   OBJECTIVE: fetch and ground every URL in your batch into vault notes tagged
   <vault_tag>, chasing 3–8 primary sources via citation chains.
 
+  SOURCE-QUALITY NEGATIVE SIGNALS (down-weight or FLAG, do NOT suppress):
+  As you read each source, judge it against this list (Anthropic worker-prompt
+  discipline — the things a regex/domain check CANNOT see). FLAG the source; do NOT
+  silently drop it (the lead reconciles flags downstream — flag, don't suppress):
+  - news aggregators rather than original sources       -> flag `aggregator`
+  - false authority (cites authority it lacks / misattributes)  -> `false_authority`
+  - passive voice with nameless sources ("experts say", "it is reported")  -> `nameless_source`
+  - general qualifiers without specifics ("many", "often", "significant")  -> `vague_qualifier`
+  - unconfirmed reports (rumor not yet verified)        -> flag `unconfirmed`
+  - marketing language / spin language (promotional, sales copy)  -> `marketing_spin`
+  - speculation presented as finding                    -> flag `speculation`
+  - cherry-picked data (selective evidence, no counter-data)  -> `cherry_picked`
+  A source with NONE of these gets no flags (it is unchanged). A primary filing or
+  peer-reviewed paper is almost never flagged; a vendor "X is the best" listicle on a
+  good domain SHOULD be flagged `marketing_spin` even though its domain tier is high.
+
   OUTPUT_SHAPE: for each note, emit the claims JSON the binding consumes —
-  a JSON array of {claim, note_id, quoted_support, char_start, char_end}.
+  a JSON array of {claim, note_id, quoted_support, char_start, char_end,
+  source_quality_flags}. `source_quality_flags` is a (possibly empty) JSON array of
+  the flag strings above — e.g. [] for a clean primary, ["marketing_spin"] for a
+  vendor spin page. This field is ADDITIVE: downstream consumers (the anchor binding,
+  the uncited-gate) ignore unknown/extra fields, and `quality/rank.py` folds the flags
+  into an epistemic-penalty multiplier ALONGSIDE the domain-tier multiplier.
 
   TOOLS_ALLOWED: ["fetch_url", "web_search", "execute_python"]
 
@@ -375,6 +396,17 @@ prompt: |
   PIPELINE POSITION: You are a leaf subagent for deep end-to-end analysis
   of ONE long source. Your digest feeds downstream Bad Research steps. You
   do NOT spawn other subagents.
+
+  SOURCE-QUALITY NEGATIVE SIGNALS (down-weight or FLAG, do NOT suppress):
+  Judge this long source against the Anthropic negative-signal list — flag, don't
+  suppress (the lead reconciles): news aggregators rather than original sources
+  (`aggregator`), false authority (`false_authority`), passive voice with nameless
+  sources (`nameless_source`), general qualifiers without specifics
+  (`vague_qualifier`), unconfirmed reports (`unconfirmed`), marketing/spin language
+  (`marketing_spin`), speculation presented as finding (`speculation`), cherry-picked
+  data (`cherry_picked`). Record any that apply as `source_quality_flags: [...]` (empty
+  if none) in your digest header so `quality/rank.py` can apply the epistemic penalty
+  alongside the domain tier — a spin page on a high-authority domain is still demoted.
 
   YOUR INPUTS:
   - source_note_id: <vault note id of the long source>
