@@ -6,6 +6,12 @@
 
 <p align="center"><em>michael jackson bad</em></p>
 
+<p align="center">
+  <a href="https://pypi.org/project/bad-research/"><img src="https://img.shields.io/pypi/v/bad-research.svg" alt="PyPI version"></a>
+  <a href="https://pypi.org/project/bad-research/"><img src="https://img.shields.io/pypi/pyversions/bad-research.svg" alt="Python versions"></a>
+  <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT">
+</p>
+
 A **keyless** deep-research agent that runs as a Claude Code skill — a
 fork-and-enhance of [hyperresearch](https://github.com/jordan-gibbs/hyperresearch).
 It searches wide, filters garbage, grounds every claim to a source, and needs
