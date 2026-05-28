@@ -44,8 +44,7 @@ When you invoke a Skill, that skill's full procedure is loaded into your context
 | 5 | `bad-research-5-depth-investigation` | K depth-investigators in parallel → interim notes with committed positions | full |
 | 6→7* (merged) | `bad-research-6-cross-locus-reconcile` | Reconcile committed positions into cross-locus tensions; Step 6.5: scan source bodies for orphan tensions → single richer `research/temp/tensions.md` | full |
 | 8 | `bad-research-8-corpus-critic` | "What source would overturn this?" + targeted gap-fill fetch | full |
-| 9 | `bad-research-9-evidence-digest` | Top claims + verbatim quotes → evidence-digest.md | full |
-| 10 | `bad-research-10-triple-draft` | Per-angle source curation + 3 parallel draft-orchestrators (3 angle-specific drafts) | all |
+| 9→10* (merged) | `bad-research-10-triple-draft` | Step 10.0b Part 2 builds the evidence digest inline (top claims + verbatim quotes → evidence-digest.md, formerly step 9); then per-angle source curation + 3 parallel draft-orchestrators (3 angle-specific drafts) | all |
 | 11 | `bad-research-11-synthesize` | Synthesis plan + outline + spawn synthesizer subagent (two-pass write) → final_report.md | full |
 | 12 | `bad-research-12-critics` | 4 adversarial critics in parallel → findings JSONs | full |
 | 13 | `bad-research-13-gap-fetch` | Fetch sources for critic-identified vault gaps | full |
@@ -68,7 +67,7 @@ When you invoke a Skill, that skill's full procedure is loaded into your context
 **Complete pipeline order (full tier), half-steps included:**
 
 ```
-0.5 → 1 → 1.5 → 1.6 → 2 → 4* → 5 → 6* → 8 → 9 → 10 → 11 → 11.5
+0.5 → 1 → 1.5 → 1.6 → 2 → 4* → 5 → 6* → 8 → 10* → 11 → 11.5
     → 12 → 13 → 12.5 → 14 → 14.5 → 15 → 16(+gate)
 ```
 
@@ -90,7 +89,7 @@ deep path (triple-draft ensemble + synthesis + adversarial critics + grader loop
 |---|---|---|---|
 | `agentic-fast` | 0.5 → 1 → 1.5 → agentic-fast → 12(slim critic) → 15 → 16(+gate) | ~$1–5 | <3 min |
 | `light` | 0.5 → 1 → 1.5 → 1.6 → 2(funnel) → 10(single draft) → 12(slim critic) → 15 → 16(+gate) | ~$5–15 | ~30–40 min |
-| `full` | 0.5 → 1 → 1.5 → 1.6 → 2 → 4* → 5 → 6* → 8 → 9 → 10 → 11 → 11.5 → 12 → 13 → 12.5(grader loop) → 14 → 14.5(fresh-review) → 15 → 16(+gate+recitation) | ~$60–120 | ~1.5–2.5 h |
+| `full` | 0.5 → 1 → 1.5 → 1.6 → 2 → 4* → 5 → 6* → 8 → 10* → 11 → 11.5 → 12 → 13 → 12.5(grader loop) → 14 → 14.5(fresh-review) → 15 → 16(+gate+recitation) | ~$60–120 | ~1.5–2.5 h |
 
 **On 0.5 (clarify):** the route — including `agentic-fast` — is only decided at step 1.5, *after* 0.5 has already run, so 0.5 normally runs first on every interactive run. 0.5 is skipped **only on `--auto`/wrapped runs** (a wrapped run is one where `research/wrapper_contract.json` is present and the query is binding GOSPEL not to be questioned). `16(+gate)` is shorthand for "step 16 plus the deterministic no-uncited-claim ship-gate that runs after it on every route" — a *ship-gate* is a blocking quality check that must pass before the report can be delivered.
 
@@ -279,8 +278,7 @@ Context compaction may eat parts of this conversation. If you're unsure what ste
    - Step 5: vault notes with `type: interim` (`$HPR search "" --tag <vault_tag> --type interim -j`)
    - Step 6: `research/temp/tensions.md` (cross-locus + orphan tensions; Step 6.5 merges the former step-7 source-tensions into this single artifact)
    - Step 8: `research/corpus-critic-gaps.json`, `research/temp/corpus-critic-results.md`
-   - Step 9: `research/temp/evidence-digest.md`
-   - Step 10: `research/temp/draft-{a,b,c}.md` (or `research/notes/final_report_<vault_tag>.md` for light tier single-pass)
+   - Step 10: `research/temp/evidence-digest.md` (built inline in Step 10.0b Part 2, full only — formerly step 9), then `research/temp/draft-{a,b,c}.md` (or `research/notes/final_report_<vault_tag>.md` for light tier single-pass)
    - Step 11: `research/temp/synthesis-plan.md`, `research/temp/synthesis-outline.md`, `research/temp/synthesis-evidence.md`, `research/temp/synthesis-pass1.md`, `research/notes/final_report_<vault_tag>.md`
    - Step 11.5: `research/temp/citation-verify-actions.json` (citation-verifier dispositions; full only)
    - Step 12: `research/critic-findings-{dialectic,depth,width,instruction}.json`

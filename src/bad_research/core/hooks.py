@@ -3655,7 +3655,6 @@ _BAD_RESEARCH_STEP_SKILLS = [
     "bad-research-5-depth-investigation",
     "bad-research-6-cross-locus-reconcile",
     "bad-research-8-corpus-critic",
-    "bad-research-9-evidence-digest",
     "bad-research-10-triple-draft",
     "bad-research-11-synthesize",
     "bad-research-11.5-citation-verifier",

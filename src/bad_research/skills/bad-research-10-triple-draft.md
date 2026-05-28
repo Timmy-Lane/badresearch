@@ -2,10 +2,11 @@
 name: bad-research-10-triple-draft
 user-invocable: false
 description: >
-  Step 10 of the Bad Research pipeline — for full tier, spawns 3 parallel
-  draft-orchestrators that each write one angle-specific draft from step 9's
-  evidence digest plus a per-angle curated note list (step 11 synthesizes them);
-  for light tier, writes a single final draft directly. Produces
+  Step 10 of the Bad Research pipeline — for full tier, builds the evidence digest
+  inline (Step 10.0b Part 2, formerly step 9) then spawns 3 parallel
+  draft-orchestrators that each write one angle-specific draft from that evidence
+  digest plus a per-angle curated note list (step 11 synthesizes them); for light
+  tier, writes a single final draft directly. Produces
   research/temp/draft-{a,b,c}.md (full) or the final report (light).
 ---
 
@@ -25,7 +26,7 @@ Read these inputs:
 - `research/scaffold.md` — vault_tag, modality, wrapper requirements
 - `research/prompt-decomposition.json` — atomic items, required_section_headings, response_format, citation_style, pipeline_tier
 - `research/temp/reflections.md` — the distilled short-term memory (≤3 claim bullets + `cited_note_ids` per round). **PLAN from this, not the raw corpus** — see Step 10.0b
-- `research/temp/evidence-digest.md` — top claims + verbatim quotes — PRIMARY EVIDENCE LAYER (full only; absent for light)
+- `research/temp/claims-*.json` (full tier) — per-note distilled claims; Step 10.0b Part 2 below BUILDS `research/temp/evidence-digest.md` (the PRIMARY EVIDENCE LAYER) from these, inline. Absent for light.
 - `research/temp/tensions.md` (full tier) — cross-locus + orphan expert disagreements (the merged step-6 artifact; replaces the former `comparisons.md` + `source-tensions.json`)
 - `research/temp/coverage-gaps.md` (if exists) — items with weak source coverage
 - Survey vault: `$HPR search "" --tag <vault_tag> -j` for the evidence landscape
@@ -77,10 +78,57 @@ cost ONCE, at draft time, and only for the `note_id`s it will actually cite.
    `anchors.py` verify byte-for-byte. A claim whose supporting span you cannot
    re-locate in the re-injected raw body is dropped or hedged, never fabricated.
 
-**Light tier:** light has no `evidence-digest.md`; it still plans from
-`reflections.md` (written in step 2) and re-injects raw bodies only for the
-`cited_note_ids` it will cite (the 8–15 notes it opens — see the Light tier
+**Light tier:** light has no `evidence-digest.md` (it skips Part 2 below); it still
+plans from `reflections.md` (written in step 2) and re-injects raw bodies only for
+the `cited_note_ids` it will cite (the 8–15 notes it opens — see the Light tier
 section below).
+
+---
+
+## Step 10.0b — Part 2: Build evidence digest (inline)
+
+**Full tier only.** Build `research/temp/evidence-digest.md` here, inline, BEFORE
+spawning the draft-orchestrators. This replaces the former step 9 invocation — the
+evidence digest is now assembled at the top of step 10 rather than as its own stage.
+(Skip this Part for `light` tier — light has no evidence digest and writes a single
+draft directly per the Light tier section below.)
+
+The digest is the top load-bearing claims + verbatim quotes from the claims JSONs,
+assembled into a single file the drafter reads as primary evidence —
+higher-fidelity than fetcher summaries. The per-angle source-list curation
+(Step 10.2) and each draft-orchestrator both reference it.
+
+`# NOTE (Workstream A): when A lands, carry line_start/line_end per chunk here (converted from char_start/char_end via char_span_to_line_range).`
+
+1. **Read all claims files** from `research/temp/claims-*.json` for every non-deprecated note tagged with the vault tag. If no claim files exist (e.g., fetchers didn't produce them), skip building the digest (the drafter falls back to the curated `must_read_note_ids` raw bodies).
+
+2. **Filter and rank.** Keep claims where `confidence` is `"high"` OR `evidence_type` is `"empirical"` or `"statistical"`. From the remainder, prefer claims with non-empty `numbers` arrays and non-empty `quoted_support`. Cap at **80–120 claims total** for `full` tier.
+
+3. **Group by atomic item.** Match each surviving claim to the atomic item it is most relevant to based on **topic overlap** — do not rely on exact field matching. A claim about "United Health Group regulatory exposure" serves the atomic item "UNH risk factors" even though no field matches exactly. Use the claim's `entities`, `stance_target`, `scope_conditions`, and `claim` text holistically to judge relevance. When uncertain, include the claim under the most relevant item rather than dropping it to Ungrouped. Claims that genuinely don't map to any atomic item go into an "Ungrouped" section at the end.
+
+4. **Include consensus and contested claims.**
+   - If `research/temp/consensus-claims.json` exists, include its claims marked as `[consensus]`.
+   - If `research/temp/contradiction-graph.json` exists, include the top 3–5 contested claim pairs with both sides' `quoted_support` passages.
+
+5. **Write `research/temp/evidence-digest.md` now (before spawning draft-orchestrators). This replaces the former step 9 invocation.** Format: one H3 per atomic item, bullet list of claims. Each bullet includes:
+   - The `claim` text
+   - The `quoted_support` verbatim passage (block-quoted) — keep it byte-for-byte so the cited spans survive for the downstream grounding gates
+   - The `source_note_id`
+
+   Keep it scannable — this is an evidence index, not a narrative. Target at least 30 claims for `full` tier; if fewer claims exist in total, include all of them.
+
+   Example:
+   ```markdown
+   ### Atomic item: Market growth in Southeast Asia
+
+   - Annual growth rate of 12.4% in 2024 (empirical)
+     > "Southeast Asian e-commerce GMV grew from $89B to $100B between 2023 and 2024, a 12.4% YoY expansion."
+     [source-note-12]
+
+   - Vietnam led by penetration rate (statistical)
+     > "Vietnam reached 64% e-commerce penetration in 2024, the highest in SEA, surpassing Singapore (61%)."
+     [source-note-19]
+   ```
 
 ---
 

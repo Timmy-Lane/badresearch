@@ -127,8 +127,8 @@ The targeted fetch wave in the next step will pull these filings BEFORE the corp
 
 ## Next step
 
-Return to the entry skill (`bad-research`). Invoke step 9:
+Return to the entry skill (`bad-research`). Invoke step 10 (the evidence digest is now built inline in step 10.0b Part 2, replacing the former step 9):
 
 ```
-Skill(skill: "bad-research-9-evidence-digest")
+Skill(skill: "bad-research-10-triple-draft")
 ```

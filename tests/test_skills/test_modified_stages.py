@@ -235,3 +235,29 @@ def test_step7_removed_from_hooks_roster(skills_dir):
 def test_step10_reads_tensions_md_not_source_tensions_json(skills_dir):
     body = (skills_dir / "bad-research-10-triple-draft.md").read_text()
     assert "tensions.md" in body, "step 10 must read the merged tensions.md artifact"
+
+
+# ── C-3: cut step 9 (evidence-digest); build inline in step 10.0b Part 2 ──
+
+
+def test_step9_merged_inline_into_step10(skills_dir):
+    """After C-3: step 9 no longer exists; evidence-digest procedure is in step 10.0b."""
+    assert not (skills_dir / "bad-research-9-evidence-digest.md").exists(), \
+        "bad-research-9-evidence-digest.md must be removed after C-3 merge"
+    body = (skills_dir / "bad-research-10-triple-draft.md").read_text()
+    assert "evidence-digest.md" in body, "step 10 must build evidence-digest.md inline"
+    assert "10.0b" in body or "Step 10.0b" in body, "inline digest build must be Step 10.0b"
+    # the 80-120 claim cap and quoted_support discipline must survive
+    assert "80" in body and "120" in body
+    assert "quoted_support" in body
+
+
+def test_step9_removed_from_hooks_roster(skills_dir):
+    from bad_research.core.hooks import _BAD_RESEARCH_STEP_SKILLS
+    assert "bad-research-9-evidence-digest" not in _BAD_RESEARCH_STEP_SKILLS
+    assert "bad-research-10-triple-draft" in _BAD_RESEARCH_STEP_SKILLS
+
+
+def test_step12_5_grader_still_reads_evidence_digest(skills_dir):
+    body = (skills_dir / "bad-research-12.5-grader.md").read_text()
+    assert "evidence-digest.md" in body, "grader must still reference evidence-digest.md artifact"
