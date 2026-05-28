@@ -60,3 +60,67 @@ def _fuzzy_locate(quote: str, body: str) -> tuple[int, int] | None:
     if best_span is not None and best_score >= FUZZY_RATIO_FLOOR:
         return best_span
     return None
+
+
+def body_to_lines(body: str) -> list[tuple[int, int]]:
+    """Return a list of (char_start, char_end) for each line (0-indexed, exclusive end).
+
+    Handles LF, CRLF, and CR line endings. A trailing newline does NOT produce a
+    spurious empty final entry. The slice body[char_start:char_end] reproduces
+    the line content WITHOUT its line terminator.
+    """
+    if not body:
+        return []
+    result: list[tuple[int, int]] = []
+    pos = 0
+    n = len(body)
+    while pos < n:
+        # find the next newline (LF), handling CRLF as one unit
+        nl = body.find("\n", pos)
+        if nl == -1:
+            # last line with no trailing newline
+            result.append((pos, n))
+            break
+        # CRLF: the content ends before the CR
+        content_end = nl - 1 if nl > pos and body[nl - 1] == "\r" else nl
+        result.append((pos, content_end))
+        pos = nl + 1
+    # If the body ends with a newline the loop adds an empty-range trailing
+    # entry — drop it.
+    if result and result[-1][0] == result[-1][1]:
+        result.pop()
+    return result
+
+
+def char_span_to_line_range(
+    body_lines: list[tuple[int, int]],
+    char_start: int,
+    char_end: int,
+) -> tuple[int, int]:
+    """Given precomputed body_lines from body_to_lines(), return 1-based
+    (line_start, line_end) covering the char span [char_start, char_end).
+
+    O(n) scan; n is number of lines in the note (typically < 500).
+    Clamps to [1, len(body_lines)] on out-of-range input.
+    """
+    if not body_lines:
+        return (1, 1)
+    n = len(body_lines)
+    line_start: int | None = None
+    line_end: int | None = None
+    for i, (cs, ce) in enumerate(body_lines):
+        # A line overlaps the span if its range intersects [char_start, char_end).
+        # Use inclusive overlap: the span touches this line if cs < char_end and ce > char_start.
+        # Treat char_end == char_start (empty span) as touching the line that contains char_start.
+        span_end = char_end if char_end > char_start else char_start + 1
+        if cs < span_end and ce > char_start or (cs <= char_start < ce):
+            line_no = i + 1  # 1-based
+            if line_start is None:
+                line_start = line_no
+            line_end = line_no
+    if line_start is None:
+        # span is before or after all lines — clamp
+        if char_start >= body_lines[-1][1]:
+            return (n, n)
+        return (1, 1)
+    return (line_start, line_end)  # type: ignore[return-value]
