@@ -261,3 +261,24 @@ def test_step9_removed_from_hooks_roster(skills_dir):
 def test_step12_5_grader_still_reads_evidence_digest(skills_dir):
     body = (skills_dir / "bad-research-12.5-grader.md").read_text()
     assert "evidence-digest.md" in body, "grader must still reference evidence-digest.md artifact"
+
+
+# ── C-4: grader round 1 aggregates critic-findings-*.json (no fresh full scan) ──
+
+
+def test_grader_round1_aggregates_critic_findings(skills_dir):
+    """After C-4: grader round 1 scores from critic-findings-*.json, not a fresh corpus scan."""
+    body = (skills_dir / "bad-research-12.5-grader.md").read_text()
+    low = body.lower()
+    # round 1 uses existing critic findings
+    assert "round 1" in low or "round-1" in low or "first round" in low
+    assert "critic-findings" in body, "round 1 must reference critic-findings-*.json"
+    assert "aggregate" in low or "aggregat" in low, "round 1 must aggregate, not rescan"
+    # rounds 2-3 remain full scans
+    assert "round 2" in low or "round-2" in low or "second round" in low
+    assert "full" in low and ("scan" in low or "corpus" in low), \
+        "rounds 2-3 must still perform full corpus scan"
+    # convergence loop and floor preserved
+    assert "0.70" in body or "0.7" in body
+    assert "MAX_GRADER_REVISIONS" in body or "3" in body
+    assert "grader-log.json" in body
