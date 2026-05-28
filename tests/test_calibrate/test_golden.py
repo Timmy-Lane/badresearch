@@ -180,3 +180,71 @@ def test_seed_corpus_total_includes_llm_fixtures_in_raw_load():
         f"Keyless run must score only 8 (skip 2 requires_llm), got {report.total}"
     )
     assert report.pass_rate == 1.0  # existing 8 still pass
+
+
+# ── E1-3: the gap proof — RubricJudge (lexical) is BLIND, LLMJudge catches it ──
+# Two complementary halves:
+#   1. RubricJudge PASSES both adversarial fixtures (content-word overlap is
+#      sufficient; lexical scoring cannot see semantic inversion or evasion) —
+#      this proves the blind spot exists.
+#   2. LLMJudge FAILS both, on the correct axis (factual / completeness) — this is
+#      the semantic guard. Made deterministic via the conftest StubLLM fixtures
+#      (stub_llm_fail_factual / stub_llm_fail_completeness): no live model, no keys.
+def test_rubric_judge_passes_cited_contradiction_fixture():
+    """E1-3 gap proof: RubricJudge must PASS 09_cited_contradiction (it cannot detect
+    semantic inversion — content-word overlap is sufficient). If this fails, the
+    fixture is too obviously bad and needs better lexical overlap."""
+    from bad_research.calibrate.golden import RubricJudge
+
+    fp = GOLDEN_DIR / "09_cited_contradiction.json"
+    case = GoldenCase.from_json(json.loads(fp.read_text()))
+    verdict = RubricJudge().judge(case.query, case.report, case.corpus)
+    assert verdict.passed, (
+        "RubricJudge should PASS 09_cited_contradiction (lexical overlap is sufficient); "
+        "if it fails, the fixture's report text does not overlap corpus vocabulary enough "
+        "to prove the semantic gap — revise the fixture report."
+    )
+
+
+def test_rubric_judge_passes_over_hedged_completeness_fixture():
+    """E1-3 gap proof: RubricJudge must PASS 10_over_hedged_completeness.
+    The over-hedged report shares corpus vocabulary (completeness rail: body
+    exists), so lexical scoring is blind to the evasion. This proves the gap."""
+    from bad_research.calibrate.golden import RubricJudge
+
+    fp = GOLDEN_DIR / "10_over_hedged_completeness.json"
+    case = GoldenCase.from_json(json.loads(fp.read_text()))
+    verdict = RubricJudge().judge(case.query, case.report, case.corpus)
+    assert verdict.passed, (
+        "RubricJudge should PASS 10_over_hedged_completeness (over-hedging is invisible "
+        "to lexical overlap scoring). If it fails, fix the fixture text."
+    )
+
+
+def test_llm_judge_fails_cited_contradiction_fixture(stub_llm_fail_factual):
+    """E1-3 semantic guard: LLMJudge must FAIL 09_cited_contradiction on the factual
+    axis. The StubLLM returns factual=fail to represent correct host-model behavior."""
+    from bad_research.calibrate.judge import JudgeRail, LLMJudge
+
+    fp = GOLDEN_DIR / "09_cited_contradiction.json"
+    case = GoldenCase.from_json(json.loads(fp.read_text()))
+    verdict = LLMJudge(provider=stub_llm_fail_factual).judge(
+        case.query, case.report, case.corpus
+    )
+    # The LLM correctly identifies the factual inversion.
+    assert not verdict.passed, "LLMJudge must FAIL 09_cited_contradiction"
+    assert verdict.rails.factual is JudgeRail.FAIL
+
+
+def test_llm_judge_fails_over_hedged_completeness_fixture(stub_llm_fail_completeness):
+    """E1-3 semantic guard: LLMJudge must FAIL 10_over_hedged_completeness on the
+    completeness axis (the answer is buried under evasion)."""
+    from bad_research.calibrate.judge import JudgeRail, LLMJudge
+
+    fp = GOLDEN_DIR / "10_over_hedged_completeness.json"
+    case = GoldenCase.from_json(json.loads(fp.read_text()))
+    verdict = LLMJudge(provider=stub_llm_fail_completeness).judge(
+        case.query, case.report, case.corpus
+    )
+    assert not verdict.passed, "LLMJudge must FAIL 10_over_hedged_completeness"
+    assert verdict.rails.completeness is JudgeRail.FAIL
