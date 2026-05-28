@@ -28,7 +28,9 @@ CREATE TABLE IF NOT EXISTS claim_anchors (
     claim          TEXT,
     quoted_support TEXT,
     verified       INTEGER,
-    verify_score   REAL
+    verify_score   REAL,
+    line_start     INTEGER,
+    line_end       INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_claim_anchors_note ON claim_anchors(note_id);
 """

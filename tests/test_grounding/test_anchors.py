@@ -133,3 +133,63 @@ def test_build_from_claims_fuzzy_located_anchor_round_trips_tier_a():
     assert a.anchor_id == quote_sha(a.quoted_support)
     # The rescued quote covers the same evidence as the (normalized) input.
     assert "91%" in a.quoted_support
+
+
+def _store_fresh() -> AnchorStore:
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    store = AnchorStore(conn)
+    store.init_schema()
+    return store
+
+
+def test_claim_anchor_has_line_start_line_end_nullable():
+    a = ClaimAnchor(
+        note_id="n1", char_start=10, char_end=50,
+        claim="C.", quoted_support="quoted text here",
+    )
+    assert a.line_start is None
+    assert a.line_end is None
+
+
+def test_claim_anchor_line_fields_accepted():
+    a = ClaimAnchor(
+        note_id="n1", char_start=10, char_end=50,
+        claim="C.", quoted_support="quoted text here",
+        line_start=42, line_end=44,
+    )
+    assert a.line_start == 42
+    assert a.line_end == 44
+
+
+def test_anchor_store_upsert_get_round_trips_line_fields():
+    store = _store_fresh()
+    a = ClaimAnchor(
+        note_id="n1", char_start=10, char_end=50,
+        claim="C.", quoted_support="quoted text here",
+        line_start=42, line_end=44,
+    )
+    store.upsert(a)
+    got = store.get(a.anchor_id)
+    assert got is not None
+    assert got.line_start == 42
+    assert got.line_end == 44
+
+
+def test_anchor_store_upsert_null_line_fields_round_trips():
+    store = _store_fresh()
+    a = ClaimAnchor(
+        note_id="n1", char_start=10, char_end=50,
+        claim="C.", quoted_support="legacy quote no lines",
+    )
+    store.upsert(a)
+    got = store.get(a.anchor_id)
+    assert got is not None
+    assert got.line_start is None
+    assert got.line_end is None
+
+
+def test_claim_anchors_ddl_has_line_columns():
+    from bad_research.grounding.anchors import CLAIM_ANCHORS_DDL
+    assert "line_start" in CLAIM_ANCHORS_DDL
+    assert "line_end" in CLAIM_ANCHORS_DDL

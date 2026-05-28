@@ -23,6 +23,7 @@ def test_claim_anchors_table_has_interfaces_columns(tmp_path):
     assert cols == {
         "anchor_id", "note_id", "char_start", "char_end", "claim",
         "quoted_support", "verified", "verify_score",
+        "line_start", "line_end",
     }
     pk = [r[1] for r in conn.execute("PRAGMA table_info(claim_anchors)") if r[5]]
     assert pk == ["anchor_id"]

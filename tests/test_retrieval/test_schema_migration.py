@@ -14,8 +14,8 @@ def test_embeddings_table_is_gone_after_init():
     assert "claim_anchors" in names
 
 
-def test_schema_version_is_9():
-    assert SCHEMA_VERSION == 9
+def test_schema_version_is_10():
+    assert SCHEMA_VERSION == 10
 
 
 def test_migration_drops_preexisting_embeddings_table():
