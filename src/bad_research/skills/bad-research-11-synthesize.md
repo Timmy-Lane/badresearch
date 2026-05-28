@@ -153,10 +153,25 @@ cost once, at the end, and only for the cited `note_id`s.
    ```
 
    For each returned chunk, the `note_id` + `char_start`/`char_end` are the
-   citation anchor; its `quoted_support` is the verbatim span. Write the
-   section→chunks map to `research/temp/synthesis-evidence.md`; pass its path to
-   the synthesizer. The total context handed to the synthesizer is the ≤10K-token
-   distilled plan **plus** these targeted raw spans — not the whole corpus.
+   citation anchor; its `quoted_support` is the verbatim span. Compute
+   `(line_start, line_end)` from `char_start`/`char_end` using
+   `char_span_to_line_range` (available via `bad_research.grounding.extract`).
+   Write the section→chunks map to `research/temp/synthesis-evidence.md` — each
+   chunk carries its line span so the synthesizer can emit a line-anchored cite:
+
+   ```yaml
+   - chunk: "Vietnam reached 64%..."
+     note_id: source-note-19
+     char_start: 1247
+     char_end: 1402
+     line_start: 42          # 1-based line in the note body
+     line_end: 44            # 1-based line in the note body
+     quoted_support: "..."
+   ```
+
+   Pass its path to the synthesizer. The total context handed to the synthesizer
+   is the ≤10K-token distilled plan **plus** these targeted raw spans — not the
+   whole corpus.
 
    **Carry each cited note's `source_quality_flags` into `synthesis-evidence.md`.**
    When you pull the spans for a note, read its `claims-<note-id>.json` and copy any
@@ -237,8 +252,12 @@ prompt: |
   GENERATION-TIME GROUNDING (non-negotiable): cite as you write, in
   pass 1. Every factual sentence — anything with a number, named entity,
   comparative/superlative, or causal/temporal claim — MUST end with its
-  citation token BEFORE the terminal period
-  (`… grew 12.4% in 2024 [[note-id]].` or `… [3].`). Do NOT write an
+  citation token BEFORE the terminal period. Use the LINE-ANCHORED form:
+  `… grew 12.4% in 2024 [[note-id:Lstart-Lend]].` where `Lstart-Lend` comes
+  directly from the chunk's `(line_start, line_end)` in synthesis-evidence.md.
+  Do NOT invent line numbers — copy them verbatim from the evidence file. If
+  citation_style == "inline", render `[N:Lstart-Lend]` and add `(L<start>-L<end>)`
+  after the URL in the Sources section. Do NOT write an
   ungrounded integrated draft and add citations in pass 2 — ground it the
   first time, while the source chunk in synthesis-evidence.md is in front
   of you. Every marker corresponds to a chunk in synthesis-evidence.md

@@ -45,8 +45,12 @@ This step is tool-locked to `[Read]`. Read:
    - **(A) byte-identity** — re-`find` the `quoted_support` in the cited note +
      SHA match ($0; kills fabricated quotes).
    - **(B) NLI entailment** — does the note text entail the sentence? Checked by
-     a local natural-language-inference model, `nli-deberta-v3-base` ($0). For
-     the ~10% neutral band (neither entailed nor contradicted), a `triage`-tier
+     a local natural-language-inference model, `nli-deberta-v3-base` ($0) when
+     `[local]` is installed. On the keyless path, `LineSpanJudge` (the Tier-B
+     replacement for `CitationPresentNLI`) routes near-verbatim pairs to accept
+     and genuine paraphrases to the batched Tier-C judge — using the specific
+     cited line span (L42-L58) as the premise, not the full `quoted_support`.
+     For the ~10% neutral band (neither entailed nor contradicted), a `triage`-tier
      LLM-judge fallback (batched ~20/call).
    - **(C) re-fetch arbitration** — gated to contradicted + critical sentences
      only.
