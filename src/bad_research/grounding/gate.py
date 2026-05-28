@@ -57,6 +57,12 @@ _TABLE_ROW = re.compile(r"^\s*\|")
 _CODE_FENCE = re.compile(r"^\s*(?:`{3,}|~{3,})")
 # A line whose entire visible content is one inline code span (`...`).
 _CODE_SPAN_ONLY = re.compile(r"^\s*`[^`]+`\s*$")
+# A line whose ENTIRE visible content is one or more bold spans (with optional
+# trailing punctuation) — a formatting pseudo-heading fragment, not a factual
+# sentence. Catches `**Important:**` and `**Key Findings 2024**` (the latter is
+# also caught by _BOLD_ONLY's `^\*\*[^*].*\*\*$`; this is an explicit complement
+# / belt-and-suspenders for G1).
+_BOLD_SPAN_ONLY = re.compile(r"^\s*(?:\*\*[^*]+\*\*[.:]?\s*)+$")
 # A leading list marker: a bullet (`-`/`*`/`+`) or an ordinal (`1.`/`1)`),
 # stripped so a numbered item is ONE sentence (not the `1.` fragment + the rest).
 _LIST_MARKER = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
@@ -64,11 +70,14 @@ _LIST_MARKER = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
 
 def _is_formatting_line(line: str) -> bool:
     """True for structural chrome that carries no factual claim: bold-only
-    pseudo-headings, markdown headings, table rows/dividers, and lone inline
-    code spans. Code-fence handling is stateful and lives in `split_sentences`."""
+    pseudo-headings, markdown headings, table rows/dividers, lone inline code
+    spans, and lines whose entire content is bold spans (G1 belt-and-suspenders).
+    Code-fence handling is stateful and lives in `split_sentences`."""
     if line.startswith("#"):
         return True
     if _BOLD_ONLY.match(line):
+        return True
+    if _BOLD_SPAN_ONLY.match(line):
         return True
     if _TABLE_ROW.match(line):
         return True
@@ -152,9 +161,22 @@ def no_uncited_claim_gate(report_md: str, anchors: AnchorStore) -> list[Finding]
                     "dangling-cite", "critical", sent,
                     f"Citation {c} resolves to no claim_anchor -- remove or repoint."))
             elif anchor.verified != 1:
-                findings.append(Finding(
-                    "unverified-cite", "major", sent,
-                    f"Citation {c} was not confirmed by the CitationVerifier -- re-run Tier B or hedge."))
+                # Severity depends on the recorded verify_score. A span that
+                # explicitly does NOT support the claim (score < PARTIAL_LOW)
+                # blocks ship as critical (G4 gate tightening, round2-citation
+                # §4); the partial band ([PARTIAL_LOW, SUPPORTED_FLOOR)) and the
+                # unscored case stay major.
+                from .verifier import PARTIAL_LOW
+                if anchor.verify_score is not None and anchor.verify_score < PARTIAL_LOW:
+                    severity = "critical"
+                    rec = (
+                        f"Citation {c} verify_score={anchor.verify_score:.2f} < {PARTIAL_LOW} "
+                        f"-- span explicitly does not support the claim. Drop or reground.")
+                else:
+                    severity = "major"
+                    rec = (
+                        f"Citation {c} was not confirmed by the CitationVerifier -- re-run Tier B or hedge.")
+                findings.append(Finding("unverified-cite", severity, sent, rec))
     return findings
 
 
