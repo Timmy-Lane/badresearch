@@ -288,3 +288,31 @@ def test_grader_round1_aggregates_critic_findings(skills_dir):
 def test_patcher_skill_findings_paths_includes_assumption(skills_dir):
     body = (skills_dir / "bad-research-14-patcher.md").read_text()
     assert "critic-findings-assumption.json" in body
+
+
+# ── B-5: query expansion (width-sweep) + direction-switch pivot (depth) ──
+
+
+def test_width_sweep_query_expansion_instruction(skills_dir):
+    body = (skills_dir / "bad-research-2-width-sweep.md").read_text()
+    low = body.lower()
+    # explicit per-sub-question paraphrase/synonym instruction
+    assert "synonym/paraphrase" in low or "paraphrase alternative" in low
+    # minimum count: 3-5 alternatives generated per sub-question
+    assert "3–5" in body or "3-5" in body
+    # the reformulation rows are tagged in the search-plan table Type column
+    assert "reformulation" in low
+    # scoped to Step 2.1 (multi-perspective search planning)
+    assert "step 2.1" in low or "2.1" in body
+
+
+def test_depth_investigation_direction_switch_rule(skills_dir):
+    body = (skills_dir / "bad-research-5-depth-investigation.md").read_text()
+    low = body.lower()
+    # explicit pivot/direction-switch instruction
+    assert "pivot" in low or "switch" in low or "switching direction" in low
+    # triggered by consecutive failed searches
+    assert "consecutive" in low or "3 consecutive" in body or "three consecutive" in low
+    # the pivot must be announced explicitly (written to notes)
+    assert "switching direction" in low or "pivot" in low
+    assert "orchestrator-notes" in body or "orchestrator_notes" in body or "orchestrator-notes.md" in body

@@ -79,6 +79,14 @@ Read these inputs:
      (900s) elapses — then return your committed position with the evidence gathered so
      far. Do not keep searching for nonexistent sources. Hard kill at SUBAGENT_SOURCE_KILL (100).
 
+     SEARCH-LINE PIVOT RULE: When a search line shows no progress — 3 consecutive
+     searches on the same sub-question return 0 relevant results — STOP that line
+     and explicitly state the pivot to a different hypothesis:
+     "Switching direction: [previous approach] is not surfacing sources.
+     Trying [new approach/hypothesis]." Write the pivot announcement to
+     `research/temp/orchestrator-notes.md` so the lead can track what was tried
+     and what was abandoned. Do NOT silently iterate on a dead query line.
+
      CRITICAL: Read the full source text of relevant vault notes (via
      `hyperresearch note show <id1> <id2> ... -j`) BEFORE writing your
      interim note. Drafting from summaries alone produces paraphrase;

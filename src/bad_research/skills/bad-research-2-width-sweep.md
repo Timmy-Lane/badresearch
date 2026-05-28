@@ -61,6 +61,8 @@ Before spawning any fetchers, produce a **search plan** that maps the decomposit
    - **Earnings-call transcripts are insufficient on their own.** Transcripts narrate already-rounded numbers ("revenue grew about 27%"); rubrics demand the tabular line items from the filing itself. If the prompt names a fiscal period, the search plan MUST include a query for the filing PDF, not just the transcript.
    - Goal: every period in `time_periods` has at least one search that, if successful, fetches the filing's tabular data — not a paraphrase of it.
 
+   **Query reformulation (per atomic item, Step 2.1):** For EACH sub-question, before searching, generate **3–5 synonym/paraphrase alternative phrasings** of the query (and any time a sub-question's initial Lens-A searches return fewer than 3 candidate URLs, generate them then if not already done). Example: "China fintech regulation" → "Chinese financial technology oversight", "PRC fintech compliance rules", "digital finance regulation China", "online lending rules Beijing". Write the alternatives directly into the search-plan table with `reformulation` in the Type column. This closes single-phrasing recall failures: one phrasing can miss sources another phrasing surfaces. The funnel's `_LENS_SUFFIXES` handles programmatic expansion — this adds the human-paraphrase layer on top.
+
 3. **Write the combined search plan to `research/temp/search-plan.md`** — a table with a `Lens` column:
    ```markdown
    | Atomic item | Search query | Type | Lens | Target |
