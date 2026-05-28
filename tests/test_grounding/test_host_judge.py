@@ -145,13 +145,18 @@ def test_host_judge_batches_all_paraphrase_pairs_into_one_call(fake_llm):
 
 # ── default_nli() wiring ─────────────────────────────────────────────────────
 
-def test_default_nli_keyless_with_host_judge_is_host_judge(monkeypatch, fake_llm):
-    # Keyless ([local] absent) AND a host judge available → HostJudgeNLI, not the no-op.
+def test_default_nli_keyless_with_host_judge_is_line_span_judge(monkeypatch, fake_llm):
+    # Keyless ([local] absent) AND a host judge available → LineSpanJudge (A-5), the
+    # drop-in replacement for HostJudgeNLI on this path: same lexical routing, but
+    # CitationVerifier now feeds it the cited line span as the premise (closes G4).
+    # Not the no-op CitationPresentNLI.
     import bad_research.grounding.verifier as verifier_mod
+    from bad_research.grounding.verifier import LineSpanJudge
 
     monkeypatch.setattr(verifier_mod, "nli_available", lambda: False)
     nli = default_nli(llm=fake_llm)
-    assert isinstance(nli, HostJudgeNLI)
+    assert isinstance(nli, LineSpanJudge)
+    assert not isinstance(nli, CitationPresentNLI)
 
 
 def test_default_nli_keyless_no_host_judge_falls_back_to_citation_present(monkeypatch):
