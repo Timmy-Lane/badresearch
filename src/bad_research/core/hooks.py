@@ -1188,6 +1188,80 @@ accounted for, in the shape the user asked for. That's the mechanism.
 
 
 # ---------------------------------------------------------------------------
+# Layer 5 — assumption critic. Decomposes load-bearing claims into sub-assumptions.
+# ---------------------------------------------------------------------------
+ASSUMPTION_CRITIC_AGENT = """\
+---
+name: bad-research-assumption-critic
+description: >
+  Use this agent in Layer 5 of the hyperresearch deep research pipeline. Takes the
+  5 highest-stakes causal/quantitative claims in the draft, decomposes each into
+  constituent sub-assumptions, and verifies each independently against the corpus.
+  Runs on Opus. Spawn ONCE per draft, in parallel with the other four critics.
+model: opus
+tools: Bash, Read, Write
+color: red
+---
+
+You are the assumption critic. Your only job: for each of the 5 highest-stakes
+causal or quantitative claims in the draft, decompose it into its constituent
+sub-assumptions and verify each sub-assumption against the vault corpus independently.
+
+## Pipeline position
+
+You are **Layer 5** of the 7-phase hyperresearch pipeline. Running in parallel:
+dialectic-critic, depth-critic, width-critic, instruction-critic. You collectively
+hand findings to the patcher (Layer 6, tool-locked `[Read, Edit]`). You do NOT
+patch the draft yourself — you only write findings.
+
+Your specific angle: a claim like "X causes Y because A, B, and C" may be
+well-cited at the surface while resting on one unverified causal link. The other
+critics check the draft's *conclusions and structure*; you decompose individual
+load-bearing claims into sub-assumptions and rate each independently.
+
+## Inputs (from the parent agent)
+
+- **research_query**: verbatim user question. GOSPEL.
+- **query_file_path**: path to the persisted query file.
+- **draft_path**: `research/notes/final_report_<vault_tag>.md`
+- **output_path**: `research/critic-findings-assumption.json`
+- **vault_tag**: corpus tag for searching the vault
+
+## Procedure
+
+1. **Read the query file** (`query_file_path`) before anything else.
+
+2. **Identify the 5 highest-stakes claims.** Scan the draft for causal or
+   quantitative claims — look for "because", "causes", "leads to", "increases by",
+   "is due to", percentage figures, named mechanisms. Rank by section heading
+   importance (from `prompt-decomposition.json`). Take the top 5.
+
+3. **For each claim**, decompose it into constituent sub-assumptions. Example:
+   "Policy X reduced Y by 30% because it increased Z and constrained W" → three
+   sub-assumptions: (a) policy X increased Z, (b) policy X constrained W,
+   (c) increasing Z + constraining W reduces Y by ~30%.
+
+4. **Verify each sub-assumption** against the vault:
+   `{hpr_path} search "<keyword>" --tag <vault_tag> -j`
+   Read the full text of relevant notes. Mark each sub-assumption:
+   - `verified`: direct supporting quote found
+   - `partial`: indirect or approximate support
+   - `unverified`: no supporting evidence in corpus
+
+5. **Emit one finding per unverified or partial sub-assumption.** Format:
+   `{{severity: "critical"|"major"|"minor", claim_text: "...",
+     sub_assumption: "...", verification_status: "unverified"|"partial",
+     recommendation: "cite or qualify this sub-assumption"}}`
+
+## Output
+
+Write `output_path` with shape: `{{"findings": [...]}}`
+
+Limit total output to sub-assumptions of the top-5 claims only (cost ceiling).
+"""
+
+
+# ---------------------------------------------------------------------------
 # E3 — SLIM light-tier critic. The light + agentic-fast routes skip the
 # full-tier 4-critic fan-out (and the patcher loop) and go straight to polish,
 # so they get NO adversarial pass today. This single critic gives them ONE
@@ -3086,6 +3160,7 @@ def install_hooks(vault_root: Path, hpr_path: str = "bad") -> list[str]:
         lambda: _install_instruction_critic_agent(vault_root, hpr_path),
         lambda: _install_depth_critic_agent(vault_root, hpr_path),
         lambda: _install_width_critic_agent(vault_root, hpr_path),
+        lambda: _install_assumption_critic_agent(vault_root, hpr_path),
         lambda: _install_light_critic_agent(vault_root, hpr_path),
         lambda: _install_patcher_agent(vault_root, hpr_path),
         lambda: _install_polish_auditor_agent(vault_root, hpr_path),
@@ -3141,6 +3216,7 @@ def install_global_hooks(home: Path | None = None, hpr_path: str = "bad") -> lis
         lambda: _install_instruction_critic_agent(home, hpr_path),
         lambda: _install_depth_critic_agent(home, hpr_path),
         lambda: _install_width_critic_agent(home, hpr_path),
+        lambda: _install_assumption_critic_agent(home, hpr_path),
         lambda: _install_light_critic_agent(home, hpr_path),
         lambda: _install_patcher_agent(home, hpr_path),
         lambda: _install_polish_auditor_agent(home, hpr_path),
@@ -3426,6 +3502,17 @@ def _install_instruction_critic_agent(vault_root: Path, hpr_path: str) -> str | 
         "bad-research-instruction-critic.md",
         content,
         "opus instruction critic",
+    )
+
+
+def _install_assumption_critic_agent(vault_root: Path, hpr_path: str) -> str | None:
+    hpr_posix = hpr_path.replace("\\", "/")
+    content = ASSUMPTION_CRITIC_AGENT.format(hpr_path=hpr_posix)
+    return _write_agent_file(
+        vault_root,
+        "bad-research-assumption-critic.md",
+        content,
+        "opus assumption critic",
     )
 
 

@@ -99,3 +99,31 @@ def test_entry_skill_light_sequence_includes_critic():
     # between the draft (10) and polish (15).
     low = body.lower()
     assert "light-critic" in low or "slim critic" in low or "single adversarial critic" in low
+
+
+# ── B-1: the 5th assumption critic agent is defined + registered for install ──
+
+
+def test_assumption_critic_agent_constant_defined():
+    from bad_research.core import hooks
+
+    assert hasattr(hooks, "ASSUMPTION_CRITIC_AGENT")
+    body = hooks.ASSUMPTION_CRITIC_AGENT
+    assert "bad-research-assumption-critic" in body
+    assert "model: opus" in body
+    assert "assumption" in body.lower()
+    assert "sub-assumption" in body.lower() or "constituent" in body.lower()
+
+
+def test_assumption_critic_installed_in_project_and_global(tmp_path, monkeypatch):
+    from bad_research.core import hooks
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    hooks.install_hooks(proj, hpr_path="bad")
+    assert (proj / ".claude" / "agents" / "bad-research-assumption-critic.md").exists()
+
+    home = tmp_path / "home"
+    home.mkdir()
+    hooks.install_global_hooks(home, hpr_path="bad")
+    assert (home / ".claude" / "agents" / "bad-research-assumption-critic.md").exists()
