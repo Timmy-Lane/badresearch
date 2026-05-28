@@ -473,3 +473,83 @@ def verify_citations(report_path: str, vault_tag: str) -> str:
     """
     from bad_research.cli.research import _verify_report
     return json.dumps({"results": _verify_report(report_path, vault_tag)}, default=str)
+
+
+@server.tool()
+def note_find(note_id: str, pattern: str, context_lines: int = 3) -> str:
+    """Regex grep within a stored note body. Returns matching line ranges.
+
+    Analogous to OpenAI web.find: searches for `pattern` (Python regex) in the
+    body of note `note_id` and returns each match's line numbers, matched text,
+    and char offsets. No LLM — pure string search, ~$0. Used by synthesizer and
+    verifier agents to locate the exact line span for a claim.
+
+    Args:
+        note_id: The vault note ID to search within.
+        pattern: Python regex pattern to search for.
+        context_lines: Number of lines of surrounding context to include in the
+            returned line range (default 3). Set to 0 for match-only.
+
+    Returns JSON:
+        {"ok": true, "matches": [
+          {"line_start": 42, "line_end": 44, "text": "...", "char_start": 1247, "char_end": 1402}
+        ]}
+    or {"ok": false, "error": "..."}
+    """
+    import re as _re
+
+    from bad_research.grounding.extract import body_to_lines
+
+    vault = _get_vault()
+    row = vault.db.execute(
+        "SELECT body FROM note_content WHERE note_id = ?", (note_id,)
+    ).fetchone()
+    if row is None:
+        return json.dumps({"ok": False, "error": f"Note not found: {note_id}"})
+
+    body: str = row["body"]
+
+    try:
+        compiled = _re.compile(pattern, _re.IGNORECASE)
+    except _re.error as exc:
+        return json.dumps({"ok": False, "error": f"Invalid regex pattern: {exc}"})
+
+    lines = body_to_lines(body)
+    n_lines = len(lines)
+    matches: list[dict] = []
+
+    for m in compiled.finditer(body):
+        char_start = m.start()
+        char_end = m.end()
+
+        # find which line the match starts/ends on (1-based)
+        match_ls = 1
+        match_le = n_lines
+        for i, (cs, ce) in enumerate(lines):
+            if cs <= char_start < ce or (i == n_lines - 1 and char_start >= cs):
+                match_ls = i + 1
+            if cs <= char_end <= ce or (i == n_lines - 1 and char_end >= cs):
+                match_le = i + 1
+                break
+
+        # expand by context_lines
+        ctx_ls = max(1, match_ls - context_lines)
+        ctx_le = min(n_lines, match_le + context_lines)
+
+        # slice the text for the context window
+        if lines:
+            text_start = lines[ctx_ls - 1][0]
+            text_end = lines[ctx_le - 1][1]
+            text_slice = body[text_start:text_end]
+        else:
+            text_slice = m.group(0)
+
+        matches.append({
+            "line_start": ctx_ls,
+            "line_end": ctx_le,
+            "text": text_slice,
+            "char_start": char_start,
+            "char_end": char_end,
+        })
+
+    return json.dumps({"ok": True, "matches": matches})
