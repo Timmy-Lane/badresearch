@@ -438,4 +438,4 @@ If you fall short after two waves, proceed anyway but ensure `coverage-gaps.md` 
 Return to the entry skill (`bad-research`). Tier-based routing:
 
 - **light tier:** Skip directly to step 10 — invoke `Skill(skill: "bad-research-10-triple-draft")` (light tier writes a single draft, not the ensemble)
-- **full tier:** Invoke `Skill(skill: "bad-research-3-contradiction-graph")`
+- **full tier:** Invoke `Skill(skill: "bad-research-4-loci-analysis")` (its Step 4.0 preamble builds the contradiction graph before loci analysis)

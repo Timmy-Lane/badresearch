@@ -187,3 +187,25 @@ def test_synthesize_caps_distilled_context_and_reinjects_spans(skills_dir):
     # verbatim quoted_support the uncited-/recitation-gate / anchors.py need
     assert "re-inject" in low or "reinject" in low or "re-injects" in low
     assert "quoted_support" in body or "span" in low
+
+
+# ── C-1: merge step 3 (contradiction-graph) into step 4 as a Step 4.0 preamble ──
+
+
+def test_step3_merged_into_step4_preamble(skills_dir):
+    """After C-1: step 3 content lives as Step 4.0 inside bad-research-4-loci-analysis.md."""
+    # step 3 must no longer exist as a standalone skill file
+    assert not (skills_dir / "bad-research-3-contradiction-graph.md").exists(), \
+        "bad-research-3-contradiction-graph.md must be removed after C-1 merge"
+    # step 4 must contain the contradiction-graph procedure as a preamble
+    body = (skills_dir / "bad-research-4-loci-analysis.md").read_text()
+    assert "Step 4.0" in body, "loci-analysis must have a Step 4.0 preamble section"
+    assert "contradiction-graph.json" in body
+    assert "consensus-claims.json" in body
+    assert "claim-pairing" in body.lower() or "pair contradiction" in body.lower()
+
+
+def test_step3_removed_from_hooks_roster(skills_dir):
+    from bad_research.core.hooks import _BAD_RESEARCH_STEP_SKILLS
+    assert "bad-research-3-contradiction-graph" not in _BAD_RESEARCH_STEP_SKILLS
+    assert "bad-research-4-loci-analysis" in _BAD_RESEARCH_STEP_SKILLS

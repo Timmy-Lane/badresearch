@@ -40,8 +40,7 @@ When you invoke a Skill, that skill's full procedure is loaded into your context
 |---|---|---|---|
 | 1 | `bad-research-1-decompose` | Canonical query → scaffold + decomposition + coverage matrix + tier classification | all |
 | 2 | `bad-research-2-width-sweep` | Multi-perspective search plan + parallel fetcher waves | all |
-| 3 | `bad-research-3-contradiction-graph` | Pair contradictions across the corpus into ranked fight clusters | full |
-| 4 | `bad-research-4-loci-analysis` | 2 loci-analysts → scored loci.json with source budgets | full |
+| 3→4* (merged) | `bad-research-4-loci-analysis` | Step 4.0 preamble: contradiction graph (pair contradictions → ranked fight clusters + consensus); Step 4.1+: 2 loci-analysts → scored loci.json with source budgets | full |
 | 5 | `bad-research-5-depth-investigation` | K depth-investigators in parallel → interim notes with committed positions | full |
 | 6 | `bad-research-6-cross-locus-reconcile` | Reconcile committed positions → comparisons.md | full |
 | 7 | `bad-research-7-source-tensions` | Extract expert disagreements → source-tensions.json | full |
@@ -70,7 +69,7 @@ When you invoke a Skill, that skill's full procedure is loaded into your context
 **Complete pipeline order (full tier), half-steps included:**
 
 ```
-0.5 → 1 → 1.5 → 1.6 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 11.5
+0.5 → 1 → 1.5 → 1.6 → 2 → 4* → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 11.5
     → 12 → 13 → 12.5 → 14 → 14.5 → 15 → 16(+gate)
 ```
 
@@ -92,7 +91,7 @@ deep path (triple-draft ensemble + synthesis + adversarial critics + grader loop
 |---|---|---|---|
 | `agentic-fast` | 0.5 → 1 → 1.5 → agentic-fast → 12(slim critic) → 15 → 16(+gate) | ~$1–5 | <3 min |
 | `light` | 0.5 → 1 → 1.5 → 1.6 → 2(funnel) → 10(single draft) → 12(slim critic) → 15 → 16(+gate) | ~$5–15 | ~30–40 min |
-| `full` | 0.5 → 1 → 1.5 → 1.6 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 11.5 → 12 → 13 → 12.5(grader loop) → 14 → 14.5(fresh-review) → 15 → 16(+gate+recitation) | ~$60–120 | ~1.5–2.5 h |
+| `full` | 0.5 → 1 → 1.5 → 1.6 → 2 → 4* → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 11.5 → 12 → 13 → 12.5(grader loop) → 14 → 14.5(fresh-review) → 15 → 16(+gate+recitation) | ~$60–120 | ~1.5–2.5 h |
 
 **On 0.5 (clarify):** the route — including `agentic-fast` — is only decided at step 1.5, *after* 0.5 has already run, so 0.5 normally runs first on every interactive run. 0.5 is skipped **only on `--auto`/wrapped runs** (a wrapped run is one where `research/wrapper_contract.json` is present and the query is binding GOSPEL not to be questioned). `16(+gate)` is shorthand for "step 16 plus the deterministic no-uncited-claim ship-gate that runs after it on every route" — a *ship-gate* is a blocking quality check that must pass before the report can be delivered.
 
@@ -277,8 +276,7 @@ Context compaction may eat parts of this conversation. If you're unsure what ste
    - Step 1.5: the `route` field inside `research/prompt-decomposition.json` (+ `## Route rationale` in scaffold)
    - agentic-fast: `research/temp/react-trace.md` (+ `research/notes/final_report_<vault_tag>.md`)
    - Step 2: vault notes tagged with vault_tag (`$HPR search "" --tag <vault_tag> -j`)
-   - Step 3: `research/temp/contradiction-graph.json`, `research/temp/consensus-claims.json`
-   - Step 4: `research/loci.json`
+   - Step 4: `research/temp/contradiction-graph.json` + `research/temp/consensus-claims.json` (Step 4.0 preamble), then `research/loci.json`
    - Step 5: vault notes with `type: interim` (`$HPR search "" --tag <vault_tag> --type interim -j`)
    - Step 6: `research/comparisons.md`
    - Step 7: `research/temp/source-tensions.json`
