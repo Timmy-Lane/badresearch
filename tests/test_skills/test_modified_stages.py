@@ -209,3 +209,29 @@ def test_step3_removed_from_hooks_roster(skills_dir):
     from bad_research.core.hooks import _BAD_RESEARCH_STEP_SKILLS
     assert "bad-research-3-contradiction-graph" not in _BAD_RESEARCH_STEP_SKILLS
     assert "bad-research-4-loci-analysis" in _BAD_RESEARCH_STEP_SKILLS
+
+
+# ── C-2: merge step 7 (source-tensions) into step 6 as a Step 6.5 orphan scan ──
+
+
+def test_step7_merged_into_step6_subsection(skills_dir):
+    """After C-2: step 7 content lives as Step 6.5 inside bad-research-6-cross-locus-reconcile.md."""
+    assert not (skills_dir / "bad-research-7-source-tensions.md").exists(), \
+        "bad-research-7-source-tensions.md must be removed after C-2 merge"
+    body = (skills_dir / "bad-research-6-cross-locus-reconcile.md").read_text()
+    assert "Step 6.5" in body, "reconcile skill must contain a Step 6.5 orphan-scan subsection"
+    assert "tensions.md" in body, "merged output artifact must be tensions.md"
+    assert "orphan" in body.lower(), "orphan tension scan procedure must be present"
+    # old separate artifacts must no longer be the exit criterion
+    assert "source-tensions.json" not in body or "tensions.md" in body
+
+
+def test_step7_removed_from_hooks_roster(skills_dir):
+    from bad_research.core.hooks import _BAD_RESEARCH_STEP_SKILLS
+    assert "bad-research-7-source-tensions" not in _BAD_RESEARCH_STEP_SKILLS
+    assert "bad-research-6-cross-locus-reconcile" in _BAD_RESEARCH_STEP_SKILLS
+
+
+def test_step10_reads_tensions_md_not_source_tensions_json(skills_dir):
+    body = (skills_dir / "bad-research-10-triple-draft.md").read_text()
+    assert "tensions.md" in body, "step 10 must read the merged tensions.md artifact"
