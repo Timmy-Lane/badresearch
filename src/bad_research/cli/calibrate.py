@@ -45,6 +45,11 @@ def calibrate(
         "--gate",
         help="Run the golden corpus through the regression gate; exit non-zero on regression.",
     ),
+    llm: bool = typer.Option(
+        False,
+        "--llm",
+        help="Use LLMJudge over the full corpus (requires host model; slow).",
+    ),
     golden_dir: str | None = typer.Option(
         None, "--golden-dir", help="Override the golden-corpus dir (default: the shipped seed set)."
     ),
@@ -68,6 +73,7 @@ def calibrate(
             floor=floor,
             baseline=baseline,
             json_output=json_output,
+            llm=llm,
         )
         return
 
@@ -167,9 +173,12 @@ def _run_gate(
     floor: float | None,
     baseline: float | None,
     json_output: bool,
+    llm: bool = False,
 ) -> None:
-    """E1 — the golden-corpus regression gate. Keyless: the deterministic
-    RubricJudge. Exits non-zero iff the corpus pass-rate < floor (or < baseline)."""
+    """E1 — the golden-corpus regression gate. Default: keyless deterministic
+    RubricJudge ($0, no host model). With --llm (E1-1) it routes the full corpus
+    (including the `requires_llm` fixtures) through the host-model LLMJudge.
+    Exits non-zero iff the corpus pass-rate < floor (or < baseline)."""
     import json as _json
 
     from bad_research.calibrate.golden import (
@@ -180,7 +189,10 @@ def _run_gate(
 
     use_floor = GATE_FLOOR if floor is None else floor
     cases = load_golden_corpus(golden_dir)
-    report = evaluate_corpus(cases)  # keyless deterministic categorical judge
+    # E1-1: --llm routes to the host-model LLMJudge; the default stays keyless
+    # (judge=None -> evaluate_corpus uses the deterministic RubricJudge).
+    judge = _make_llm_judge() if llm else None
+    report = evaluate_corpus(cases, judge=judge)
     ok = report.gate_ok(floor=use_floor, baseline=baseline)
 
     rep_path = out_dir / "golden-eval-report.json"
@@ -207,6 +219,15 @@ def _run_gate(
 
     if not ok:
         raise typer.Exit(1)
+
+
+def _make_llm_judge():
+    """Construct an LLMJudge for the --llm gate path (E1-1).
+    Requires the host model (ANTHROPIC_API_KEY or the Claude Code host)."""
+    from bad_research.calibrate.judge import LLMJudge
+    from bad_research.llm.base import get_llm_provider
+
+    return LLMJudge(provider=get_llm_provider())
 
 
 __all__ = ["calibrate"]

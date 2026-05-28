@@ -83,3 +83,43 @@ def test_gate_respects_an_explicit_floor(tmp_path: Path):
         app, ["calibrate", "--gate", "--floor", "1.01", "--out", str(tmp_path)]
     )
     assert strict.exit_code != 0, strict.output  # unreachable floor trips the gate
+
+
+def test_gate_llm_flag_routes_to_llm_judge(tmp_path, monkeypatch):
+    """E1-1: --llm flag must route evaluate_corpus to LLMJudge, not RubricJudge."""
+    calls = []
+
+    class TrackingJudge:
+        def judge(self, query, report, corpus):
+            calls.append("llm")
+            from bad_research.calibrate.judge import AxisRails, JudgeRail, JudgeVerdict
+
+            rails = AxisRails(
+                factual=JudgeRail.PASS,
+                citation=JudgeRail.PASS,
+                completeness=JudgeRail.PASS,
+                source_quality=JudgeRail.PASS,
+                efficiency=JudgeRail.PASS,
+            )
+            return JudgeVerdict.from_rails(rails, rationale="tracking")
+
+    monkeypatch.setattr(
+        "bad_research.cli.calibrate._make_llm_judge",
+        lambda: TrackingJudge(),
+    )
+    result = runner.invoke(app, ["calibrate", "--gate", "--llm", "--out", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert len(calls) > 0, "--llm flag must invoke LLMJudge path"
+
+
+def test_gate_default_is_rubric_judge_not_llm(tmp_path, monkeypatch):
+    """E1-1: default bad gate (no --llm) must not invoke LLMJudge."""
+    monkeypatch.setattr(
+        "bad_research.cli.calibrate._make_llm_judge",
+        lambda: (_ for _ in ()).throw(
+            AssertionError("LLMJudge must not be called without --llm")
+        ),
+    )
+    # patch is a sentinel; if _make_llm_judge is called without --llm the test fails
+    result = runner.invoke(app, ["calibrate", "--gate", "--out", str(tmp_path)])
+    assert result.exit_code == 0, result.output
