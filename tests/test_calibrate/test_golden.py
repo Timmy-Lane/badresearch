@@ -66,7 +66,9 @@ def test_evaluate_corpus_emits_a_pass_rate_report():
     cases = load_golden_corpus()
     report = evaluate_corpus(cases)
     assert 0.0 <= report.pass_rate <= 1.0
-    assert report.total == len(cases)
+    # Keyless run scores only the non-requires_llm cases (E1-2 skip logic).
+    scored = [c for c in cases if not getattr(c, "requires_llm", False)]
+    assert report.total == len(scored)
     # the seed corpus is built to PASS (it is the baseline the gate defends).
     assert report.pass_rate >= 0.8
     d = report.to_dict()
@@ -111,4 +113,70 @@ def test_corpus_eval_needs_zero_keys(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     cases = load_golden_corpus()
     report = evaluate_corpus(cases)  # must not require a provider
-    assert report.total == len(cases)
+    # Keyless run scores only the non-requires_llm cases (E1-2 skip logic).
+    scored = [c for c in cases if not getattr(c, "requires_llm", False)]
+    assert report.total == len(scored)
+
+
+# ── E1-2: requires_llm fixtures are skipped on the default keyless path ────────
+def test_default_lexical_run_skips_requires_llm_fixtures(tmp_path: Path):
+    """E1-2: fixtures marked requires_llm=true must be excluded from the keyless run."""
+    from bad_research.calibrate.golden import GoldenCase, evaluate_corpus
+
+    llm_case = GoldenCase(
+        id="99_requires_llm",
+        query="Does X cause Y?",
+        report="# Does X cause Y?\n\nX definitely causes Y [1].\n",
+        corpus=[{"note_id": "1", "url": "https://a.edu", "text": "X may relate to Y."}],
+        expected_behavior=["placeholder"],
+        axes_floor={},
+        components={},
+        requires_llm=True,
+    )
+    normal_case = GoldenCase(
+        id="00_normal",
+        query="Is the sky blue?",
+        report="# Is the sky blue?\n\nRayleigh scattering makes it blue [1].\n",
+        corpus=[
+            {
+                "note_id": "1",
+                "url": "https://a.edu",
+                "text": "Rayleigh scattering makes the sky blue.",
+            }
+        ],
+        expected_behavior=["names Rayleigh scattering"],
+        axes_floor={"citation": "pass"},
+        components={},
+        requires_llm=False,
+    )
+    report = evaluate_corpus([llm_case, normal_case])
+    # Only the normal case is scored; the llm case is skipped entirely.
+    assert report.total == 1, f"expected 1 case (llm case skipped), got {report.total}"
+    assert report.cases[0].id == "00_normal"
+
+
+def test_shipped_fixtures_09_and_10_exist_and_are_well_formed():
+    """E1-2: the two requires_llm fixtures must be in the shipped golden/ dir."""
+    for name in ("09_cited_contradiction.json", "10_over_hedged_completeness.json"):
+        fp = GOLDEN_DIR / name
+        assert fp.exists(), f"Missing fixture: {name}"
+        data = json.loads(fp.read_text())
+        assert data.get("requires_llm") is True, f"{name} must have requires_llm: true"
+        assert data.get("id")
+        assert data.get("query")
+        assert data.get("report")
+        assert data.get("corpus")
+        assert data.get("expected_behavior")
+
+
+def test_seed_corpus_total_includes_llm_fixtures_in_raw_load():
+    """After E1-2: raw load returns all 10 fixtures; evaluated (keyless) total is 8."""
+    all_cases = load_golden_corpus()
+    assert len(all_cases) == 10, (
+        f"Expected 10 total fixtures (8 + 2 requires_llm), got {len(all_cases)}"
+    )
+    report = evaluate_corpus(all_cases)
+    assert report.total == 8, (
+        f"Keyless run must score only 8 (skip 2 requires_llm), got {report.total}"
+    )
+    assert report.pass_rate == 1.0  # existing 8 still pass

@@ -58,6 +58,9 @@ class GoldenCase:
     expected_behavior: list[str]
     axes_floor: dict[str, str] = field(default_factory=dict)
     components: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # E1-2: a fixture that only the host-model LLMJudge can score (semantic
+    # entailment / over-hedge detection). The keyless RubricJudge path SKIPS it.
+    requires_llm: bool = False
 
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> GoldenCase:
@@ -69,6 +72,7 @@ class GoldenCase:
             expected_behavior=list(data.get("expected_behavior", [])),
             axes_floor=dict(data.get("axes_floor", {})),
             components=dict(data.get("components", {})),
+            requires_llm=bool(data.get("requires_llm", False)),
         )
 
 
@@ -279,6 +283,12 @@ def evaluate_corpus(
     comp_tally: dict[str, list[bool]] = {c: [] for c in COMPONENTS}
 
     for case in cases:
+        # E1-2: skip requires_llm fixtures on the keyless RubricJudge path — the
+        # deterministic lexical judge cannot score semantic entailment, so these
+        # adversarial fixtures are scored only on the opt-in --llm (LLMJudge) path.
+        if getattr(case, "requires_llm", False) and isinstance(j, RubricJudge):
+            continue
+
         verdict = j.judge(case.query, case.report, case.corpus)
 
         comp_results: dict[str, bool | None] = {}
