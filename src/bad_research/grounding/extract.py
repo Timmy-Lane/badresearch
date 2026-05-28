@@ -65,9 +65,9 @@ def _fuzzy_locate(quote: str, body: str) -> tuple[int, int] | None:
 def body_to_lines(body: str) -> list[tuple[int, int]]:
     """Return a list of (char_start, char_end) for each line (0-indexed, exclusive end).
 
-    Handles LF, CRLF, and CR line endings. A trailing newline does NOT produce a
-    spurious empty final entry. The slice body[char_start:char_end] reproduces
-    the line content WITHOUT its line terminator.
+    Handles LF and CRLF line endings (bare-CR / old-Mac `\r` is NOT split on). A
+    trailing newline does NOT produce a spurious empty final entry. The slice
+    body[char_start:char_end] reproduces the line content WITHOUT its line terminator.
     """
     if not body:
         return []
