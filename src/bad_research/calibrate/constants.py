@@ -20,7 +20,7 @@ JUDGE_AXES = ("factual", "citation", "completeness", "source_quality", "efficien
 JUDGE_RAILS = ("pass", "borderline", "fail")  # Arize: words, not numbers
 RAIL_CREDIT = {"pass": 1.0, "borderline": 0.5, "fail": 0.0}  # rail -> reporting credit
 PASS_RATE_THRESHOLD = 0.75  # mean rail-credit floor for a PASS      [was OVERALL 0.75]
-JUDGE_TIER = "heavy"  # Opus; Sonnet acceptable (dossier 09 §A4 table L223)
+JUDGE_TIER = "work"   # Sonnet — categorical rails only (pass/borderline/fail); Opus acknowledged overkill (dossier 09 §A4 table L223)
 JUDGE_MAX_TOKENS = 2048
 JUDGE_TEMPERATURE = 0.0  # deterministic scoring                      [cookbook]
 

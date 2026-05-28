@@ -16,6 +16,15 @@ from bad_research.calibrate.judge import (
 from tests.test_calibrate.conftest import StubLLM
 
 
+def test_judge_tier_is_work():
+    """D-1: JUDGE_TIER must be 'work' — the code comment endorses Sonnet for categorical rails."""
+    from bad_research.calibrate.constants import JUDGE_TIER
+    assert JUDGE_TIER == "work", (
+        f"JUDGE_TIER is '{JUDGE_TIER}'; change constants.py:23 to 'work' "
+        "(Sonnet acceptable per the code comment — saves ~$0.55/run)"
+    )
+
+
 def test_stub_judge_is_deterministic(tiny_report, tiny_corpus):
     j = StubJudge(rails={a: "pass" for a in JUDGE_AXES})
     v1 = j.judge("q", tiny_report, tiny_corpus)
