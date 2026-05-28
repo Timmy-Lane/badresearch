@@ -284,6 +284,21 @@ def test_grader_round1_aggregates_critic_findings(skills_dir):
     assert "grader-log.json" in body
 
 
+# ── D-2: step-1 decompose delegated to a work-tier subagent ──
+
+
+def test_decompose_delegates_to_work_tier(skills_dir):
+    """D-2: Step 1 must instruct the orchestrator to spawn a work-tier subagent for
+    the JSON extraction, not run it inline at Opus cost."""
+    body = (skills_dir / "bad-research-1-decompose.md").read_text()
+    # The spawn instruction must explicitly reference work tier or Sonnet
+    assert (
+        'tier="work"' in body or "tier: work" in body or "work-tier subagent" in body.lower()
+    ), "bad-research-1-decompose.md must instruct orchestrator to delegate to a work-tier subagent"
+    # The delegation must name the output artifact to read back
+    assert "prompt-decomposition.json" in body  # already present; guard against accidental removal
+
+
 # B-2: the patcher skill consumes the 5th assumption critic's findings.
 def test_patcher_skill_findings_paths_includes_assumption(skills_dir):
     body = (skills_dir / "bad-research-14-patcher.md").read_text()
