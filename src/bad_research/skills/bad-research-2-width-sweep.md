@@ -100,7 +100,7 @@ is scratchpad" invariant: sources scale (45→80) while context stays flat.
 bad funnel-gather --query-file research/query-<vault_tag>.md \
     --search-plan research/temp/search-plan.md \
     --mode <light|full> --vault-tag <vault_tag> \
-    --reasoning-effort <minimal|low|medium|high> --json
+    --effort <minimal|low|medium|high> --json
 ```
 
 Returns `FunnelEnvelope` JSON: `{note_ids, top_chunks, n_read}`.

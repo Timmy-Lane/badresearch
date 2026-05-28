@@ -86,10 +86,19 @@ def test_no_removed_provider_imports_in_research_module():
         assert token not in src, f"removed-provider reference survives: {token}"
 
 
-def test_funnel_gather_cmd_has_max_tokens_and_reasoning_effort():
+def test_funnel_gather_cmd_has_max_tokens_and_effort():
+    # C-5: the --reasoning-effort alias is removed; --effort is the single canonical
+    # CLI flag. The Python parameter is named `effort` to match.
     sig = inspect.signature(RESEARCH.funnel_gather_cmd)
-    assert "reasoning_effort" in sig.parameters
+    assert "effort" in sig.parameters
     assert "max_tokens" in sig.parameters
+    # the removed alias must not survive as a CLI option string anywhere
+    from typer.testing import CliRunner
+
+    from bad_research.cli import app
+    r = CliRunner().invoke(app, ["funnel-gather", "--help"])
+    assert "--effort" in r.stdout
+    assert "--reasoning-effort" not in r.stdout
 
 
 # ── the crown-jewel integration test — REAL builders, mocked host LLM ─────────

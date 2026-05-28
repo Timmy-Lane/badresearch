@@ -154,7 +154,7 @@ SUBAGENT_SOURCE_KILL = 100    # hard stop on sources touched (Claude)
 
 # Reasoning-effort continuum — OpenAI's 4-level dial (dossier 16 §6.1) mapped onto
 # the existing route + LLM-tier + per-stage fan-out levers. Wiring the stub
-# --reasoning-effort flag (research.py) into a real config the router consumes.
+# --effort flag (research.py) into a real config the router consumes.
 EFFORT_LEVELS = ("minimal", "low", "medium", "high")
 EFFORT_MAP = {
     "minimal": {"route": "light", "tier": "triage", "fetchers_max": 4,  "loci_max": 0,

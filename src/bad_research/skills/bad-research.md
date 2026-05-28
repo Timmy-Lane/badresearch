@@ -120,11 +120,16 @@ uncertain, route up — but never silently upgrade every query to `full`.
 
 ### Reasoning-effort continuum + token ceiling
 
-The `--reasoning-effort` flag (alias `--effort`) is a 4-level dial — `minimal` /
+The `--effort` flag is a 4-level dial — `minimal` /
 `low` / `medium` / `high` — that nudges the route + per-step fan-out on top of
 the auto-classified route. Use the human-readable mapping in the table directly
 below (source: `skills/routing_constants.py::EFFORT_MAP`, applied by
 `skills/router.py::effort_overrides`):
+
+`--interactive` is auto-detected from CLI context — it is NOT a manual dial; the
+plan-gate fires only on an interactive non-`--auto` run. `router.py::plan_gate_fires()`
+defaults `interactive=False` and returns `True` only when the CLI context is
+interactive (surfaced by `bad route --interactive --json` as `plan_gate.would_gate`).
 
 | `--effort` | route | drafters | fetcher fan-out | extended thinking |
 |---|---|---|---|---|

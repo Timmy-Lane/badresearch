@@ -33,7 +33,7 @@ This step is tool-locked to `[Read]`. Read:
    bad verify-citations --report research/notes/final_report_<vault_tag>.md \
        --vault-tag <vault_tag> [--effort high] --json
    ```
-   **E4 high-effort lane:** when the run's `--reasoning-effort` is `high` (read it from
+   **E4 high-effort lane:** when the run's `--effort` is `high` (read it from
    the scaffold's run config / `EFFORT_MAP`), pass `--effort high`. That switches the
    Tier-C high-stakes band (the NLI-ambiguous claims below) from the single batched
    judge to an **N-sample self-consistency vote** (universal self-consistency — sample
