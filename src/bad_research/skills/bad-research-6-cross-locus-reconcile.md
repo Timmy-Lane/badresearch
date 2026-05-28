@@ -75,6 +75,28 @@ You need the `## Committed position` section from every interim note in your con
 
 **After writing the cross-locus tensions above, scan the top 8–12 source bodies for orphan tensions (tensions that slipped past loci analysis). Merge findings into `research/temp/tensions.md`, combining: (a) cross-locus tensions from the reconciliation above, (b) orphan tensions from this scan.**
 
+### Delegation
+
+The orchestrator delegates this orphan tension scan to a **work-tier subagent** — structured
+extraction of expert disagreements from source bodies into the per-tension schema is
+deterministic-format work requiring no frontier reasoning. This follows the same spawn pattern as
+the step-1 decompose and step-5 depth investigators. Spawn:
+
+```
+Task(
+  prompt: "Execute Step 6.5 of bad-research-6-cross-locus-reconcile: read all interim notes and the
+           top 8–12 source bodies for vault_tag=<vault_tag> (plus research/temp/contradiction-graph.json
+           if it exists), extract orphan source tensions, and APPEND them to research/temp/tensions.md
+           following the per-tension schema in the step (side_a, side_b, resolution, origin,
+           decision_relevance). Do NOT overwrite the cross-locus tensions already in the file. Then stop.",
+  tier: "work",
+  tools_allowed: [Read, Write, Bash],
+  stop_conditions: "research/temp/tensions.md contains the merged cross-locus + orphan tensions (3–7 total)"
+)
+```
+
+Read `research/temp/tensions.md` back into orchestrator context before proceeding to step 8.
+
 First survey the vault for the 15–20 highest-quality non-deprecated sources: `$HPR search "" --tag <vault_tag> -j`.
 
 1. **Re-read the cross-locus tensions you just wrote.** Each is already a candidate tension. Extract: the two positions, the strongest evidence for each, your preliminary reading of which side has the better case.

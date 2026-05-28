@@ -299,6 +299,29 @@ def test_decompose_delegates_to_work_tier(skills_dir):
     assert "prompt-decomposition.json" in body  # already present; guard against accidental removal
 
 
+# ── D-3: step-6.5 orphan tension scan delegated to a work-tier subagent ──
+
+
+def test_reconcile_step65_delegates_tension_scan_to_work_tier(skills_dir):
+    """D-3: Step 6.5 (orphan tension scan, post-C-2 merge) must instruct the orchestrator
+    to delegate the tensions extraction to a work-tier subagent (reference: C-2, D spec §5)."""
+    body = (skills_dir / "bad-research-6-cross-locus-reconcile.md").read_text()
+    assert "Step 6.5" in body, (
+        "Step 6.5 must exist (C-2 must land before D-3)"
+    )
+    # Work-tier delegation instruction must be present inside or immediately after the 6.5
+    # section. Anchor on the section HEADING ("## Step 6.5"), not the frontmatter mention —
+    # post-C-2 the description block names "Step 6.5" first, ~4.7K chars before the section.
+    assert "## Step 6.5" in body, "Step 6.5 must be a real section heading, not just a mention"
+    step65_idx = body.index("## Step 6.5")
+    after_65 = body[step65_idx : step65_idx + 1200]
+    assert (
+        'tier="work"' in after_65 or "tier: work" in after_65 or "work-tier" in after_65.lower()
+    ), "Step 6.5 must delegate the tension scan to a work-tier subagent"
+    # tensions.md artifact must still be named (not silently dropped)
+    assert "tensions.md" in body
+
+
 # B-2: the patcher skill consumes the 5th assumption critic's findings.
 def test_patcher_skill_findings_paths_includes_assumption(skills_dir):
     body = (skills_dir / "bad-research-14-patcher.md").read_text()
