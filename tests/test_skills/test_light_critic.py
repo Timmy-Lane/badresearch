@@ -67,16 +67,18 @@ def test_critics_skill_has_light_tier_slim_critic_section():
 
 def test_critics_skill_keeps_full_tier_four_critic_path():
     body = _critics_skill()
-    # the full-tier 4-critic fan-out must remain intact (unchanged by E3)
+    # the full-tier critic fan-out must remain intact — now FIVE critics (B-1/B-2
+    # added the assumption critic alongside the original four).
     for critic in (
         "bad-research-dialectic-critic",
         "bad-research-depth-critic",
         "bad-research-width-critic",
         "bad-research-instruction-critic",
+        "bad-research-assumption-critic",
     ):
         assert critic in body
-    # still spawns all 4 in parallel for full
-    assert "4 critics" in body or "all 4" in body.lower()
+    # still spawns all 5 in parallel for full
+    assert "5 critics" in body or "all 5" in body.lower()
 
 
 # ── The light/agentic-fast routes are wired through the critic before polish ──
@@ -127,3 +129,30 @@ def test_assumption_critic_installed_in_project_and_global(tmp_path, monkeypatch
     home.mkdir()
     hooks.install_global_hooks(home, hpr_path="bad")
     assert (home / ".claude" / "agents" / "bad-research-assumption-critic.md").exists()
+
+
+# ── B-2: the 12-critics skill spawns the 5th critic; patcher consumes it ──────
+
+
+def test_critics_skill_spawns_assumption_critic(skills_dir):
+    body = (skills_dir / "bad-research-12-critics.md").read_text()
+    assert "bad-research-assumption-critic" in body
+    assert "critic-findings-assumption.json" in body
+    # spawned in parallel with the other four (not a separate section)
+    assert "assumption" in body.lower()
+
+
+def test_critics_skill_exit_criterion_updated_for_five_critics(skills_dir):
+    body = (skills_dir / "bad-research-12-critics.md").read_text()
+    # exit criterion must reflect 5 findings files
+    low = body.lower()
+    assert "assumption" in low
+    assert "5 critic" in low or "five critic" in low or "critic-findings-assumption" in low
+
+
+def test_patcher_agent_reads_assumption_findings():
+    from bad_research.core import hooks
+
+    body = hooks.PATCHER_AGENT
+    # patcher agent procedure must read assumption findings alongside the other four
+    assert "assumption" in body.lower() or "critic-findings-assumption" in body

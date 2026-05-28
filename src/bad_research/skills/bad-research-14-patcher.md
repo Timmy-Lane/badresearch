@@ -20,7 +20,7 @@ description: >
 Read these inputs:
 - `research/scaffold.md` — vault_tag
 - `research/notes/final_report_<vault_tag>.md` — the synthesized final report from step 11
-- All `research/critic-findings-*.json` files (count depends on tier)
+- All `research/critic-findings-*.json` files — 5 critic findings files on full tier (count may vary by tier)
 - `research/temp/evidence-digest.md` — patcher's primary citation source
 - `research/query-<vault_tag>.md` — canonical research query
 
@@ -84,6 +84,7 @@ prompt: |
       research/critic-findings-depth.json,        (full tier only)
       research/critic-findings-width.json,
       research/critic-findings-instruction.json,
+      research/critic-findings-assumption.json,   (full tier only; B-1 assumption critic)
       research/critic-findings-grader.json        (full tier only; Step 12.5 grader loop, if present)
     ]
   - patch_log_path: research/patch-log.json   (already stubbed)

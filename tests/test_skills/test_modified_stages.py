@@ -282,3 +282,9 @@ def test_grader_round1_aggregates_critic_findings(skills_dir):
     assert "0.70" in body or "0.7" in body
     assert "MAX_GRADER_REVISIONS" in body or "3" in body
     assert "grader-log.json" in body
+
+
+# B-2: the patcher skill consumes the 5th assumption critic's findings.
+def test_patcher_skill_findings_paths_includes_assumption(skills_dir):
+    body = (skills_dir / "bad-research-14-patcher.md").read_text()
+    assert "critic-findings-assumption.json" in body
