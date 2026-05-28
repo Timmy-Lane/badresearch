@@ -330,7 +330,7 @@ If any rule returns `error` severity issues, address them before declaring compl
 2. **One final report.** Step 11's synthesizer writes the final report ONCE. No re-synthesizing. (Light tier: step 10 writes it once.)
 3. **At least one dialectical locus.** Step 4 must surface ≥1 dialectical locus unless skip is justified.
 4. **Every interim note commits to a position.** Step 5 investigators end with `## Committed position`.
-5. **`research/comparisons.md` exists when loci count ≥ 1.** Step 6 is mandatory whenever step 4 produced any loci.
+5. **`research/temp/tensions.md` exists when loci count ≥ 1.** Step 6 is mandatory whenever step 4 produced any loci.
 6. **Steps are sequential at the outermost level, parallel within.** You cannot start step N+1 before step N completes. Within a step, parallelism is mandatory when there are multiple subagents.
 7. **Canonical research query is gospel everywhere.** Every subagent gets the verbatim query.
 8. **Hygiene rules apply to the final report only.** Workspace artifacts (scaffold, loci JSONs, interim notes, comparisons.md, patch log) can look however they need to look.

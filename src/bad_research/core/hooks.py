@@ -1821,8 +1821,7 @@ You are **step 10** of the hyperresearch V8 pipeline. Prior steps produced:
 - `research/prompt-decomposition.json` — atomic items, required_section_headings
 - Width corpus (vault notes tagged with the vault_tag)
 - `research/temp/evidence-digest.md` — top claims + verbatim quotes
-- `research/comparisons.md` (if full tier) — cross-locus tensions
-- `research/temp/source-tensions.json` (if full tier) — expert disagreements
+- `research/temp/tensions.md` (if full tier) — cross-locus + orphan expert disagreements (the merged step-6 artifact; replaces the former `comparisons.md` + `source-tensions.json`)
 - Interim notes from depth investigators (if full tier)
 - **A pre-curated `must_read_note_ids` list** — the orchestrator already
   picked the 20-50 sources most relevant to YOUR angle. You don't choose
@@ -1847,8 +1846,7 @@ all three. Your draft is an INPUT to the synthesis, not the final output.
   your own sources.
 - **decomposition_path**: `research/prompt-decomposition.json`.
 - **evidence_digest_path**: `research/temp/evidence-digest.md` (if exists).
-- **comparisons_path**: `research/comparisons.md` (if exists).
-- **source_tensions_path**: `research/temp/source-tensions.json` (if exists).
+- **tensions_path**: `research/temp/tensions.md` (if exists) — the merged cross-locus + orphan expert disagreements (former `comparisons.md` + `source-tensions.json`).
 - **response_format**: `"short"` / `"structured"` / `"argumentative"`.
 - **citation_style**: `"wikilink"` / `"inline"` / `"none"`.
 - **modality**: `"collect"` / `"synthesize"` / `"compare"` / `"forecast"`.
@@ -1861,8 +1859,7 @@ These are quick — get them out of the way before the heavy reading.
 2. Read `research/prompt-decomposition.json`. Note every atomic item and
    `required_section_headings` — you MUST honor these.
 3. Read `research/temp/evidence-digest.md` if it exists.
-4. Read `research/comparisons.md` if it exists.
-5. Read `research/temp/source-tensions.json` if it exists.
+4. Read `research/temp/tensions.md` if it exists.
 
 **Do NOT survey the vault.** Do NOT run `note list`, `search ""`, or any
 metadata listing command. The orchestrator already curated your reading
@@ -2041,8 +2038,7 @@ mental model; writing the final report is a fresh act.
   naming what evidence and argument goes there).
 - **decomposition_path**: `research/prompt-decomposition.json` — atomic
   items, required_section_headings, response_format, citation_style.
-- **comparisons_path**: `research/comparisons.md` (full tier).
-- **source_tensions_path**: `research/temp/source-tensions.json` (full tier).
+- **tensions_path**: `research/temp/tensions.md` (full tier) — the merged cross-locus + orphan expert disagreements (former `comparisons.md` + `source-tensions.json`).
 - **evidence_digest_path**: `research/temp/evidence-digest.md` — top
   claims with verbatim quotes and source IDs.
 - **pass1_output_path**: `research/temp/synthesis-pass1.md` — where
@@ -2073,9 +2069,9 @@ Read in this order:
    - Where drafts disagree on a fact or interpretation
    - Where drafts overlap (same idea, different prose) — this becomes
      your redundancy hit list for pass 2
-6. **The strategic artifacts.** Re-read `comparisons.md` (cross-locus
-   tensions you must engage), `source-tensions.json` (expert
-   disagreements), `evidence-digest.md` (verbatim load-bearing quotes
+6. **The strategic artifacts.** Re-read `tensions.md` (the merged
+   cross-locus + orphan expert disagreements you must engage),
+   `evidence-digest.md` (verbatim load-bearing quotes
    you can cite directly). The sub-orchestrators may not have fully
    internalized these — you do, then you write.
 
@@ -2914,7 +2910,7 @@ name: bad-research-corpus-critic
 description: >
   Use this agent in Layer 3.7 of the hyperresearch deep research pipeline. Reads the full
   corpus (width + depth sources), the contradiction graph, the loci,
-  and comparisons.md. Verifies committed positions against original
+  and tensions.md. Verifies committed positions against original
   source text via note show, then asks: "what source, if found, would
   overturn the current direction?" Outputs a targeted fetch list of 3-8
   high-leverage missing sources. Runs on Sonnet. Spawn ONCE before
@@ -2934,7 +2930,7 @@ question of every committed position and every consensus claim:
 You are **Layer 3.7** — between cross-locus comparisons (Layer 3.5) and
 the draft (Layer 4). Everything gathered so far is available: width
 corpus, depth interim notes with committed positions, contradiction
-graph, comparisons.md. After you return, the orchestrator runs a
+graph, tensions.md. After you return, the orchestrator runs a
 targeted fetch wave to fill the gaps you identified, THEN proceeds
 to drafting.
 
@@ -2942,13 +2938,13 @@ to drafting.
 
 - **research_query**: verbatim. GOSPEL.
 - **corpus_tag**: vault tag for searching.
-- **comparisons_path**: `research/comparisons.md`
+- **tensions_path**: `research/temp/tensions.md` (the merged step-6 artifact: cross-locus + orphan tensions; former `comparisons.md` + `source-tensions.json`)
 - **loci_path**: `research/loci.json`
 - **output_path**: `research/corpus-critic-gaps.json`
 
 ## Procedure
 
-1. **Read comparisons.md.** For each committed position and cross-locus
+1. **Read tensions.md.** For each committed position and cross-locus
    tension:
    - Read the investigator's "What would change this position" field
    - Name the specific counter-evidence that would weaken the position
@@ -2959,7 +2955,7 @@ to drafting.
      95%+ adoption plans."
 
 2. **Verify positions against original sources.** For each committed
-   position in comparisons.md, identify the 2-3 source note IDs that
+   position in tensions.md, identify the 2-3 source note IDs that
    the position rests on. Read them in full:
    ```bash
    PYTHONIOENCODING=utf-8 {hpr_path} note show <id1> <id2> <id3> -j

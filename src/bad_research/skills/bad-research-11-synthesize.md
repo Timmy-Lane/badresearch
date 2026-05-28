@@ -24,8 +24,7 @@ Read these inputs:
 - `research/prompt-decomposition.json` — atomic items, required_section_headings, response_format, citation_style
 - `research/temp/reflections.md` — the distilled short-term memory (≤3 claim bullets + `cited_note_ids` per round). **The synthesizer plans from this; cap the distilled context at ≤10K tokens — see Step 11.4b**
 - `research/temp/draft-a.md`, `research/temp/draft-b.md`, `research/temp/draft-c.md` — the 3 angle-specific drafts from step 10
-- `research/comparisons.md` (full tier) — cross-locus tensions
-- `research/temp/source-tensions.json` (full tier) — expert disagreements
+- `research/temp/tensions.md` (full tier) — cross-locus + orphan expert disagreements (the merged step-6 artifact; replaces the former `comparisons.md` + `source-tensions.json`)
 - `research/temp/evidence-digest.md` — load-bearing claims with verbatim quotes
 - `research/query-<vault_tag>.md` — canonical research query (GOSPEL)
 
@@ -84,7 +83,7 @@ Write `research/temp/synthesis-plan.md`. This is your strategic brief for the sy
 ### Section 1: <heading>
 - Evidence to pull from: Draft A's <topic>, Draft C's <topic>
 - Argumentative beat: <which committed position to argue here>
-- Cross-locus tension to engage (if any): <name from comparisons.md>
+- Cross-locus tension to engage (if any): <name from tensions.md>
 
 ### Section 2: ...
 
@@ -236,8 +235,7 @@ prompt: |
   - synthesis_conflicts_path: research/temp/synthesis-conflicts.md
   - synthesis_evidence_path: research/temp/synthesis-evidence.md
   - decomposition_path: research/prompt-decomposition.json
-  - comparisons_path: research/comparisons.md
-  - source_tensions_path: research/temp/source-tensions.json
+  - tensions_path: research/temp/tensions.md
   - evidence_digest_path: research/temp/evidence-digest.md
   - pass1_output_path: research/temp/synthesis-pass1.md
   - final_output_path: research/notes/final_report_<vault_tag>.md
