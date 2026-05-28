@@ -3,6 +3,7 @@ from __future__ import annotations
 from bad_research.grounding.render import (
     coalesce_citations,
     extract_citations,
+    parse_line_anchor,
     render_citation,
 )
 
@@ -118,3 +119,64 @@ def test_coalesce_handles_wikilink_sets():
     assert "Alpha." in out and "Beta." in out
     assert extract_citations(out).count("note-a") == 1
     assert extract_citations(out).count("note-b") == 1
+
+
+# ── A-4: line-anchored [[note-id:L42-L58]] token parsing ─────────────────────
+
+
+def test_extract_citations_parses_line_anchored_token():
+    sent = "Growth was 12.4% [[source-note-12:L42-L58]]."
+    cites = extract_citations(sent)
+    # The anchor ID returned is just "source-note-12:L42-L58" — the full token
+    # key; line info is stripped by parse_line_anchor, not by extract_citations.
+    assert "source-note-12:L42-L58" in cites
+
+
+def test_extract_citations_still_parses_legacy_bare_wikilink():
+    sent = "Vietnam led [[source-note-12]]."
+    assert extract_citations(sent) == ["source-note-12"]
+
+
+def test_extract_citations_still_parses_alias_wikilink():
+    sent = "See [[source-note-12|the regional digest]]."
+    assert extract_citations(sent) == ["source-note-12"]
+
+
+def test_extract_citations_mixed_legacy_and_line_anchored():
+    sent = "A claim [[note-a:L1-L10]] and another [[note-b]]."
+    cites = extract_citations(sent)
+    assert "note-a:L1-L10" in cites
+    assert "note-b" in cites
+
+
+def test_parse_line_anchor_with_line_suffix():
+    note_id, ls, le = parse_line_anchor("source-note-12:L42-L58")
+    assert note_id == "source-note-12"
+    assert ls == 42
+    assert le == 58
+
+
+def test_parse_line_anchor_bare_note_id():
+    note_id, ls, le = parse_line_anchor("source-note-12")
+    assert note_id == "source-note-12"
+    assert ls is None
+    assert le is None
+
+
+def test_parse_line_anchor_single_line():
+    note_id, ls, le = parse_line_anchor("n:L7-L7")
+    assert note_id == "n"
+    assert ls == 7 and le == 7
+
+
+def test_coalesce_does_not_merge_same_note_different_line_ranges():
+    # Two sentences citing the same note at DIFFERENT line ranges must NOT coalesce.
+    from bad_research.grounding.render import coalesce_citations
+    text = (
+        "First claim. [[note-a:L1-L5]] "
+        "Second claim. [[note-a:L8-L12]]"
+    )
+    out = coalesce_citations(text)
+    # Both tokens survive distinct
+    assert "[[note-a:L1-L5]]" in out
+    assert "[[note-a:L8-L12]]" in out

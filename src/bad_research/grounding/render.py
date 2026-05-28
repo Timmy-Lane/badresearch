@@ -6,8 +6,15 @@ from __future__ import annotations
 import re
 
 # [4] numeric indices, and [[note-id]] wiki-links -- both are citation tokens.
+# A wikilink body may carry a line-anchor suffix (e.g. :L42-L58) and/or a display
+# alias (|alias). The colon-line-spec is captured as PART of the note-id group
+# (group 1 below), not treated as an alias separator, so the full
+# `note-id:L42-L58` key survives verbatim (A-4).
 _NUMERIC_CITE = re.compile(r"\[(\d+)\]")
 _WIKILINK_CITE = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]*)?\]\]")
+
+# A line-anchor suffix `:L<start>-L<end>` at the very end of a citation token.
+_LINE_ANCHOR_RE = re.compile(r":L(\d+)-L(\d+)$")
 
 
 def render_citation(sentence: str, anchor_indices: list[int]) -> str:
@@ -23,30 +30,55 @@ def render_citation(sentence: str, anchor_indices: list[int]) -> str:
 
 
 def extract_citations(sentence: str) -> list[str]:
-    """Return the citation tokens in/adjacent to a sentence: numeric [N] indices
-    (as strings) and [[note-id]] wiki-link targets (pipe display stripped)."""
+    """Return the citation tokens in/adjacent to a sentence.
+
+    Returns numeric [N] indices (as strings) and [[note-id]] /
+    [[note-id:L42-L58]] wiki-link targets. For wikilinks with a display alias
+    (`[[id|alias]]`) the alias is stripped. For line-anchored tokens
+    (`[[id:L42-L58]]`) the full `id:L42-L58` key is returned verbatim — the
+    colon-line-spec is inside the note-id group, not treated as an alias — so
+    use parse_line_anchor() to split it. Legacy bare `[[note-id]]` tokens are
+    unchanged."""
     out: list[str] = []
     for m in re.finditer(r"\[(\d+)\]|\[\[([^\]|]+)(?:\|[^\]]*)?\]\]", sentence):
         out.append(m.group(1) if m.group(1) is not None else m.group(2).strip())
     return out
 
 
+def parse_line_anchor(token: str) -> tuple[str, int | None, int | None]:
+    """Split a citation token into (note_id, line_start, line_end).
+
+    For a line-anchored token like "source-note-12:L42-L58" returns
+    ("source-note-12", 42, 58). For a bare note-id (or a numeric [N] index
+    string) returns (token, None, None) — a no-op for legacy tokens."""
+    m = _LINE_ANCHOR_RE.search(token)
+    if m:
+        note_id = token[: m.start()]
+        return (note_id, int(m.group(1)), int(m.group(2)))
+    return (token, None, None)
+
+
 # B-8 readability: a citation TOKEN is either a numeric [N] index or a [[wikilink]].
-# This is the same grammar extract_citations recognises, kept verbatim so the
-# coalescer and the extractor never disagree on what counts as a cite.
-_CITE_TOKEN = re.compile(r"\[\d+\]|\[\[[^\]|]+(?:\|[^\]]*)?\]\]")
+# This is the same grammar extract_citations recognises, kept consistent so the
+# coalescer and the extractor never disagree on what counts as a cite. The
+# wikilink body may carry an optional colon-line-spec (:L42-L58) which is kept as
+# part of the SAME token (not split as an alias) so distinct line ranges of one
+# note stay distinct cites (A-4; round2-citation §5).
+_CITE_TOKEN = re.compile(r"\[\d+\]|\[\[[^\]|]+(?::[^\]|]+)?(?:\|[^\]]*)?\]\]")
 # A "cite tail" = one or more whitespace-separated citation tokens at the very
 # end of a sentence's run (what render_citation appends: e.g. " [1] [2] [3]").
-_CITE_TAIL = re.compile(r"(?:\s*(?:\[\d+\]|\[\[[^\]|]+(?:\|[^\]]*)?\]\]))+\s*$")
+_CITE_TAIL = re.compile(
+    r"(?:\s*(?:\[\d+\]|\[\[[^\]|]+(?::[^\]|]+)?(?:\|[^\]]*)?\]\]))+\s*$"
+)
 # Split prose into sentence units so each unit keeps ITS OWN trailing cite tail.
 # The boundary is the whitespace that FOLLOWS a sentence's terminal punctuation
 # and its optional cite tail, and PRECEDES the next sentence's first character.
 # Using a finditer-driven splitter (below) rather than re.split keeps each unit =
 # `<prose><optional cite tail>` instead of orphaning the tail onto the next unit.
 _UNIT = re.compile(
-    r".*?[.!?]"                                          # minimal prose to a terminator
-    r"(?=\s|$)"                                           # terminator not mid-token (e.g. 12.4)
-    r"(?:\s*(?:\[\d+\]|\[\[[^\]|]+(?:\|[^\]]*)?\]\]))*",  # + its own cite tail
+    r".*?[.!?]"                                                       # minimal prose to a terminator
+    r"(?=\s|$)"                                                        # terminator not mid-token (e.g. 12.4)
+    r"(?:\s*(?:\[\d+\]|\[\[[^\]|]+(?::[^\]|]+)?(?:\|[^\]]*)?\]\]))*",  # + its own cite tail
     re.DOTALL,
 )
 
