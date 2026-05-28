@@ -95,8 +95,9 @@ bad = "bad_research.cli:app"
 badr = "bad_research.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/bad-research/bad-research"
-Repository = "https://github.com/bad-research/bad-research"
+Homepage = "https://github.com/LeventySeven/badresearch"
+Repository = "https://github.com/LeventySeven/badresearch"
+Issues = "https://github.com/LeventySeven/badresearch/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/bad_research"]

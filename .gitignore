@@ -20,3 +20,6 @@ docs/INTERFACES_KEYLESS.md
 docs/KEYLESS_REBUILD_PLAN_OUTLINE.md
 docs/SPEC.md
 docs/enhancements/
+
+# research vault — per-run output/scratch (eval + real runs), never shipped
+research/
