@@ -10,9 +10,8 @@ def _decomp(**kw):
 
 
 def test_constants_match_interfaces():
-    assert R.AGENTIC_FAST_MAX_STEPS == 10
-    assert R.AGENTIC_FAST_MAX_CALLS == 15
-    assert R.AGENTIC_FAST_TIMEOUT_S == 300
+    # Fast-route loop bounds now live under FAST_* (see test_router_effort.py for
+    # the full evidence-anchored set); the old agentic-fast loop names were retired.
     assert R.SUBAGENT_FANOUT_DEFAULT == 3 and R.SUBAGENT_FANOUT_MAX == 20
     assert R.CLARIFY_MAX_QUESTIONS == 3
     assert R.READ_TOP_K_CEILING == 80

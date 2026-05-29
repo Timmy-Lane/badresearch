@@ -3,10 +3,25 @@
 Every value cites INTERFACES.md / dossier 05 (DR-loops). DO NOT re-derive."""
 from __future__ import annotations
 
-# Agentic-fast ReAct loop bounds (Perplexity max_steps + Claude guards) — DR-loops §3,§5
-AGENTIC_FAST_MAX_STEPS = 10
-AGENTIC_FAST_MAX_CALLS = 15
-AGENTIC_FAST_TIMEOUT_S = 300
+# ---- Fast-route loop constants (keyless deep-research replica) ----
+# Evidence-anchored: see researchfms/teardowns/DEEP_RESEARCH_FAST_MODE_RE.md PART 2.2, each
+# value cited to a cloned DR repo (open_deep_research / gpt-researcher / dzhng / smolagents /
+# local-deep-research). The 8-10 min budget sits at the LOW end of the open-clone range.
+FAST_MAX_STEPS            = 6      # hard step cap (open_deep_research supervisor=6; Perplexity caps 10)
+FAST_MAX_QUERIES_PER_STEP = 4      # parallel queries fanned out per step (dzhng breadth=4)
+FAST_MAX_RESULTS_PER_QUERY = 5     # SERP results per query (dzhng + gpt-researcher agree)
+FAST_MIN_NEW_DOMAINS      = 2      # < this many NEW distinct domains in a step => diminishing returns
+FAST_STALL_PATIENCE       = 1      # consecutive low-novelty steps tolerated before stopping
+FAST_MIN_SOURCES_PER_SUBQ = 3      # distinct domains to mark a sub-question "green" (coverage gate)
+FAST_MAX_SUBQUESTIONS     = 3      # sub-questions the decomposer emits in fast mode
+FAST_CONTENT_TRIM_CHARS   = 25000  # per-page content cap before it enters context
+FAST_TEMPERATURE          = 0.4    # planner/extractor temperature
+FAST_RESERVE_SYNTH_FRAC   = 0.25   # fraction of budget reserved for the writer (distinct from
+                                   # the token-valued RESERVE_FOR_SYNTHESIS below — do NOT merge)
+FAST_TIMEOUT_S            = 600    # wall-clock safety net (belt-and-suspenders on the step cap)
+
+# Breadth-shape parallel sub-researcher fan-out cap for the fast loop.
+FAST_SUBRESEARCHER_K = 3
 
 # Parallel subagent fan-out (Claude depth-1) — INTERFACES / CLR §CE.5,§CE.10
 SUBAGENT_FANOUT_DEFAULT = 3
