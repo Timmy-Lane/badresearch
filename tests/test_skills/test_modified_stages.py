@@ -187,3 +187,170 @@ def test_synthesize_caps_distilled_context_and_reinjects_spans(skills_dir):
     # verbatim quoted_support the uncited-/recitation-gate / anchors.py need
     assert "re-inject" in low or "reinject" in low or "re-injects" in low
     assert "quoted_support" in body or "span" in low
+
+
+# ── C-1: merge step 3 (contradiction-graph) into step 4 as a Step 4.0 preamble ──
+
+
+def test_step3_merged_into_step4_preamble(skills_dir):
+    """After C-1: step 3 content lives as Step 4.0 inside bad-research-4-loci-analysis.md."""
+    # step 3 must no longer exist as a standalone skill file
+    assert not (skills_dir / "bad-research-3-contradiction-graph.md").exists(), \
+        "bad-research-3-contradiction-graph.md must be removed after C-1 merge"
+    # step 4 must contain the contradiction-graph procedure as a preamble
+    body = (skills_dir / "bad-research-4-loci-analysis.md").read_text()
+    assert "Step 4.0" in body, "loci-analysis must have a Step 4.0 preamble section"
+    assert "contradiction-graph.json" in body
+    assert "consensus-claims.json" in body
+    assert "claim-pairing" in body.lower() or "pair contradiction" in body.lower()
+
+
+def test_step3_removed_from_hooks_roster(skills_dir):
+    from bad_research.core.hooks import _BAD_RESEARCH_STEP_SKILLS
+    assert "bad-research-3-contradiction-graph" not in _BAD_RESEARCH_STEP_SKILLS
+    assert "bad-research-4-loci-analysis" in _BAD_RESEARCH_STEP_SKILLS
+
+
+# ── C-2: merge step 7 (source-tensions) into step 6 as a Step 6.5 orphan scan ──
+
+
+def test_step7_merged_into_step6_subsection(skills_dir):
+    """After C-2: step 7 content lives as Step 6.5 inside bad-research-6-cross-locus-reconcile.md."""
+    assert not (skills_dir / "bad-research-7-source-tensions.md").exists(), \
+        "bad-research-7-source-tensions.md must be removed after C-2 merge"
+    body = (skills_dir / "bad-research-6-cross-locus-reconcile.md").read_text()
+    assert "Step 6.5" in body, "reconcile skill must contain a Step 6.5 orphan-scan subsection"
+    assert "tensions.md" in body, "merged output artifact must be tensions.md"
+    assert "orphan" in body.lower(), "orphan tension scan procedure must be present"
+    # old separate artifacts must no longer be the exit criterion
+    assert "source-tensions.json" not in body or "tensions.md" in body
+
+
+def test_step7_removed_from_hooks_roster(skills_dir):
+    from bad_research.core.hooks import _BAD_RESEARCH_STEP_SKILLS
+    assert "bad-research-7-source-tensions" not in _BAD_RESEARCH_STEP_SKILLS
+    assert "bad-research-6-cross-locus-reconcile" in _BAD_RESEARCH_STEP_SKILLS
+
+
+def test_step10_reads_tensions_md_not_source_tensions_json(skills_dir):
+    body = (skills_dir / "bad-research-10-triple-draft.md").read_text()
+    assert "tensions.md" in body, "step 10 must read the merged tensions.md artifact"
+
+
+# ── C-3: cut step 9 (evidence-digest); build inline in step 10.0b Part 2 ──
+
+
+def test_step9_merged_inline_into_step10(skills_dir):
+    """After C-3: step 9 no longer exists; evidence-digest procedure is in step 10.0b."""
+    assert not (skills_dir / "bad-research-9-evidence-digest.md").exists(), \
+        "bad-research-9-evidence-digest.md must be removed after C-3 merge"
+    body = (skills_dir / "bad-research-10-triple-draft.md").read_text()
+    assert "evidence-digest.md" in body, "step 10 must build evidence-digest.md inline"
+    assert "10.0b" in body or "Step 10.0b" in body, "inline digest build must be Step 10.0b"
+    # the 80-120 claim cap and quoted_support discipline must survive
+    assert "80" in body and "120" in body
+    assert "quoted_support" in body
+
+
+def test_step9_removed_from_hooks_roster(skills_dir):
+    from bad_research.core.hooks import _BAD_RESEARCH_STEP_SKILLS
+    assert "bad-research-9-evidence-digest" not in _BAD_RESEARCH_STEP_SKILLS
+    assert "bad-research-10-triple-draft" in _BAD_RESEARCH_STEP_SKILLS
+
+
+def test_step12_5_grader_still_reads_evidence_digest(skills_dir):
+    body = (skills_dir / "bad-research-12.5-grader.md").read_text()
+    assert "evidence-digest.md" in body, "grader must still reference evidence-digest.md artifact"
+
+
+# ── C-4: grader round 1 aggregates critic-findings-*.json (no fresh full scan) ──
+
+
+def test_grader_round1_aggregates_critic_findings(skills_dir):
+    """After C-4: grader round 1 scores from critic-findings-*.json, not a fresh corpus scan."""
+    body = (skills_dir / "bad-research-12.5-grader.md").read_text()
+    low = body.lower()
+    # round 1 uses existing critic findings
+    assert "round 1" in low or "round-1" in low or "first round" in low
+    assert "critic-findings" in body, "round 1 must reference critic-findings-*.json"
+    assert "aggregate" in low or "aggregat" in low, "round 1 must aggregate, not rescan"
+    # rounds 2-3 remain full scans
+    assert "round 2" in low or "round-2" in low or "second round" in low
+    assert "full" in low and ("scan" in low or "corpus" in low), \
+        "rounds 2-3 must still perform full corpus scan"
+    # convergence loop and floor preserved
+    assert "0.70" in body or "0.7" in body
+    assert "MAX_GRADER_REVISIONS" in body or "3" in body
+    assert "grader-log.json" in body
+
+
+# ── D-2: step-1 decompose delegated to a work-tier subagent ──
+
+
+def test_decompose_delegates_to_work_tier(skills_dir):
+    """D-2: Step 1 must instruct the orchestrator to spawn a work-tier subagent for
+    the JSON extraction, not run it inline at Opus cost."""
+    body = (skills_dir / "bad-research-1-decompose.md").read_text()
+    # The spawn instruction must explicitly reference work tier or Sonnet
+    assert (
+        'tier="work"' in body or "tier: work" in body or "work-tier subagent" in body.lower()
+    ), "bad-research-1-decompose.md must instruct orchestrator to delegate to a work-tier subagent"
+    # The delegation must name the output artifact to read back
+    assert "prompt-decomposition.json" in body  # already present; guard against accidental removal
+
+
+# ── D-3: step-6.5 orphan tension scan delegated to a work-tier subagent ──
+
+
+def test_reconcile_step65_delegates_tension_scan_to_work_tier(skills_dir):
+    """D-3: Step 6.5 (orphan tension scan, post-C-2 merge) must instruct the orchestrator
+    to delegate the tensions extraction to a work-tier subagent (reference: C-2, D spec §5)."""
+    body = (skills_dir / "bad-research-6-cross-locus-reconcile.md").read_text()
+    assert "Step 6.5" in body, (
+        "Step 6.5 must exist (C-2 must land before D-3)"
+    )
+    # Work-tier delegation instruction must be present inside or immediately after the 6.5
+    # section. Anchor on the section HEADING ("## Step 6.5"), not the frontmatter mention —
+    # post-C-2 the description block names "Step 6.5" first, ~4.7K chars before the section.
+    assert "## Step 6.5" in body, "Step 6.5 must be a real section heading, not just a mention"
+    step65_idx = body.index("## Step 6.5")
+    after_65 = body[step65_idx : step65_idx + 1200]
+    assert (
+        'tier="work"' in after_65 or "tier: work" in after_65 or "work-tier" in after_65.lower()
+    ), "Step 6.5 must delegate the tension scan to a work-tier subagent"
+    # tensions.md artifact must still be named (not silently dropped)
+    assert "tensions.md" in body
+
+
+# B-2: the patcher skill consumes the 5th assumption critic's findings.
+def test_patcher_skill_findings_paths_includes_assumption(skills_dir):
+    body = (skills_dir / "bad-research-14-patcher.md").read_text()
+    assert "critic-findings-assumption.json" in body
+
+
+# ── B-5: query expansion (width-sweep) + direction-switch pivot (depth) ──
+
+
+def test_width_sweep_query_expansion_instruction(skills_dir):
+    body = (skills_dir / "bad-research-2-width-sweep.md").read_text()
+    low = body.lower()
+    # explicit per-sub-question paraphrase/synonym instruction
+    assert "synonym/paraphrase" in low or "paraphrase alternative" in low
+    # minimum count: 3-5 alternatives generated per sub-question
+    assert "3–5" in body or "3-5" in body
+    # the reformulation rows are tagged in the search-plan table Type column
+    assert "reformulation" in low
+    # scoped to Step 2.1 (multi-perspective search planning)
+    assert "step 2.1" in low or "2.1" in body
+
+
+def test_depth_investigation_direction_switch_rule(skills_dir):
+    body = (skills_dir / "bad-research-5-depth-investigation.md").read_text()
+    low = body.lower()
+    # explicit pivot/direction-switch instruction
+    assert "pivot" in low or "switch" in low or "switching direction" in low
+    # triggered by consecutive failed searches
+    assert "consecutive" in low or "3 consecutive" in body or "three consecutive" in low
+    # the pivot must be announced explicitly (written to notes)
+    assert "switching direction" in low or "pivot" in low
+    assert "orchestrator-notes" in body or "orchestrator_notes" in body or "orchestrator-notes.md" in body

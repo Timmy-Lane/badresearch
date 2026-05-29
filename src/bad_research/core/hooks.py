@@ -1188,6 +1188,80 @@ accounted for, in the shape the user asked for. That's the mechanism.
 
 
 # ---------------------------------------------------------------------------
+# Layer 5 — assumption critic. Decomposes load-bearing claims into sub-assumptions.
+# ---------------------------------------------------------------------------
+ASSUMPTION_CRITIC_AGENT = """\
+---
+name: bad-research-assumption-critic
+description: >
+  Use this agent in Layer 5 of the hyperresearch deep research pipeline. Takes the
+  5 highest-stakes causal/quantitative claims in the draft, decomposes each into
+  constituent sub-assumptions, and verifies each independently against the corpus.
+  Runs on Opus. Spawn ONCE per draft, in parallel with the other four critics.
+model: opus
+tools: Bash, Read, Write
+color: red
+---
+
+You are the assumption critic. Your only job: for each of the 5 highest-stakes
+causal or quantitative claims in the draft, decompose it into its constituent
+sub-assumptions and verify each sub-assumption against the vault corpus independently.
+
+## Pipeline position
+
+You are **Layer 5** of the 7-phase hyperresearch pipeline. Running in parallel:
+dialectic-critic, depth-critic, width-critic, instruction-critic. You collectively
+hand findings to the patcher (Layer 6, tool-locked `[Read, Edit]`). You do NOT
+patch the draft yourself — you only write findings.
+
+Your specific angle: a claim like "X causes Y because A, B, and C" may be
+well-cited at the surface while resting on one unverified causal link. The other
+critics check the draft's *conclusions and structure*; you decompose individual
+load-bearing claims into sub-assumptions and rate each independently.
+
+## Inputs (from the parent agent)
+
+- **research_query**: verbatim user question. GOSPEL.
+- **query_file_path**: path to the persisted query file.
+- **draft_path**: `research/notes/final_report_<vault_tag>.md`
+- **output_path**: `research/critic-findings-assumption.json`
+- **vault_tag**: corpus tag for searching the vault
+
+## Procedure
+
+1. **Read the query file** (`query_file_path`) before anything else.
+
+2. **Identify the 5 highest-stakes claims.** Scan the draft for causal or
+   quantitative claims — look for "because", "causes", "leads to", "increases by",
+   "is due to", percentage figures, named mechanisms. Rank by section heading
+   importance (from `prompt-decomposition.json`). Take the top 5.
+
+3. **For each claim**, decompose it into constituent sub-assumptions. Example:
+   "Policy X reduced Y by 30% because it increased Z and constrained W" → three
+   sub-assumptions: (a) policy X increased Z, (b) policy X constrained W,
+   (c) increasing Z + constraining W reduces Y by ~30%.
+
+4. **Verify each sub-assumption** against the vault:
+   `{hpr_path} search "<keyword>" --tag <vault_tag> -j`
+   Read the full text of relevant notes. Mark each sub-assumption:
+   - `verified`: direct supporting quote found
+   - `partial`: indirect or approximate support
+   - `unverified`: no supporting evidence in corpus
+
+5. **Emit one finding per unverified or partial sub-assumption.** Format:
+   `{{severity: "critical"|"major"|"minor", claim_text: "...",
+     sub_assumption: "...", verification_status: "unverified"|"partial",
+     recommendation: "cite or qualify this sub-assumption"}}`
+
+## Output
+
+Write `output_path` with shape: `{{"findings": [...]}}`
+
+Limit total output to sub-assumptions of the top-5 claims only (cost ceiling).
+"""
+
+
+# ---------------------------------------------------------------------------
 # E3 — SLIM light-tier critic. The light + agentic-fast routes skip the
 # full-tier 4-critic fan-out (and the patcher loop) and go straight to polish,
 # so they get NO adversarial pass today. This single critic gives them ONE
@@ -1312,13 +1386,13 @@ PATCHER_AGENT = """\
 ---
 name: bad-research-patcher
 description: >
-  Use this agent in Layer 6 of the hyperresearch deep research pipeline. Reads the four
-  critic findings JSONs (dialectic, depth, width, instruction) and
+  Use this agent in Layer 6 of the hyperresearch deep research pipeline. Reads the five
+  critic findings JSONs (dialectic, depth, width, instruction, assumption) and
   revises the draft using surgical Edit hunks. Tool-locked: Read + Edit
   ONLY. Cannot Write. Cannot regenerate. Runs on Opus — substance-
   integration requires judgment about which findings serve the
   research_query and which are critic noise. Spawn ONCE after all
-  four critics return.
+  five critics return.
 model: opus
 tools: Read, Edit
 color: orange
@@ -1334,7 +1408,7 @@ is the Edit tool with exact `old_string` / `new_string` pairs.
 You are **Layer 6** of the 7-phase hyperresearch pipeline. Everything before
 you has happened: width sweep, loci analysis, depth investigation,
 cross-locus reconciliation, draft (Layer 4), adversarial critique
-(Layer 5 — four critics produced findings JSONs for you to consume).
+(Layer 5 — five critics produced findings JSONs for you to consume).
 After you: Layer 7 (polish auditor, also tool-locked `[Read, Edit]`).
 
 You are the ONE step in the pipeline that modifies the draft's substance.
@@ -1371,8 +1445,8 @@ Concretely:
   whether a finding serves the user's actual question.
 - **draft_path**: path to the Layer 4 draft (usually
   `research/notes/final_report_<vault_tag>.md`).
-- **findings_paths**: list of four JSON paths, one per critic
-  (dialectic, depth, width, instruction).
+- **findings_paths**: list of five JSON paths, one per critic
+  (dialectic, depth, width, instruction, assumption).
 - **patch_log_path**: path to a PRE-EXISTING empty-stub patch log
   (e.g., `research/patch-log.json`). The orchestrator creates this
   before spawning you. Your job is to Edit this file to populate it.
@@ -1386,9 +1460,9 @@ Concretely:
 
 ## Procedure
 
-1. **Read all four findings files** (dialectic / depth / width / instruction).
+1. **Read all five findings files** (dialectic / depth / width / instruction / assumption).
    Merge into one flat list. Sort by severity: critical first, then major, then minor.
-   Skip any missing files silently (defensive — full tier writes all four).
+   Skip any missing files silently (defensive — full tier writes all five).
 
    **Pre-filter: `requires_orchestrator_restructure` findings go straight to escalation.**
    Any finding with `requires_orchestrator_restructure: true`
@@ -1821,8 +1895,7 @@ You are **step 10** of the hyperresearch V8 pipeline. Prior steps produced:
 - `research/prompt-decomposition.json` — atomic items, required_section_headings
 - Width corpus (vault notes tagged with the vault_tag)
 - `research/temp/evidence-digest.md` — top claims + verbatim quotes
-- `research/comparisons.md` (if full tier) — cross-locus tensions
-- `research/temp/source-tensions.json` (if full tier) — expert disagreements
+- `research/temp/tensions.md` (if full tier) — cross-locus + orphan expert disagreements (the merged step-6 artifact; replaces the former `comparisons.md` + `source-tensions.json`)
 - Interim notes from depth investigators (if full tier)
 - **A pre-curated `must_read_note_ids` list** — the orchestrator already
   picked the 20-50 sources most relevant to YOUR angle. You don't choose
@@ -1847,8 +1920,7 @@ all three. Your draft is an INPUT to the synthesis, not the final output.
   your own sources.
 - **decomposition_path**: `research/prompt-decomposition.json`.
 - **evidence_digest_path**: `research/temp/evidence-digest.md` (if exists).
-- **comparisons_path**: `research/comparisons.md` (if exists).
-- **source_tensions_path**: `research/temp/source-tensions.json` (if exists).
+- **tensions_path**: `research/temp/tensions.md` (if exists) — the merged cross-locus + orphan expert disagreements (former `comparisons.md` + `source-tensions.json`).
 - **response_format**: `"short"` / `"structured"` / `"argumentative"`.
 - **citation_style**: `"wikilink"` / `"inline"` / `"none"`.
 - **modality**: `"collect"` / `"synthesize"` / `"compare"` / `"forecast"`.
@@ -1861,8 +1933,7 @@ These are quick — get them out of the way before the heavy reading.
 2. Read `research/prompt-decomposition.json`. Note every atomic item and
    `required_section_headings` — you MUST honor these.
 3. Read `research/temp/evidence-digest.md` if it exists.
-4. Read `research/comparisons.md` if it exists.
-5. Read `research/temp/source-tensions.json` if it exists.
+4. Read `research/temp/tensions.md` if it exists.
 
 **Do NOT survey the vault.** Do NOT run `note list`, `search ""`, or any
 metadata listing command. The orchestrator already curated your reading
@@ -2041,8 +2112,7 @@ mental model; writing the final report is a fresh act.
   naming what evidence and argument goes there).
 - **decomposition_path**: `research/prompt-decomposition.json` — atomic
   items, required_section_headings, response_format, citation_style.
-- **comparisons_path**: `research/comparisons.md` (full tier).
-- **source_tensions_path**: `research/temp/source-tensions.json` (full tier).
+- **tensions_path**: `research/temp/tensions.md` (full tier) — the merged cross-locus + orphan expert disagreements (former `comparisons.md` + `source-tensions.json`).
 - **evidence_digest_path**: `research/temp/evidence-digest.md` — top
   claims with verbatim quotes and source IDs.
 - **pass1_output_path**: `research/temp/synthesis-pass1.md` — where
@@ -2073,9 +2143,9 @@ Read in this order:
    - Where drafts disagree on a fact or interpretation
    - Where drafts overlap (same idea, different prose) — this becomes
      your redundancy hit list for pass 2
-6. **The strategic artifacts.** Re-read `comparisons.md` (cross-locus
-   tensions you must engage), `source-tensions.json` (expert
-   disagreements), `evidence-digest.md` (verbatim load-bearing quotes
+6. **The strategic artifacts.** Re-read `tensions.md` (the merged
+   cross-locus + orphan expert disagreements you must engage),
+   `evidence-digest.md` (verbatim load-bearing quotes
    you can cite directly). The sub-orchestrators may not have fully
    internalized these — you do, then you write.
 
@@ -2914,7 +2984,7 @@ name: bad-research-corpus-critic
 description: >
   Use this agent in Layer 3.7 of the hyperresearch deep research pipeline. Reads the full
   corpus (width + depth sources), the contradiction graph, the loci,
-  and comparisons.md. Verifies committed positions against original
+  and tensions.md. Verifies committed positions against original
   source text via note show, then asks: "what source, if found, would
   overturn the current direction?" Outputs a targeted fetch list of 3-8
   high-leverage missing sources. Runs on Sonnet. Spawn ONCE before
@@ -2934,7 +3004,7 @@ question of every committed position and every consensus claim:
 You are **Layer 3.7** — between cross-locus comparisons (Layer 3.5) and
 the draft (Layer 4). Everything gathered so far is available: width
 corpus, depth interim notes with committed positions, contradiction
-graph, comparisons.md. After you return, the orchestrator runs a
+graph, tensions.md. After you return, the orchestrator runs a
 targeted fetch wave to fill the gaps you identified, THEN proceeds
 to drafting.
 
@@ -2942,13 +3012,13 @@ to drafting.
 
 - **research_query**: verbatim. GOSPEL.
 - **corpus_tag**: vault tag for searching.
-- **comparisons_path**: `research/comparisons.md`
+- **tensions_path**: `research/temp/tensions.md` (the merged step-6 artifact: cross-locus + orphan tensions; former `comparisons.md` + `source-tensions.json`)
 - **loci_path**: `research/loci.json`
 - **output_path**: `research/corpus-critic-gaps.json`
 
 ## Procedure
 
-1. **Read comparisons.md.** For each committed position and cross-locus
+1. **Read tensions.md.** For each committed position and cross-locus
    tension:
    - Read the investigator's "What would change this position" field
    - Name the specific counter-evidence that would weaken the position
@@ -2959,7 +3029,7 @@ to drafting.
      95%+ adoption plans."
 
 2. **Verify positions against original sources.** For each committed
-   position in comparisons.md, identify the 2-3 source note IDs that
+   position in tensions.md, identify the 2-3 source note IDs that
    the position rests on. Read them in full:
    ```bash
    PYTHONIOENCODING=utf-8 {hpr_path} note show <id1> <id2> <id3> -j
@@ -3090,6 +3160,7 @@ def install_hooks(vault_root: Path, hpr_path: str = "bad") -> list[str]:
         lambda: _install_instruction_critic_agent(vault_root, hpr_path),
         lambda: _install_depth_critic_agent(vault_root, hpr_path),
         lambda: _install_width_critic_agent(vault_root, hpr_path),
+        lambda: _install_assumption_critic_agent(vault_root, hpr_path),
         lambda: _install_light_critic_agent(vault_root, hpr_path),
         lambda: _install_patcher_agent(vault_root, hpr_path),
         lambda: _install_polish_auditor_agent(vault_root, hpr_path),
@@ -3145,6 +3216,7 @@ def install_global_hooks(home: Path | None = None, hpr_path: str = "bad") -> lis
         lambda: _install_instruction_critic_agent(home, hpr_path),
         lambda: _install_depth_critic_agent(home, hpr_path),
         lambda: _install_width_critic_agent(home, hpr_path),
+        lambda: _install_assumption_critic_agent(home, hpr_path),
         lambda: _install_light_critic_agent(home, hpr_path),
         lambda: _install_patcher_agent(home, hpr_path),
         lambda: _install_polish_auditor_agent(home, hpr_path),
@@ -3433,6 +3505,17 @@ def _install_instruction_critic_agent(vault_root: Path, hpr_path: str) -> str | 
     )
 
 
+def _install_assumption_critic_agent(vault_root: Path, hpr_path: str) -> str | None:
+    hpr_posix = hpr_path.replace("\\", "/")
+    content = ASSUMPTION_CRITIC_AGENT.format(hpr_path=hpr_posix)
+    return _write_agent_file(
+        vault_root,
+        "bad-research-assumption-critic.md",
+        content,
+        "opus assumption critic",
+    )
+
+
 def _install_light_critic_agent(vault_root: Path, hpr_path: str) -> str | None:
     hpr_posix = hpr_path.replace("\\", "/")
     content = LIGHT_CRITIC_AGENT.format(hpr_path=hpr_posix)
@@ -3651,13 +3734,10 @@ _BAD_RESEARCH_STEP_SKILLS = [
     "bad-research-query-router",
     "bad-research-1.6-plan-gate",
     "bad-research-2-width-sweep",
-    "bad-research-3-contradiction-graph",
     "bad-research-4-loci-analysis",
     "bad-research-5-depth-investigation",
     "bad-research-6-cross-locus-reconcile",
-    "bad-research-7-source-tensions",
     "bad-research-8-corpus-critic",
-    "bad-research-9-evidence-digest",
     "bad-research-10-triple-draft",
     "bad-research-11-synthesize",
     "bad-research-11.5-citation-verifier",

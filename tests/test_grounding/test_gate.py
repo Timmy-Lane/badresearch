@@ -161,3 +161,63 @@ def test_gate_accepts_citation_before_terminal_period():
     report = f"Southeast Asian GMV grew 12.4% [[{a.anchor_id}]] in 2024.\n"
     findings = no_uncited_claim_gate(report, store)
     assert findings == []
+
+
+# ── A-6: _BOLD_SPAN_ONLY guard + verify_score<PARTIAL_LOW promotion ──────────
+
+from bad_research.grounding.gate import _is_formatting_line
+
+
+def test_is_formatting_line_bold_span_only():
+    # A line that is entirely bold prose (but NOT a bold heading) should be
+    # detected as formatting by the new _BOLD_SPAN_ONLY guard.
+    # Note: existing _BOLD_ONLY catches `**...**` whole-line; this guard catches
+    # lines like "**some mid-sentence bold fragment**" that aren't headings.
+    assert _is_formatting_line("**Important finding:**") is True
+    assert _is_formatting_line("**Key Findings 2024**") is True  # already caught
+
+
+def test_is_formatting_line_does_not_flag_partial_bold():
+    # A line that has bold inside a real sentence is NOT a formatting line.
+    assert _is_formatting_line("The study found **12.4%** growth in 2024.") is False
+
+
+def test_gate_promotes_unsupported_anchor_below_partial_low_to_critical():
+    # An anchor with verify_score < PARTIAL_LOW (0.40) and verified=0 should
+    # produce a CRITICAL finding (not just major "unverified-cite").
+    body = "GDP grew 12.4% annually in the region."
+    quote = "GDP grew 12.4% annually in the region."
+    start = body.index(quote)
+    anchor = ClaimAnchor(
+        note_id="n1", char_start=start, char_end=start + len(quote),
+        claim="GDP grew 12.4%.", quoted_support=quote,
+        verified=0, verify_score=0.15,  # explicitly below PARTIAL_LOW=0.40
+    )
+    store = _store_with([anchor])
+
+    # Sentence cites the anchor but it has a low verify_score -> critical
+    report = f"GDP grew 12.4% annually. [[{anchor.anchor_id}]]"
+    findings = no_uncited_claim_gate(report, store)
+    critical = [f for f in findings if f.severity == "critical"]
+    assert any("unsupported" in f.failure_mode or "verify_score" in f.recommendation.lower()
+               for f in critical), f"Expected critical finding, got: {findings}"
+
+
+def test_gate_keeps_partial_verdict_as_major():
+    # An anchor with verify_score in [PARTIAL_LOW, SUPPORTED_FLOOR) stays major.
+    body = "GDP grew 12.4% annually in the region."
+    quote = "GDP grew 12.4% annually in the region."
+    start = body.index(quote)
+    anchor = ClaimAnchor(
+        note_id="n1", char_start=start, char_end=start + len(quote),
+        claim="GDP grew 12.4%.", quoted_support=quote,
+        verified=0, verify_score=0.55,  # in the "partial" band
+    )
+    store = _store_with([anchor])
+
+    report = f"GDP grew 12.4% annually. [[{anchor.anchor_id}]]"
+    findings = no_uncited_claim_gate(report, store)
+    # verify_score=0.55 is above PARTIAL_LOW -> major, not critical
+    unverified = [f for f in findings if f.failure_mode == "unverified-cite"]
+    assert unverified
+    assert all(f.severity == "major" for f in unverified)

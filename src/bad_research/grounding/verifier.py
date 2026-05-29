@@ -14,7 +14,7 @@ from bad_research.llm.base import LLMMessage, LLMProvider
 
 from .anchors import AnchorStore, ClaimAnchor, quote_sha
 from .nli import NLILabel, NLIModel, classify_nli
-from .render import extract_citations
+from .render import extract_citations, parse_line_anchor
 
 
 def nli_available() -> bool:
@@ -81,22 +81,56 @@ class HostJudgeNLI:
         return {"entailment": 0.0, "neutral": 1.0, "contradiction": 0.0}
 
 
+class LineSpanJudge:
+    """A-5 — keyless Tier-B judge for the line-anchored citation path.
+
+    Replaces HostJudgeNLI on the keyless+host path. Identical interface and
+    routing: near-verbatim pairs (lexical overlap >= CLAIM_QUOTE_OVERLAP_SKIP)
+    return ENTAILMENT immediately ($0); genuine paraphrases return NEUTRAL so
+    CitationVerifier escalates them to the batched Tier-C host judge.
+
+    The KEY difference from HostJudgeNLI is semantic, and it lives in the caller:
+    the *premise* passed in by CitationVerifier.verify is now the specific cited
+    LINE SPAN text (re-read from the live note body via body_to_lines + the
+    anchor's line_start/line_end), not the opaque stored quoted_support. That
+    closes G4 — the keyless judge previously rubber-stamped entailment against a
+    quote captured at fetch time; now it judges the claim against exactly what
+    lines L42-L58 say today. This class is still a pure lexical *router*: it
+    touches NO torch and makes NO LLM call itself (the batched judge runs in the
+    verifier). CitationPresentNLI stays as the absolute fallback when llm is
+    None."""
+
+    def __init__(self, llm: LLMProvider) -> None:
+        self.llm = llm
+
+    def predict(self, premise: str, hypothesis: str) -> dict[str, float]:
+        # Same routing logic as HostJudgeNLI: lexical overlap decides the tier.
+        # premise = cited line span (or quoted_support fallback); hypothesis = claim.
+        from .gate import CLAIM_QUOTE_OVERLAP_SKIP, claim_quote_overlap
+
+        if claim_quote_overlap(hypothesis, premise) >= CLAIM_QUOTE_OVERLAP_SKIP:
+            return {"entailment": 1.0, "neutral": 0.0, "contradiction": 0.0}
+        return {"entailment": 0.0, "neutral": 1.0, "contradiction": 0.0}
+
+
 def default_nli(llm: LLMProvider | None = None) -> NLIModel:
     """The ship-path NLI factory. Resolution order (auto-on decision in one place
     for both the CLI and MCP verify seams):
 
       1. `[local]` installed -> the real cross-encoder (the $0/local entailment lane,
-         SUPPORTED_FLOOR=0.70). UNCHANGED by E9.
-      2. keyless + a host judge available (`llm` provided) -> HostJudgeNLI: the
+         SUPPORTED_FLOOR=0.70). UNCHANGED.
+      2. keyless + a host judge available (`llm` provided) -> LineSpanJudge: the
          lexical pre-filter routes the paraphrase band into the batched host judge
-         (E9; keyless, costs host tokens not $).
+         (same routing as HostJudgeNLI, but CitationVerifier now passes the specific
+         cited line span as the premise, not the full quoted_support — closes G4;
+         keyless, costs host tokens not $).
       3. keyless + NO host judge -> CitationPresentNLI, the absolute fallback no-op."""
     if nli_available():
         from .nli import CrossEncoderNLI  # lazy: only when [local] is present
 
         return CrossEncoderNLI()
     if llm is not None:
-        return HostJudgeNLI(llm)
+        return LineSpanJudge(llm)
     return CitationPresentNLI()
 
 
@@ -115,6 +149,31 @@ def tier_a_byte_identity(anchor: ClaimAnchor, note_body: str) -> bool:
         return False
     sliced = note_body[anchor.char_start:anchor.char_end]
     return sliced == anchor.quoted_support
+
+
+def _support_premise(anchor: ClaimAnchor, body: str) -> str:
+    """A-5: the text the Tier-B/C judge sees as the supporting premise.
+
+    When the anchor carries line info (line_start/line_end, 1-based inclusive),
+    re-read those exact lines from the LIVE note body and return their text —
+    this is what the citation token's `:L42-L58` points the reader at, and the
+    G4 fix: the judge now sees the cited span as it reads TODAY, not the opaque
+    quoted_support captured at fetch time. Falls back to anchor.quoted_support
+    for legacy anchors (line_start is None) or when the body has no lines."""
+    if anchor.line_start is None:
+        return anchor.quoted_support
+    from bad_research.grounding.extract import body_to_lines
+
+    bl = body_to_lines(body) if body else []
+    if not bl:
+        return anchor.quoted_support
+    start = anchor.line_start - 1  # 0-indexed slice into bl
+    end = anchor.line_end  # exclusive (line_end is 1-based inclusive)
+    line_texts = [
+        body[bl[i][0]:bl[i][1]]
+        for i in range(max(0, start), min(len(bl), end if end is not None else start + 1))
+    ]
+    return " ".join(line_texts).strip() or anchor.quoted_support
 
 
 JUDGE_BATCH_SIZE = 20  # dossier §2.2: batch ~20 (claim, quote) pairs per call
@@ -302,7 +361,15 @@ class CitationVerifier:
             # against what the report actually says (dossier §2.2).
             hypothesis = _sentence_text(sent)
             for token in extract_citations(sent):
-                anchor = store.get(token)
+                # A-4/A-5 resolution: a line-anchored token is `note-id:L42-L58`;
+                # strip the `:L42-L58` suffix before the anchor lookup so BOTH the
+                # new line-anchored form and legacy `note-id`/`[N]` forms resolve.
+                # (Anchors are keyed by anchor_id == quote_sha; for the line-anchor
+                # path the line range used for the premise comes from the STORED
+                # anchor's line_start/line_end, not the token suffix — the suffix is
+                # the reader-facing display, the anchor is the source of truth.)
+                lookup, _ls, _le = parse_line_anchor(token)
+                anchor = store.get(lookup)
                 if anchor is None:
                     continue  # dangling cite -- the gate (Task 11) handles it
                 body = note_bodies.get(anchor.note_id, "")
@@ -310,8 +377,11 @@ class CitationVerifier:
                 if not tier_a_byte_identity(anchor, body):
                     findings.append(CitationFinding(anchor.anchor_id, sent, VerifyVerdict.UNSUPPORTED, 0.0))
                     continue
-                # Tier B -- local NLI ($0). premise=quoted_support, hypothesis=report sentence.
-                scores = self.nli.predict(anchor.quoted_support, hypothesis)
+                # Tier B -- local NLI ($0). The premise is the cited LINE SPAN text
+                # (A-5: re-read from the live body via the anchor's line_start/line_end)
+                # or quoted_support for legacy anchors; hypothesis = report sentence.
+                premise = _support_premise(anchor, body)
+                scores = self.nli.predict(premise, hypothesis)
                 label = classify_nli(scores)
                 if label is NLILabel.ENTAILMENT:
                     findings.append(CitationFinding(anchor.anchor_id, sent, VerifyVerdict.SUPPORTED, scores["entailment"]))
@@ -319,8 +389,8 @@ class CitationVerifier:
                     findings.append(CitationFinding(anchor.anchor_id, sent, VerifyVerdict.CONTRADICTED, scores["contradiction"]))
                 else:
                     stub = CitationFinding(anchor.anchor_id, sent, VerifyVerdict.UNSUPPORTED, 0.0)
-                    # Tier C judges the report sentence (claim) vs the quoted support.
-                    pending.append((stub, hypothesis, anchor.quoted_support))
+                    # Tier C judges the report sentence (claim) vs the SAME line-span premise.
+                    pending.append((stub, hypothesis, premise))
 
         # Pass 2: Tier C -- judge the neutral band only.
         if pending:

@@ -185,13 +185,13 @@ def funnel_gather_cmd(
     vault_tag: str = typer.Option("", "--vault-tag"),
     max_queries: int = typer.Option(None, "--max-queries"),
     read_top_k: int = typer.Option(None, "--read-top-k"),
-    reasoning_effort: str = typer.Option(None, "--reasoning-effort", "--effort"),
+    effort: str = typer.Option(None, "--effort"),
     max_tokens: int = typer.Option(None, "--max-tokens"),
     json_output: bool = typer.Option(False, "--json", "-j"),
 ) -> None:
     """Run the scraper funnel: fan-out->dedup->rank->read(rung0-3)->filter->chunk->rerank.
 
-    --reasoning-effort (minimal|low|medium|high) nudges the route + per-stage fan-out
+    --effort (minimal|low|medium|high) nudges the route + per-stage fan-out
     via skills/router.effort_overrides; --max-tokens sets the per-run ceiling the
     orchestrator degrades against. Both default to the config's tier behaviour.
     """
@@ -203,10 +203,10 @@ def funnel_gather_cmd(
         q = query
     else:
         raise typer.BadParameter("provide a query argument or --query-file")
-    # An explicit --reasoning-effort pins the route (the OpenAI continuum); else the
+    # An explicit --effort pins the route (the OpenAI continuum); else the
     # caller's --mode stands. This wires the previously-ignored stub flag.
     eff_mode = mode
-    ov = effort_overrides(reasoning_effort)
+    ov = effort_overrides(effort)
     if ov is not None:
         eff_mode = ov["route"]
     typer.echo(json.dumps(run_funnel(q, mode=eff_mode, vault_tag=vault_tag), default=str))
@@ -339,8 +339,8 @@ def _verify_report(
 def verify_citations_cmd(
     report: str = typer.Option(..., "--report"),
     vault_tag: str = typer.Option(..., "--vault-tag"),
-    reasoning_effort: str = typer.Option(
-        None, "--reasoning-effort", "--effort",
+    effort: str = typer.Option(
+        None, "--effort",
         help="minimal|low|medium|high; 'high' enables the E4 self-consistency vote on "
              "high-stakes (NLI-ambiguous) claims (N host samples; keyless).",
     ),
@@ -352,7 +352,7 @@ def verify_citations_cmd(
     an N-sample vote (universal self-consistency) instead of the single batched judge.
     Default effort is unchanged (no extra calls)."""
     typer.echo(json.dumps(
-        {"results": _verify_report(report, vault_tag, effort=reasoning_effort)},
+        {"results": _verify_report(report, vault_tag, effort=effort)},
         default=str,
     ))
 

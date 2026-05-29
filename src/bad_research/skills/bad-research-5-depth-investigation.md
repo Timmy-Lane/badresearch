@@ -21,7 +21,7 @@ Read these inputs:
 - `research/scaffold.md` — vault_tag
 - `research/loci.json` — scored loci with source_budget per locus, plus the `"fanout"` key step 4 wrote (arrangement + ordered loci)
 - `research/prompt-decomposition.json` — **`query_shape`** (decides parallel vs sequential vs single — see step 1 below)
-- `research/temp/contradiction-graph.json` (if step 3 ran)
+- `research/temp/contradiction-graph.json` (written by step 4.0)
 - `research/query-<vault_tag>.md` — canonical research query
 
 ---
@@ -52,7 +52,7 @@ Read these inputs:
      PIPELINE POSITION: You are step 5 (depth-investigator) of the
      Bad Research pipeline. Step 4's loci analysts produced research/loci.json;
      after you return, step 6 will reconcile your committed position against
-     the other investigators' positions in research/comparisons.md.
+     the other investigators' positions in research/temp/tensions.md.
 
      YOUR LOCUS (from research/loci.json):
      - name: "<locus name>"
@@ -78,6 +78,14 @@ Read these inputs:
      you reach the fetcher tool-call cap (FETCHER_TOOLCALL_CAP) OR INVESTIGATOR_TIMEOUT_S
      (900s) elapses — then return your committed position with the evidence gathered so
      far. Do not keep searching for nonexistent sources. Hard kill at SUBAGENT_SOURCE_KILL (100).
+
+     SEARCH-LINE PIVOT RULE: When a search line shows no progress — 3 consecutive
+     searches on the same sub-question return 0 relevant results — STOP that line
+     and explicitly state the pivot to a different hypothesis:
+     "Switching direction: [previous approach] is not surfacing sources.
+     Trying [new approach/hypothesis]." Write the pivot announcement to
+     `research/temp/orchestrator-notes.md` so the lead can track what was tried
+     and what was abandoned. Do NOT silently iterate on a dead query line.
 
      CRITICAL: Read the full source text of relevant vault notes (via
      `hyperresearch note show <id1> <id2> ... -j`) BEFORE writing your

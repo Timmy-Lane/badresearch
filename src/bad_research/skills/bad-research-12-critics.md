@@ -2,7 +2,7 @@
 name: bad-research-12-critics
 user-invocable: false
 description: >
-  Step 12 of the Bad Research pipeline (full tier) — spawns 4 adversarial critics
+  Step 12 of the Bad Research pipeline (full tier) — spawns 5 adversarial critics
   in parallel against the final report, each writing a findings JSON for the
   patcher (critics never edit the draft).
 ---
@@ -10,7 +10,7 @@ description: >
 # Step 12 — Adversarial critique (parallel critics)
 
 **Tier gate:**
-- **`full` tier** → spawn all 4 critics (the fan-out below).
+- **`full` tier** → spawn all 5 critics (the fan-out below).
 - **`light` / `agentic-fast` routes** → run the SLIM single-critic section
   (**Light-tier slim critic**, below) — ONE adversarial pass, no fan-out, no patcher —
   then proceed to step 15 (polish). (E3: the cheap routes used to skip straight to polish
@@ -79,11 +79,14 @@ Read these inputs:
 
 ## Procedure
 
-1. **Spawn all 4 critics in parallel.** In ONE message:
+1. **Spawn all 5 critics in parallel.** In ONE message:
    - `bad-research-dialectic-critic` → `research/critic-findings-dialectic.json` (counter-evidence the draft missed or straw-manned)
    - `bad-research-depth-critic` → `research/critic-findings-depth.json` (shallow spots where interim notes could fill substance)
    - `bad-research-width-critic` → `research/critic-findings-width.json` (corpus clusters the draft ignores despite evidence)
    - `bad-research-instruction-critic` → `research/critic-findings-instruction.json` (atomic items from the decomposition that the draft missed, under-covered, reordered, or reformatted)
+   - `bad-research-assumption-critic` → `research/critic-findings-assumption.json`
+     (top-5 highest-stakes causal/quantitative claims decomposed into sub-assumptions;
+      limit scope to 5 claims; output verified/unverified per sub-assumption)
 
 2. **Pass each critic** (standard 3-piece contract):
    ```
@@ -114,7 +117,7 @@ Read these inputs:
 
 ## Exit criterion
 
-- All 4 critic findings JSONs exist (`research/critic-findings-<name>.json`)
+- All 5 critic findings JSONs exist (`research/critic-findings-<name>.json`)
 - Each is valid JSON with a `findings` array
 
 ---

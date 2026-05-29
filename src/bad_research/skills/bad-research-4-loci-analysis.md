@@ -2,16 +2,18 @@
 name: bad-research-4-loci-analysis
 user-invocable: false
 description: >
-  Step 4 of the Bad Research pipeline (full tier) — spawns 2 parallel analysts to
-  surface 1-6 loci (the contested sub-questions worth deep investigation), then
-  scores and source-budgets each into research/loci.json.
+  Step 4 of the Bad Research pipeline (full tier) — builds the contradiction graph
+  (Step 4.0 preamble: pairs opposing claims across the corpus into ranked "fight"
+  clusters + consensus claims), then spawns 2 parallel analysts to surface 1-6 loci
+  (the contested sub-questions worth deep investigation), scoring and
+  source-budgeting each into research/loci.json.
 ---
 
-# Step 4 — Loci analysis (parallel, 2 analysts)
+# Step 4 — Loci analysis (contradiction-graph preamble + parallel analysts)
 
-**Tier gate:** SKIP entirely for `light` tier — proceed directly to step 9. Only `full` tier runs loci analysis.
+**Tier gate:** SKIP entirely for `light` tier — proceed directly to step 10. Only `full` tier runs loci analysis.
 
-**Goal:** identify 1–6 specific questions where depth investigation will pay off.
+**Goal:** identify 1–6 specific questions where depth investigation will pay off. Loci should emerge from where the evidence actually forks, not from agent intuition about what seems interesting — so this step first builds an explicit contradiction graph (Step 4.0), then runs loci analysis on top of it.
 
 ---
 
@@ -19,11 +21,54 @@ description: >
 
 Read these inputs:
 - `research/scaffold.md` — vault_tag
-- `research/prompt-decomposition.json` — atomic items, sub-questions, **`query_shape`** (set by step 1.5 — drives the step-5 fan-out arrangement, see step 6 below)
-- `research/temp/contradiction-graph.json` — ranked fight clusters (if step 3 ran)
+- `research/prompt-decomposition.json` — atomic items, sub-questions, pipeline_tier, **`query_shape`** (set by step 1.5 — drives the step-5 fan-out arrangement, see step 6 below)
+- All `research/temp/claims-*.json` files (one per fetched note) — Step 4.0 below pairs these into the contradiction graph
 - `research/temp/coverage-gaps.md` — which atomic items have weak coverage
 
 Survey the corpus: `$HPR search "" --tag <vault_tag> -j` to confirm width sweep is complete.
+
+(The contradiction graph + consensus claims are no longer a separate step's input — Step 4.0 below WRITES them from the claims files, and the loci procedure that follows READS them in-context.)
+
+---
+
+## Step 4.0 — Contradiction graph (preamble)
+
+**Tier gate for Step 4.0:** SKIP if no `research/temp/claims-*.json` files exist (e.g., fetchers didn't produce them) — fall through to Step 1 below, which prose-scans the corpus instead.
+
+**Goal:** before loci analysis (loci = the contested focal points / sub-debates the report must engage), build an explicit graph of opposing claims via **claim-pairing** across the corpus, plus the consensus claims that are settled ground. This is the procedure that was the former step 3.
+
+1. **(Step 4.0 substep 1) Load all claims** from `research/temp/claims-*.json` files.
+
+2. **(Step 4.0 substep 2) Pair contradictions (claim-pairing).** For each claim, find claims from OTHER sources that contradict it. Match on:
+   - Same `stance_target` with opposing `stance` (supports vs. refutes)
+   - Same `entities` with opposite conclusions
+   - Same scope but different `numbers` (e.g., "market grew 15%" vs. "market shrank 3%")
+   - Overlapping `scope_conditions` but different `evidence_type` pointing different directions
+
+3. **(Step 4.0 substep 3) Cluster contradiction pairs into fights.** Group related pairs into clusters — each cluster is one contested question:
+   ```json
+   {
+     "cluster_id": "short-slug",
+     "fight": "one-sentence description of what's contested",
+     "side_a": {"position": "...", "claims": ["claim-text-1"], "sources": ["note-id-1"]},
+     "side_b": {"position": "...", "claims": ["claim-text-1"], "sources": ["note-id-1"]},
+     "evidence_quality_delta": "which side has stronger evidence types (empirical > theoretical > anecdotal)",
+     "scope_overlap": "genuine disagreement, or scoped differently and both right?",
+     "decision_relevance": "high|medium|low — does resolving this matter for the research_query"
+   }
+   ```
+
+4. **(Step 4.0 substep 4) Rank clusters** by decision_relevance (high first), then by evidence_quality_delta (tighter fights rank higher).
+
+5. **(Step 4.0 substep 5) Write `research/temp/contradiction-graph.json`** — array of ranked fight clusters.
+
+6. **(Step 4.0 substep 6) Identify consensus claims.** Claims where 3+ INDEPENDENT sources (after redundancy audit if step 2.6 ran) agree. Write these to `research/temp/consensus-claims.json`. These are the "settled ground" the draft can assert confidently without hedging.
+
+**Step 4.0 outputs (both may be empty arrays if the corpus is univocal):**
+- `research/temp/contradiction-graph.json` — ranked fight clusters
+- `research/temp/consensus-claims.json` — consensus claims
+
+The loci procedure below reads `contradiction-graph.json` (the fight clusters feed the uncertainty/disagreement scoring) directly from what you just wrote.
 
 ---
 
@@ -42,9 +87,10 @@ Survey the corpus: `$HPR search "" --tag <vault_tag> -j` to confirm width sweep 
 
      PIPELINE POSITION: You are step 4 (loci-analyst, instance A or B) of
      the Bad Research pipeline. The width sweep (step 2) populated the vault
-     tagged <vault_tag>. The contradiction graph (step 3) lives at
-     research/temp/contradiction-graph.json. After you and the other
-     analyst return, the orchestrator dedupes your loci and assigns budgets.
+     tagged <vault_tag>. The contradiction graph (built in Step 4.0 of this
+     same step) lives at research/temp/contradiction-graph.json. After you
+     and the other analyst return, the orchestrator dedupes your loci and
+     assigns budgets.
 
      YOUR INPUTS:
      - corpus_tag: <vault_tag>

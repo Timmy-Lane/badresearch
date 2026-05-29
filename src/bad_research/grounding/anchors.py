@@ -28,6 +28,8 @@ class ClaimAnchor:
     verified: int = 0  # 0 = unchecked; 1 = passed the verifier (§2)
     verify_score: float | None = None
     anchor_id: str = field(default="")
+    line_start: int | None = None   # 1-based line number of span start (nullable for legacy)
+    line_end: int | None = None     # 1-based line number of span end (nullable for legacy)
 
     def __post_init__(self) -> None:
         if not self.anchor_id:
@@ -43,7 +45,9 @@ CREATE TABLE IF NOT EXISTS claim_anchors (
     claim          TEXT NOT NULL,
     quoted_support TEXT NOT NULL,
     verified       INTEGER NOT NULL DEFAULT 0,
-    verify_score   REAL
+    verify_score   REAL,
+    line_start     INTEGER,            -- 1-based; NULL for legacy anchors
+    line_end       INTEGER             -- 1-based; NULL for legacy anchors
 );
 CREATE INDEX IF NOT EXISTS idx_claim_anchors_note ON claim_anchors(note_id);
 """
@@ -63,15 +67,18 @@ class AnchorStore:
     def upsert(self, anchor: ClaimAnchor) -> None:
         self.conn.execute(
             "INSERT INTO claim_anchors "
-            "(anchor_id, note_id, char_start, char_end, claim, quoted_support, verified, verify_score) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+            "(anchor_id, note_id, char_start, char_end, claim, quoted_support, "
+            " verified, verify_score, line_start, line_end) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(anchor_id) DO UPDATE SET "
             "  note_id=excluded.note_id, char_start=excluded.char_start, "
             "  char_end=excluded.char_end, claim=excluded.claim, "
-            "  quoted_support=excluded.quoted_support",
+            "  quoted_support=excluded.quoted_support, "
+            "  line_start=excluded.line_start, line_end=excluded.line_end",
             (
                 anchor.anchor_id, anchor.note_id, anchor.char_start, anchor.char_end,
                 anchor.claim, anchor.quoted_support, anchor.verified, anchor.verify_score,
+                anchor.line_start, anchor.line_end,
             ),
         )
         self.conn.commit()
@@ -87,6 +94,7 @@ class AnchorStore:
             claim=row["claim"], quoted_support=row["quoted_support"],
             verified=row["verified"], verify_score=row["verify_score"],
             anchor_id=row["anchor_id"],
+            line_start=row["line_start"], line_end=row["line_end"],
         )
 
     def all(self) -> Iterable[ClaimAnchor]:
@@ -96,6 +104,7 @@ class AnchorStore:
                 claim=row["claim"], quoted_support=row["quoted_support"],
                 verified=row["verified"], verify_score=row["verify_score"],
                 anchor_id=row["anchor_id"],
+                line_start=row["line_start"], line_end=row["line_end"],
             )
 
     def set_verified(self, anchor_id: str, *, verified: int, score: float | None) -> None:

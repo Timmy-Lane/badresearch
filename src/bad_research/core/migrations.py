@@ -173,6 +173,18 @@ def _migrate_v9_drop_embeddings(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _migrate_v10_body_lines(conn: sqlite3.Connection) -> None:
+    """Add body_lines TEXT column to note_content (idempotent).
+
+    Stores JSON [[char_start, char_end], ...] for line-anchored citations (A-1).
+    Existing rows get NULL; the sync layer backfills on next write/re-sync.
+    """
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(note_content)")}
+    if "body_lines" not in existing:
+        conn.execute("ALTER TABLE note_content ADD COLUMN body_lines TEXT")
+    conn.commit()
+
+
 MIGRATIONS: dict[int, str | Callable[[sqlite3.Connection], None]] = {
     2: """
 CREATE TABLE IF NOT EXISTS tag_aliases (
@@ -218,6 +230,7 @@ CREATE INDEX IF NOT EXISTS idx_assets_type ON assets(type);
     7: _migrate_v7_interim_note_type,
     8: _migrate_v8_source_analysis_note_type,
     9: _migrate_v9_drop_embeddings,
+    10: _migrate_v10_body_lines,
 }
 
 

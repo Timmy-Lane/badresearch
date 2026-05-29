@@ -362,7 +362,7 @@ def shape_fanout(decomp: dict[str, Any]) -> dict[str, Any]:
 
 
 def effort_overrides(effort: str | None) -> dict[str, Any] | None:
-    """Translate the `--reasoning-effort` dial (minimal/low/medium/high) into the
+    """Translate the `--effort` dial (minimal/low/medium/high) into the
     router overrides the orchestrator applies on top of the auto-classified route.
 
     Returns None for an absent/invalid effort (the auto-route is left untouched).

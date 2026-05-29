@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 SCHEMA_SQL = """
 PRAGMA journal_mode=WAL;
@@ -54,7 +54,8 @@ CREATE INDEX IF NOT EXISTS idx_notes_parent_status ON notes(parent, status);
 CREATE TABLE IF NOT EXISTS note_content (
     note_id    TEXT PRIMARY KEY REFERENCES notes(id) ON DELETE CASCADE,
     body       TEXT NOT NULL,
-    body_plain TEXT NOT NULL
+    body_plain TEXT NOT NULL,
+    body_lines TEXT          -- JSON: [[char_start, char_end], ...]; NULL for legacy rows
 );
 
 CREATE TABLE IF NOT EXISTS tags (
@@ -168,4 +169,35 @@ def init_schema(conn: sqlite3.Connection) -> None:
 
     # Indexes that depend on migration-added columns run last
     conn.executescript(POST_MIGRATE_INDEXES_SQL)
+    conn.commit()
+
+
+def get_body_lines(conn: sqlite3.Connection, note_id: str) -> list[tuple[int, int]] | None:
+    """Return the pre-computed line index for a note body, or None if not stored.
+
+    Callers that need line numbers should call this first; if None is returned,
+    they must compute body_to_lines(body) themselves and may optionally store the
+    result via store_body_lines().
+    """
+    row = conn.execute(
+        "SELECT body_lines FROM note_content WHERE note_id = ?", (note_id,)
+    ).fetchone()
+    if row is None or row["body_lines"] is None:
+        return None
+    import json
+    raw = json.loads(row["body_lines"])
+    return [(r[0], r[1]) for r in raw]
+
+
+def store_body_lines(
+    conn: sqlite3.Connection,
+    note_id: str,
+    body_lines: list[tuple[int, int]],
+) -> None:
+    """Persist a precomputed body_lines index for a note (lazy backfill path)."""
+    import json
+    conn.execute(
+        "UPDATE note_content SET body_lines = ? WHERE note_id = ?",
+        (json.dumps(body_lines), note_id),
+    )
     conn.commit()

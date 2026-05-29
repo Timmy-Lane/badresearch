@@ -19,9 +19,8 @@ description: >
 
 Read these inputs:
 - `research/scaffold.md` — vault_tag
-- `research/comparisons.md` — cross-locus tensions
+- `research/temp/tensions.md` — cross-locus + orphan tensions (the merged step-6 artifact; was `comparisons.md` + `source-tensions.json`)
 - `research/loci.json` — scored loci
-- `research/temp/source-tensions.json` — expert disagreements
 - `research/prompt-decomposition.json` — specifically the `time_periods` array
 
 ---
@@ -70,12 +69,13 @@ The targeted fetch wave in the next step will pull these filings BEFORE the corp
      QUERY FILE: research/query-<vault_tag>.md
 
      PIPELINE POSITION: You are step 8 of the Bad Research pipeline.
-     Step 6 produced research/comparisons.md. After you return, the
-     orchestrator runs a targeted fetch wave, then step 10 drafts.
+     Step 6 produced research/temp/tensions.md (cross-locus + orphan
+     tensions). After you return, the orchestrator runs a targeted fetch
+     wave, then step 10 drafts.
 
      YOUR INPUTS:
      - corpus_tag: <vault_tag>
-     - comparisons_path: research/comparisons.md
+     - tensions_path: research/temp/tensions.md
      - loci_path: research/loci.json
      - output_path: research/corpus-critic-gaps.json
    ```
@@ -96,7 +96,7 @@ The targeted fetch wave in the next step will pull these filings BEFORE the corp
      PIPELINE POSITION: You are a step 8 fetcher (corpus-critic gap-fill)
      of the Bad Research pipeline. The corpus critic identified specific
      gaps; you fetch sources targeting those gaps. After you return, the
-     orchestrator updates comparisons.md based on what you found.
+     orchestrator updates research/temp/tensions.md based on what you found.
 
      YOUR INPUTS:
      - vault_tag: <vault_tag>
@@ -106,9 +106,9 @@ The targeted fetch wave in the next step will pull these filings BEFORE the corp
    ```
 
 4. **Assess results.**
-   - **Overturning source found:** re-read the relevant committed position from the interim note. If the new source genuinely undercuts it, update `research/comparisons.md` to note the weakened position — the draft will handle it with appropriate calibration. Do NOT re-run the full depth investigation; adjust the position's confidence level.
-   - **Overturning source NOT found:** the committed position gains confidence. Note this in `comparisons.md` — "adversarial search for counter-evidence to [position] returned no substantive challenges."
-   - **Strengthening/verification source found:** note the additional support in `comparisons.md`. The draft can assert more confidently.
+   - **Overturning source found:** re-read the relevant committed position from the interim note. If the new source genuinely undercuts it, update `research/temp/tensions.md` to note the weakened position — the draft will handle it with appropriate calibration. Do NOT re-run the full depth investigation; adjust the position's confidence level.
+   - **Overturning source NOT found:** the committed position gains confidence. Note this in `tensions.md` — "adversarial search for counter-evidence to [position] returned no substantive challenges."
+   - **Strengthening/verification source found:** note the additional support in `tensions.md`. The draft can assert more confidently.
 
 5. **Log results** to `research/temp/corpus-critic-results.md`:
    - Each gap: what was searched, what was found (or not), how it affects the committed positions
@@ -121,14 +121,14 @@ The targeted fetch wave in the next step will pull these filings BEFORE the corp
 - `research/corpus-critic-gaps.json` exists
 - All critical gaps attempted (fetched or documented as unfindable)
 - `research/temp/corpus-critic-results.md` exists
-- `research/comparisons.md` updated with confidence/strengthening/overturning notes
+- `research/temp/tensions.md` updated with confidence/strengthening/overturning notes
 
 ---
 
 ## Next step
 
-Return to the entry skill (`bad-research`). Invoke step 9:
+Return to the entry skill (`bad-research`). Invoke step 10 (the evidence digest is now built inline in step 10.0b Part 2, replacing the former step 9):
 
 ```
-Skill(skill: "bad-research-9-evidence-digest")
+Skill(skill: "bad-research-10-triple-draft")
 ```

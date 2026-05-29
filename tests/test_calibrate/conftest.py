@@ -62,3 +62,41 @@ class StubLLM:
 @pytest.fixture
 def stub_llm() -> StubLLM:
     return StubLLM()
+
+
+# ── E1-3: deterministic LLMJudge stubs for the two adversarial fixtures ────────
+# These make the LLMJudge side of the gap-proof tests deterministic WITHOUT a live
+# model: a StubLLM whose canned JSON verdict fails exactly the axis the real host
+# model would fail on each adversarial fixture. LLMJudge.judge() calls
+# provider.complete(...) -> StubLLM returns json.dumps(verdict) -> _extract_json
+# parses it -> AxisRails.from_raw coerces the rails. No keys, no network.
+@pytest.fixture
+def stub_llm_fail_factual() -> StubLLM:
+    """StubLLM that returns factual=fail (all others pass) — models LLMJudge
+    correctly identifying a cited-but-contradicting claim (fixture 09)."""
+    return StubLLM(
+        verdict={
+            "factual": "fail",
+            "citation": "pass",
+            "completeness": "pass",
+            "source_quality": "pass",
+            "efficiency": "pass",
+            "rationale": "report inverts the causal direction of its cited sources",
+        }
+    )
+
+
+@pytest.fixture
+def stub_llm_fail_completeness() -> StubLLM:
+    """StubLLM that returns completeness=fail — models LLMJudge detecting the
+    over-hedged evasion (fixture 10)."""
+    return StubLLM(
+        verdict={
+            "factual": "pass",
+            "citation": "pass",
+            "completeness": "fail",
+            "source_quality": "pass",
+            "efficiency": "pass",
+            "rationale": "answer technically present but buried in hedge; corpus provides clear enumeration",
+        }
+    )

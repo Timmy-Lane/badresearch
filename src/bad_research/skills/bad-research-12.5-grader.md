@@ -40,6 +40,19 @@ this step does not run.
 
 ## Step 12.5.1 — Build the corpus JSON for the judge
 
+**Round 1 shortcut (C-4):** if `research/critic-findings-*.json` files exist
+(i.e., step 12 ran), SKIP the full corpus JSON build for **round 1**. Instead,
+**aggregate** the critic findings: read all `research/critic-findings-*.json`
+files, collect their `findings` arrays into a single list, and ask the judge to
+score the five axes against those findings rather than independently re-scanning
+the corpus. This drops round-1 cost from a full Opus-tier corpus scan (~$3–5) to
+a ~$0.50 verdict-aggregation — the 4 critics in step 12 already did the corpus
+read, so round 1 is just a verdict over their findings, not a fresh scan.
+
+**For rounds 2 and 3 only:** run the full corpus JSON build specified below,
+because the first patch may introduce new issues that are NOT in the original
+critic findings, so the later rounds need a full corpus scan to catch them.
+
 The grader needs the evidence as a JSON list of `{note_id, url, text}`. Convert
 the evidence-digest into that shape (one entry per cited note):
 
@@ -65,8 +78,17 @@ round is a small surgical Edit and convergence is far faster). The loop is:
 ```
 revisions = 0
 while revisions < MAX_GRADER_REVISIONS:   # 3
-    verdict = bad grade-report --report research/notes/final_report_<vault_tag>.md \
-                --corpus research/temp/grader-corpus.json --json
+    if revisions == 0 and glob("research/critic-findings-*.json"):
+        # Round 1 (C-4): aggregate existing critic findings — no fresh corpus scan.
+        # Collect every findings entry from steps 12a–12d, then ask the judge to
+        # score the 5 axes against that aggregate, not by re-reading the corpus.
+        aggregate_findings = [f for path in glob("research/critic-findings-*.json")
+                              for f in json.load(open(path)).get("findings", [])]
+        verdict = grade_from_findings(aggregate_findings)   # fast verdict-aggregation path
+    else:
+        # Rounds 2-3: full corpus scan (patches may add NEW issues not in critic findings).
+        verdict = bad grade-report --report research/notes/final_report_<vault_tag>.md \
+                    --corpus research/temp/grader-corpus.json --json
     #   -> {passed, scores{5 axes}, overall, findings:[{failure_mode,severity,location,recommendation}]}
     if verdict.passed:  break             # every axis >= 0.70 AND mean >= 0.75
     # write the failing-axis findings as a patcher-shaped findings file:
@@ -77,9 +99,25 @@ while revisions < MAX_GRADER_REVISIONS:   # 3
 # PASS or cap reached -> proceed
 ```
 
+This is prose procedure for the orchestrator LLM, not literal Python. The
+**round-1 judge prompt** for the aggregate path is: *"These are the critic
+findings from steps 12a–12d. Score the report on the 5 quality axes (factual,
+completeness, source_quality, efficiency, readability). You are aggregating
+those findings into a verdict, NOT independently scanning the corpus."* Round 2
+and round 3 fall through to the full `bad grade-report` corpus scan as before.
+
 Concretely, each round:
 
-1. Run the grader:
+1. Run the grader.
+   - **Round 1 (revisions == 0) — aggregate, do not rescan:** if
+     `research/critic-findings-*.json` exist, collect every entry from their
+     `findings` arrays into one aggregate list and have the judge score the 5
+     axes against that aggregate (the verdict-aggregation fast path). Write the
+     verdict to `research/temp/grade-round-1.json` in the same
+     `{passed, scores, overall, findings}` shape the full grader emits.
+   - **Rounds 2–3 (revisions >= 1) — full corpus scan:** run the full grader
+     over the rebuilt corpus JSON, because the prior patch may have introduced
+     new issues the critic findings never saw:
    ```bash
    bad grade-report --report research/notes/final_report_<vault_tag>.md \
        --corpus research/temp/grader-corpus.json --json > research/temp/grade-round-<N>.json
@@ -96,10 +134,53 @@ Concretely, each round:
    print('grader findings:', len(v.get('findings', [])))
    "
    ```
+3.5. **Accumulate the `grader_history` failure ledger (round N ≥ 2).** Before
+   re-spawning the patcher on round 2 or 3, fold every PRIOR round's verdict into
+   a `grader_history` block on `research/critic-findings-grader.json`. This is the
+   memory the patcher reads to avoid re-applying a fix that already failed. It
+   **composes with the C-4 round-1 aggregate path**: the `findings_applied` count
+   tallies findings from BOTH sources — the round-1 critic-findings aggregate
+   (`critic-findings-*.json`) and the rounds-2–3 full-corpus scans — while
+   `still_failing` per axis is independent of how the findings were sourced, so
+   the accumulation is purely additive and never conflicts with the round-1
+   aggregation in Step 12.5.1.
+   ```bash
+   python -c "
+   import json, pathlib
+   prev_rounds = sorted(pathlib.Path('research/temp').glob('grade-round-*.json'))
+   history = []
+   for p in prev_rounds[:-1]:   # all rounds EXCEPT the current one
+       v = json.loads(p.read_text())
+       scores = v.get('scores', {})
+       history.append({
+           'round': int(p.stem.split('-')[-1]),
+           'failed_axes': [ax for ax, sc in scores.items() if float(sc) < 0.70],
+           'findings_applied': len(v.get('findings', [])),  # counts round-1 aggregate + rounds-2-3 scan findings
+           'still_failing': not bool(v.get('passed')),
+           'escalate_if_repeated': [ax for ax, sc in scores.items() if float(sc) < 0.70],
+       })
+   if len(history) >= 1:
+       cur = json.loads(pathlib.Path('research/critic-findings-grader.json').read_text())
+       cur['grader_history'] = history
+       pathlib.Path('research/critic-findings-grader.json').write_text(json.dumps(cur))
+       print('grader_history injected, rounds:', len(history))
+   "
+   ```
 4. Re-judge after patching: re-run the patcher (`Skill(skill: "bad-research-14-patcher")`).
    The patcher already globs `research/critic-findings-*.json`, so it picks up
    `critic-findings-grader.json` automatically and applies the grader's surgical
    Edits; the next loop iteration re-judges (re-grades) the patched report.
+
+   **NOTE (round ≥ 2 escalation) — inject this clause into the patcher spawn on
+   round 2 and round 3:** `critic-findings-grader.json` now carries a
+   `grader_history` block. The patcher must read it BEFORE applying findings. If
+   `grader_history` shows an axis is **still failing** after a prior round already
+   patched it at the sentence level, **escalate** that axis: do NOT repeat the
+   same surgical sentence-insertion — round N-1 tried that and it failed, so
+   escalate to a structural change (add a new sub-section, or restructure the
+   coverage / section addition for that axis) instead. Do NOT apply the same fix
+   twice. State the escalation explicitly: "round N-1 tried <X> and failed;
+   escalating to <structural Y>."
 5. Increment the round counter in your TodoWrite note and loop.
 
 **Track the loop counter in `research/temp/orchestrator-notes.md`** (it survives

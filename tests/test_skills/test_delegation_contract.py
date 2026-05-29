@@ -41,6 +41,7 @@ def test_entry_skill_has_grader_stage_and_degrade_invariant(skills_dir):
 
 def test_entry_skill_has_effort_continuum(skills_dir):
     body = (skills_dir / "bad-research.md").read_text()
-    assert "--reasoning-effort" in body or "--effort" in body
+    # C-5: --effort is the single canonical flag; the --reasoning-effort alias is gone.
+    assert "--effort" in body
     for level in ("minimal", "low", "medium", "high"):
         assert level in body

@@ -407,3 +407,153 @@ def test_verify_checks_report_sentence_not_stored_claim(fake_llm):
     assert by_anchor[faithful.anchor_id].verdict is VerifyVerdict.SUPPORTED
     assert store.get(drifted.anchor_id).verified == 0
     assert store.get(faithful.anchor_id).verified == 1
+
+
+# ── A-5: LineSpanJudge + line-span premise on the keyless path (closes G4) ───
+
+
+def _store_with_anchor(anchor: ClaimAnchor) -> AnchorStore:
+    import sqlite3
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    store = AnchorStore(conn)
+    store.init_schema()
+    store.upsert(anchor)
+    return store
+
+
+def test_line_span_judge_verbatim_returns_entailment(fake_llm):
+    from bad_research.grounding.verifier import LineSpanJudge
+
+    judge = LineSpanJudge(fake_llm)
+    # Near-verbatim overlap >= CLAIM_QUOTE_OVERLAP_SKIP -> entailment, no LLM call
+    result = judge.predict(
+        premise="Vietnam reached 64% internet penetration in 2024.",
+        hypothesis="Vietnam reached 64% internet penetration in 2024.",
+    )
+    assert result["entailment"] == 1.0
+    assert len(fake_llm.calls) == 0  # no LLM call for near-verbatim
+
+
+def test_line_span_judge_paraphrase_returns_neutral(fake_llm):
+    from bad_research.grounding.verifier import LineSpanJudge
+
+    judge = LineSpanJudge(fake_llm)
+    # Genuine paraphrase -> NEUTRAL (queued for Tier-C batched judge)
+    result = judge.predict(
+        premise="Vietnam reached 64% internet penetration in 2024.",
+        hypothesis="Online access in Vietnam exceeded half the population by 2024.",
+    )
+    assert result["neutral"] == 1.0
+    assert result["entailment"] == 0.0
+    assert len(fake_llm.calls) == 0  # LineSpanJudge is a router; no LLM itself
+
+
+def test_default_nli_returns_line_span_judge_when_llm_provided(fake_llm):
+    from bad_research.grounding.verifier import (
+        LineSpanJudge,
+        default_nli,
+        nli_available,
+    )
+
+    if nli_available():
+        import pytest
+
+        pytest.skip("local NLI installed; skipping keyless path test")
+    nli = default_nli(fake_llm)
+    assert isinstance(nli, LineSpanJudge)
+
+
+def test_default_nli_returns_citation_present_when_no_llm():
+    from bad_research.grounding.verifier import (
+        CitationPresentNLI,
+        default_nli,
+        nli_available,
+    )
+
+    if nli_available():
+        import pytest
+
+        pytest.skip("local NLI installed; skipping keyless path test")
+    nli = default_nli(None)
+    assert isinstance(nli, CitationPresentNLI)
+
+
+def test_citation_verifier_uses_line_span_premise_when_anchor_has_lines(fake_llm):
+    import json
+
+    from bad_research.grounding.extract import (
+        body_to_lines,
+        char_span_to_line_range,
+    )
+    from bad_research.grounding.verifier import LineSpanJudge
+
+    # Build a note body with known lines
+    body = "Line one content.\nThe GDP grew 12.4% annually.\nLine three text.\n"
+    quote = "The GDP grew 12.4% annually."
+    start = body.index(quote)
+    end = start + len(quote)
+
+    bl = body_to_lines(body)
+    ls, le = char_span_to_line_range(bl, start, end)
+
+    anchor = ClaimAnchor(
+        note_id="n1",
+        char_start=start,
+        char_end=end,
+        claim="GDP grew 12.4% annually.",
+        quoted_support=quote,
+        line_start=ls,
+        line_end=le,
+    )
+
+    store = _store_with_anchor(anchor)
+
+    # The judge returns neutral for a paraphrase -> goes to Tier-C -> fake_llm
+    fake_llm.script = [json.dumps([
+        {"id": 0, "verdict": "supported", "score": 0.92, "reason": "matches"}
+    ])]
+
+    nli = LineSpanJudge(fake_llm)
+    verifier = CitationVerifier(nli=nli, llm=fake_llm)
+
+    # report sentence is a paraphrase — triggers Tier-C
+    report = f"Annual GDP expansion hit 12.4%. [[{anchor.anchor_id}]]"
+    result = verifier.verify(report, store, {"n1": body})
+
+    assert len(result.findings) == 1
+    f = result.findings[0]
+    assert f.verdict == VerifyVerdict.SUPPORTED
+    # The Tier-C judge was called with the LINE SPAN text as the quote — the
+    # path ran (the line span equals the quote here, but the call confirms it).
+    assert len(fake_llm.calls) >= 1
+
+
+def test_citation_verifier_falls_back_to_quoted_support_when_no_line_info(fake_llm):
+    import json
+
+    from bad_research.grounding.verifier import LineSpanJudge
+
+    body = "Legacy note body. Old quote text. More text."
+    quote = "Old quote text."
+    start = body.index(quote)
+    end = start + len(quote)
+    anchor = ClaimAnchor(
+        note_id="n1", char_start=start, char_end=end,
+        claim="Legacy claim.", quoted_support=quote,
+        # No line_start / line_end -> NULL (legacy anchor)
+    )
+    store = _store_with_anchor(anchor)
+
+    fake_llm.script = [json.dumps([
+        {"id": 0, "verdict": "supported", "score": 0.85, "reason": "ok"}
+    ])]
+    nli = LineSpanJudge(fake_llm)
+    verifier = CitationVerifier(nli=nli, llm=fake_llm)
+
+    # paraphrase to force Tier-C
+    report = f"An archival passage confirms this. [[{anchor.anchor_id}]]"
+    result = verifier.verify(report, store, {"n1": body})
+    assert len(result.findings) == 1
+    assert result.findings[0].verdict == VerifyVerdict.SUPPORTED

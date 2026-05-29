@@ -45,6 +45,15 @@ to `[Read]` — it reports findings; it does NOT edit. Read for the spawn:
      orchestrator applies surgical Edits for your critical findings, then
      step 15 polishes.
 
+     PRE-READ PRIOR GENERATION (keyless cross-model proxy):
+     BEFORE reading the report, write your own 3-sentence direct answer to the
+     research query from memory alone. Record it in your working context. This
+     is the keyless substitute for a true cross-model review — your a-priori
+     answer stands in for an independent second model. THEN read the report end
+     to end and flag every claim where your a-priori answer and the report's
+     position diverge — these divergences are the highest-priority verification
+     targets and must become `critical` or `major` findings.
+
      YOUR INPUTS:
      - query_file_path: research/query-<vault_tag>.md
      - report_path: research/notes/final_report_<vault_tag>.md

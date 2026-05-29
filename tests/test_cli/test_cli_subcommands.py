@@ -190,7 +190,23 @@ def test_verify_citations_accepts_effort_flag():
     # documented in the command help.
     res = runner.invoke(app, ["verify-citations", "--help"])
     assert res.exit_code == 0
-    assert "--effort" in res.stdout or "--reasoning-effort" in res.stdout
+    # C-5: --effort is the single canonical flag; the --reasoning-effort alias is gone.
+    assert "--effort" in res.stdout
+    assert "--reasoning-effort" not in res.stdout
+
+
+def test_verify_citations_cmd_has_only_effort_not_reasoning_effort_alias():
+    """After C-5: --reasoning-effort alias removed; only --effort is canonical."""
+    r = runner.invoke(app, ["verify-citations", "--help"])
+    assert "--effort" in r.stdout, "--effort flag must be present"
+    assert "--reasoning-effort" not in r.stdout, \
+        "--reasoning-effort alias must be removed; use --effort only"
+
+
+def test_funnel_gather_cmd_has_only_effort_not_reasoning_effort_alias():
+    r = runner.invoke(app, ["funnel-gather", "--help"])
+    assert "--effort" in r.stdout
+    assert "--reasoning-effort" not in r.stdout
 
 
 def test_verify_report_threads_effort_into_verifier(tmp_path, monkeypatch):

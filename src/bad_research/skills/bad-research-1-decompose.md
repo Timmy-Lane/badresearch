@@ -27,6 +27,31 @@ Read both before starting. The vault_tag is in the scaffold's "Run config" secti
 
 ---
 
+## Delegation
+
+The orchestrator delegates the JSON extraction in this step to a **work-tier subagent** —
+structured JSON production does not require frontier reasoning, so running it orchestrator-inline
+at Opus rate is wasted spend. This mirrors the spawn pattern the step-5 depth investigators use.
+Spawn:
+
+```
+Task(
+  prompt: "Execute bad-research-1-decompose steps 1–9 exactly. Read research/scaffold.md and
+           research/query-<vault_tag>.md, produce research/prompt-decomposition.json plus
+           research/temp/coverage-matrix.md, append the Tier rationale to research/scaffold.md,
+           then stop.",
+  tier: "work",
+  tools_allowed: [Read, Write, Bash],
+  stop_conditions: "research/prompt-decomposition.json written (valid JSON) AND research/temp/coverage-matrix.md has zero Gap?=YES rows"
+)
+```
+
+Then read `research/prompt-decomposition.json` back into orchestrator context before returning to
+the entry skill and invoking the query-router (step 1.5). The router still owns the authoritative
+`route` / `query_shape` decision — the work-tier subagent only produces the decomposition signals.
+
+---
+
 ## Procedure
 
 1. **Re-read the canonical research query** end to end (`research/query-<vault_tag>.md`).

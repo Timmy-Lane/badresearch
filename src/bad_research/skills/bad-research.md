@@ -34,20 +34,17 @@ When you invoke a Skill, that skill's full procedure is loaded into your context
 
 **Why this design?** It is compaction-resistant: each step's procedure is loaded into context **only at the moment it's needed**, fresh, so a long run can't evict the procedure before the step that needs it.
 
-**The 16 step skills** (all prefixed `bad-research-`):
+**The 13 step skills** (all prefixed `bad-research-`):
 
 | # | Skill name | What it does | Tiers |
 |---|---|---|---|
 | 1 | `bad-research-1-decompose` | Canonical query → scaffold + decomposition + coverage matrix + tier classification | all |
 | 2 | `bad-research-2-width-sweep` | Multi-perspective search plan + parallel fetcher waves | all |
-| 3 | `bad-research-3-contradiction-graph` | Pair contradictions across the corpus into ranked fight clusters | full |
-| 4 | `bad-research-4-loci-analysis` | 2 loci-analysts → scored loci.json with source budgets | full |
+| 3→4* (merged) | `bad-research-4-loci-analysis` | Step 4.0 preamble: contradiction graph (pair contradictions → ranked fight clusters + consensus); Step 4.1+: 2 loci-analysts → scored loci.json with source budgets | full |
 | 5 | `bad-research-5-depth-investigation` | K depth-investigators in parallel → interim notes with committed positions | full |
-| 6 | `bad-research-6-cross-locus-reconcile` | Reconcile committed positions → comparisons.md | full |
-| 7 | `bad-research-7-source-tensions` | Extract expert disagreements → source-tensions.json | full |
+| 6→7* (merged) | `bad-research-6-cross-locus-reconcile` | Reconcile committed positions into cross-locus tensions; Step 6.5: scan source bodies for orphan tensions → single richer `research/temp/tensions.md` | full |
 | 8 | `bad-research-8-corpus-critic` | "What source would overturn this?" + targeted gap-fill fetch | full |
-| 9 | `bad-research-9-evidence-digest` | Top claims + verbatim quotes → evidence-digest.md | full |
-| 10 | `bad-research-10-triple-draft` | Per-angle source curation + 3 parallel draft-orchestrators (3 angle-specific drafts) | all |
+| 9→10* (merged) | `bad-research-10-triple-draft` | Step 10.0b Part 2 builds the evidence digest inline (top claims + verbatim quotes → evidence-digest.md, formerly step 9); then per-angle source curation + 3 parallel draft-orchestrators (3 angle-specific drafts) | all |
 | 11 | `bad-research-11-synthesize` | Synthesis plan + outline + spawn synthesizer subagent (two-pass write) → final_report.md | full |
 | 12 | `bad-research-12-critics` | 4 adversarial critics in parallel → findings JSONs | full |
 | 13 | `bad-research-13-gap-fetch` | Fetch sources for critic-identified vault gaps | full |
@@ -70,7 +67,7 @@ When you invoke a Skill, that skill's full procedure is loaded into your context
 **Complete pipeline order (full tier), half-steps included:**
 
 ```
-0.5 → 1 → 1.5 → 1.6 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 11.5
+0.5 → 1 → 1.5 → 1.6 → 2 → 4* → 5 → 6* → 8 → 10* → 11 → 11.5
     → 12 → 13 → 12.5 → 14 → 14.5 → 15 → 16(+gate)
 ```
 
@@ -92,7 +89,7 @@ deep path (triple-draft ensemble + synthesis + adversarial critics + grader loop
 |---|---|---|---|
 | `agentic-fast` | 0.5 → 1 → 1.5 → agentic-fast → 12(slim critic) → 15 → 16(+gate) | ~$1–5 | <3 min |
 | `light` | 0.5 → 1 → 1.5 → 1.6 → 2(funnel) → 10(single draft) → 12(slim critic) → 15 → 16(+gate) | ~$5–15 | ~30–40 min |
-| `full` | 0.5 → 1 → 1.5 → 1.6 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 11.5 → 12 → 13 → 12.5(grader loop) → 14 → 14.5(fresh-review) → 15 → 16(+gate+recitation) | ~$60–120 | ~1.5–2.5 h |
+| `full` | 0.5 → 1 → 1.5 → 1.6 → 2 → 4* → 5 → 6* → 8 → 10* → 11 → 11.5 → 12 → 13 → 12.5(grader loop) → 14 → 14.5(fresh-review) → 15 → 16(+gate+recitation) | ~$60–120 | ~1.5–2.5 h |
 
 **On 0.5 (clarify):** the route — including `agentic-fast` — is only decided at step 1.5, *after* 0.5 has already run, so 0.5 normally runs first on every interactive run. 0.5 is skipped **only on `--auto`/wrapped runs** (a wrapped run is one where `research/wrapper_contract.json` is present and the query is binding GOSPEL not to be questioned). `16(+gate)` is shorthand for "step 16 plus the deterministic no-uncited-claim ship-gate that runs after it on every route" — a *ship-gate* is a blocking quality check that must pass before the report can be delivered.
 
@@ -116,18 +113,23 @@ Where the half-step numbers map to:
 - 14.5 → `Skill(skill: "bad-research-fresh-review")` (one fresh-context pass; full only)
 
 **RESPECT THE ROUTE.** `agentic-fast` is the cheap bounded ReAct loop, not a
-degraded full run; do NOT add the 16 steps "to be thorough." `full` ALWAYS runs
+degraded full run; do NOT add the 13 steps "to be thorough." `full` ALWAYS runs
 11.5 (citation verifier) and 14.5 (fresh-review). The deterministic
 no-uncited-claim gate in step 16 is a **ship-block for ALL routes**. If
 uncertain, route up — but never silently upgrade every query to `full`.
 
 ### Reasoning-effort continuum + token ceiling
 
-The `--reasoning-effort` flag (alias `--effort`) is a 4-level dial — `minimal` /
+The `--effort` flag is a 4-level dial — `minimal` /
 `low` / `medium` / `high` — that nudges the route + per-step fan-out on top of
 the auto-classified route. Use the human-readable mapping in the table directly
 below (source: `skills/routing_constants.py::EFFORT_MAP`, applied by
 `skills/router.py::effort_overrides`):
+
+`--interactive` is auto-detected from CLI context — it is NOT a manual dial; the
+plan-gate fires only on an interactive non-`--auto` run. `router.py::plan_gate_fires()`
+defaults `interactive=False` and returns `True` only when the CLI context is
+interactive (surfaced by `bad route --interactive --json` as `plan_gate.would_gate`).
 
 | `--effort` | route | drafters | fetcher fan-out | extended thinking |
 |---|---|---|---|---|
@@ -210,7 +212,7 @@ Before you invoke any step skill, do this:
    - `Step 1 — Skill: bad-research-1-decompose`
    - `Step 1.5 — Skill: bad-research-query-router`
 
-   **Then**, after step 1.5 returns the `route`, seed the remaining todos from the matching row of the route table above (the `agentic-fast` / `light` / `full` step sequence). Do NOT seed all 16 steps up front and prune — you don't know the route yet, and a `light`/`agentic-fast` run never has most of them.
+   **Then**, after step 1.5 returns the `route`, seed the remaining todos from the matching row of the route table above (the `agentic-fast` / `light` / `full` step sequence). Do NOT seed all 13 steps up front and prune — you don't know the route yet, and a `light`/`agentic-fast` run never has most of them.
 
    The todo list survives context compaction; it's your durable memory of where you are in the chain.
 
@@ -277,14 +279,11 @@ Context compaction may eat parts of this conversation. If you're unsure what ste
    - Step 1.5: the `route` field inside `research/prompt-decomposition.json` (+ `## Route rationale` in scaffold)
    - agentic-fast: `research/temp/react-trace.md` (+ `research/notes/final_report_<vault_tag>.md`)
    - Step 2: vault notes tagged with vault_tag (`$HPR search "" --tag <vault_tag> -j`)
-   - Step 3: `research/temp/contradiction-graph.json`, `research/temp/consensus-claims.json`
-   - Step 4: `research/loci.json`
+   - Step 4: `research/temp/contradiction-graph.json` + `research/temp/consensus-claims.json` (Step 4.0 preamble), then `research/loci.json`
    - Step 5: vault notes with `type: interim` (`$HPR search "" --tag <vault_tag> --type interim -j`)
-   - Step 6: `research/comparisons.md`
-   - Step 7: `research/temp/source-tensions.json`
+   - Step 6: `research/temp/tensions.md` (cross-locus + orphan tensions; Step 6.5 merges the former step-7 source-tensions into this single artifact)
    - Step 8: `research/corpus-critic-gaps.json`, `research/temp/corpus-critic-results.md`
-   - Step 9: `research/temp/evidence-digest.md`
-   - Step 10: `research/temp/draft-{a,b,c}.md` (or `research/notes/final_report_<vault_tag>.md` for light tier single-pass)
+   - Step 10: `research/temp/evidence-digest.md` (built inline in Step 10.0b Part 2, full only — formerly step 9), then `research/temp/draft-{a,b,c}.md` (or `research/notes/final_report_<vault_tag>.md` for light tier single-pass)
    - Step 11: `research/temp/synthesis-plan.md`, `research/temp/synthesis-outline.md`, `research/temp/synthesis-evidence.md`, `research/temp/synthesis-pass1.md`, `research/notes/final_report_<vault_tag>.md`
    - Step 11.5: `research/temp/citation-verify-actions.json` (citation-verifier dispositions; full only)
    - Step 12: `research/critic-findings-{dialectic,depth,width,instruction}.json`
@@ -336,11 +335,11 @@ If any rule returns `error` severity issues, address them before declaring compl
 2. **One final report.** Step 11's synthesizer writes the final report ONCE. No re-synthesizing. (Light tier: step 10 writes it once.)
 3. **At least one dialectical locus.** Step 4 must surface ≥1 dialectical locus unless skip is justified.
 4. **Every interim note commits to a position.** Step 5 investigators end with `## Committed position`.
-5. **`research/comparisons.md` exists when loci count ≥ 1.** Step 6 is mandatory whenever step 4 produced any loci.
+5. **`research/temp/tensions.md` exists when loci count ≥ 1.** Step 6 is mandatory whenever step 4 produced any loci.
 6. **Steps are sequential at the outermost level, parallel within.** You cannot start step N+1 before step N completes. Within a step, parallelism is mandatory when there are multiple subagents.
 7. **Canonical research query is gospel everywhere.** Every subagent gets the verbatim query.
 8. **Hygiene rules apply to the final report only.** Workspace artifacts (scaffold, loci JSONs, interim notes, comparisons.md, patch log) can look however they need to look.
-9. **RESPECT THE TIER GATE — never skip or add a step.** For `full` tier, ALL 16 steps run; for `light`, the prescribed 5 steps run. Don't add steps "for thoroughness"; don't drop steps "for budget." The tier is a binding contract.
+9. **RESPECT THE TIER GATE — never skip or add a step.** For `full` tier, ALL 13 steps run; for `light`, the prescribed 5 steps run. Don't add steps "for thoroughness"; don't drop steps "for budget." The tier is a binding contract.
 10. **Step 10 triple-draft ensemble is MANDATORY for `full` tier.** You MUST spawn 3 `bad-research-draft-orchestrator` subagents. Writing `research/notes/final_report_<vault_tag>.md` directly in step 10 (instead of going through the synthesizer in step 11) is a PIPELINE VIOLATION for these tiers.
 11. **Step 11 synthesis is MANDATORY for `full` tier.** The synthesizer subagent (Read+Write tool-locked) writes the final report from the 3 drafts. The orchestrator does NOT write the final report itself for these tiers.
 12. **Subagents read full source text.** Draft sub-orchestrators MUST batch-read every note in their `must_read_note_ids` list before writing. Fetchers MUST chase 3-8 primary sources via citation chains.
@@ -351,7 +350,7 @@ If any rule returns `error` severity issues, address them before declaring compl
 
 ## Why the multi-skill chain
 
-One monolithic skill loaded once gets compacted away mid-run, and the orchestrator silently degrades (drops the corpus critic, replaces the triple-draft ensemble with a single draft, ships a flat report). The chain makes re-reading structural: each step skill loads fresh via the `Skill` tool at the moment it's needed, is self-contained, and reads its inputs from disk — so compaction can evict an old step's procedure without harm. The cost is 16 extra `Skill` invocations per run; the reliability gain is the difference between the full pipeline (55.9) and the single-draft fallback (52.6).
+One monolithic skill loaded once gets compacted away mid-run, and the orchestrator silently degrades (drops the corpus critic, replaces the triple-draft ensemble with a single draft, ships a flat report). The chain makes re-reading structural: each step skill loads fresh via the `Skill` tool at the moment it's needed, is self-contained, and reads its inputs from disk — so compaction can evict an old step's procedure without harm. The cost is 13 extra `Skill` invocations per run; the reliability gain is the difference between the full pipeline (55.9) and the single-draft fallback (52.6).
 
 ---
 
