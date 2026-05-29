@@ -157,9 +157,9 @@ SUBAGENT_SOURCE_KILL = 100    # hard stop on sources touched (Claude)
 # --effort flag (research.py) into a real config the router consumes.
 EFFORT_LEVELS = ("minimal", "low", "medium", "high")
 EFFORT_MAP = {
-    "minimal": {"route": "light", "tier": "triage", "fetchers_max": 4,  "loci_max": 0,
+    "minimal": {"route": "fast", "tier": "triage", "fetchers_max": 4,  "loci_max": 0,
                 "extended_thinking": False, "single_draft": True},
-    "low":     {"route": "light", "tier": "work",   "fetchers_max": 8,  "loci_max": 0,
+    "low":     {"route": "fast", "tier": "work",   "fetchers_max": 8,  "loci_max": 0,
                 "extended_thinking": False, "single_draft": True},
     "medium":  {"route": "full",  "tier": "default", "fetchers_max": 12, "loci_max": 4,
                 "extended_thinking": True,  "single_draft": False},

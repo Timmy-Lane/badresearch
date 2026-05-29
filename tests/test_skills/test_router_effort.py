@@ -19,7 +19,7 @@ def test_effort_levels_are_the_openai_four():
     for lvl in R.EFFORT_LEVELS:
         assert lvl in R.EFFORT_MAP
         row = R.EFFORT_MAP[lvl]
-        assert row["route"] in ("light", "full")
+        assert row["route"] in ("fast", "full")
         assert isinstance(row["fetchers_max"], int)
         assert isinstance(row["loci_max"], int)
         assert row["tier"] in ("triage", "work", "heavy", "default")
@@ -34,9 +34,9 @@ def test_effort_monotonic_fanout():
 from bad_research.skills.router import classify_route, degrade_order, effort_overrides
 
 
-def test_effort_overrides_minimal_forces_light_single_draft():
+def test_effort_overrides_minimal_forces_fast_single_draft():
     ov = effort_overrides("minimal")
-    assert ov["route"] == "light"
+    assert ov["route"] == "fast"
     assert ov["fetchers_max"] == 4
     assert ov["single_draft"] is True
 
@@ -61,7 +61,7 @@ def test_effort_can_downgrade_full_to_light():
               "response_format": "structured"}
     assert classify_route(decomp) == "full"
     ov = effort_overrides("minimal")
-    assert ov["route"] == "light"  # the override is the user's explicit floor/ceiling
+    assert ov["route"] == "fast"  # the override is the user's explicit floor/ceiling
 
 
 def test_degrade_order_is_tokens_last():
