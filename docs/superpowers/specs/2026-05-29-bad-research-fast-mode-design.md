@@ -82,17 +82,41 @@ planner→writer loop is the spine; a breadth branch adds Claude-style parallel 
   → 16 readability + uncited-gate (ship-block, all routes)
 ```
 
-**Budget (your pick: ≤8-10 min, slightly richer than Perplexity):** main loop ≤6 steps, fan-out
-≤3-4 queries/step, ≤3 parallel sub-researchers (concurrent — little wall-clock cost), cheap models on
-filter/rerank, strong model on synthesis. `RESERVE_FOR_SYNTHESIS` already protects the writer budget;
-`should_short_circuit` already handles the token-ceiling terminal case.
+**The stop rule (XSTOP-1, now CLOSED — keyless & evidence-anchored).** The 2026-05-30 RE batch
+(`researchfms/teardowns/DEEP_RESEARCH_FAST_MODE_RE.md`) mined five open-source DR clones and
+synthesized one auditable keyless stop rule. The Fast loop stops at step `t` when **ANY** of:
+1. **Hard cap** — `t >= FAST_MAX_STEPS`.
+2. **Coverage complete** — every sub-question has `>= FAST_MIN_SOURCES_PER_SUBQ` distinct supporting
+   domains (the per-sub-question checklist is all-green).
+3. **Diminishing returns** — this step added `< FAST_MIN_NEW_DOMAINS` *new distinct domains* AND
+   `< FAST_MIN_NEW_DOMAINS` new distinct URLs, for `FAST_STALL_PATIENCE` consecutive steps. The
+   new-distinct-domains delta is computed from the URL list with **zero model calls** — the
+   measurable, auditable form of open_deep_research's "your last 2 searches returned similar
+   information."
+4. **Model-declared done** — the planner emits a `research_complete` flag (the keyless analogue of
+   open_deep_research's `ResearchComplete` tool). Additive early-out; clauses 1-3 guarantee
+   termination even if the model never emits it.
 
-**Proposed constant changes (`routing_constants.py`)** — final values fixed in the plan:
-- Rename `AGENTIC_FAST_*` → `FAST_*`. `FAST_MAX_STEPS = 6` (was 10), `FAST_MAX_CALLS = 14`,
-  `FAST_TIMEOUT_S = 600` (was 300 — the 8-10 min budget).
-- `FAST_SUBRESEARCHER_K = 3` (breadth branch).
-- `FETCHER_TOOLCALL_CAP` keys `{"light","full"}` → `{"fast","full"}` (fast=10, full=20).
+After stopping, reserve `FAST_RESERVE_SYNTH_FRAC` of the budget for the writer (never spend it all on
+retrieval). The verbatim planner reflect/stop prompt that emits this decision as one JSON object lives
+in the RE synthesis PART 2.3 and is lifted into the Fast skill (plan Task 10).
+
+**Evidence-anchored constants (`routing_constants.py`)** — each value cited to a cloned repo in the
+RE synthesis PART 2.2; finalized in the plan:
+- `FAST_MAX_STEPS = 6`, `FAST_MAX_QUERIES_PER_STEP = 4`, `FAST_MAX_RESULTS_PER_QUERY = 5`,
+  `FAST_MIN_NEW_DOMAINS = 2`, `FAST_STALL_PATIENCE = 1`, `FAST_MIN_SOURCES_PER_SUBQ = 3`,
+  `FAST_MAX_SUBQUESTIONS = 3`, `FAST_CONTENT_TRIM_CHARS = 25000`, `FAST_TEMPERATURE = 0.4`,
+  `FAST_RESERVE_SYNTH_FRAC = 0.25`, `FAST_SUBRESEARCHER_K = 3`, plus a wall-clock safety net
+  `FAST_TIMEOUT_S = 600`.
 - `EFFORT_MAP` route values `light`→`fast`.
+- **Skipped as overkill** (the "no bullshit" rule): `FAST_CONFIDENCE_STOP` (needs a calibrated scorer
+  we lack keyless — the domain-novelty proxy is the primary gate), periodic replanning (redundant
+  with per-step reflect), and a separate `FAST_MAX_CALLS` (the step×queries budget already bounds
+  calls). The PART-3 capture harness stays an RE-folder asset; it is **not** built into the skill.
+
+**Funnel-mode axis stays `{"light","full"}`.** `FETCHER_TOOLCALL_CAP` keys are NOT renamed — `mode`
+is an internal fan-out dial, not the route; route `fast` maps to funnel-`light`. (Recorded decision;
+keeps the diff focused and every commit green.)
 
 ---
 
@@ -123,12 +147,23 @@ grounding pass is what makes Fast "better than Perplexity," not just "as fast."
 
 **Design:** reuse step 11.5 machinery in a slim configuration (no triple-draft assumptions): after the
 Fast writer produces the report, run a bounded grounding pass that resolves each `[N]` to its vault
-note and span, drops/flags uncited factual sentences, then the existing `bad uncited-gate` ship-gate
-(step 16) blocks delivery on any survivor. Keyless: reuses `LineSpanJudge` / `HostJudgeNLI` (already
-built in the super-skill upgrade). No new model, no new key.
+note and span, then acts inline (Read+Edit, no step-14 patcher). Keyless: reuses `LineSpanJudge` /
+`HostJudgeNLI` (built in the super-skill upgrade). No new model, no new key. The R5 deltas make this
+concrete:
+- **Why it's the key quality lever:** Anthropic's CitationAgent has *no* faithfulness check
+  (`CLAUDE_RESEARCH.md` R5.2) — unsupported claims ship silently uncited; OpenAI's faithfulness is
+  RL-internal and un-portable. A keyless replica MUST add this gate; it's the genuinely *additive*
+  step, not redundancy.
+- **Which sentences (OpenAI 3-tier, §R5.1C):** MUST verify load-bearing facts + anything volatile
+  since cutoff (numbers/dates/prices/versions/"latest"); SHOULD verify other web-supportable
+  statements; common knowledge + synthesis are EXEMPT (keeps the pass cheap).
+- **Disposition thresholds (§R5.3):** ACCEPT ≥0.75 · TIGHTEN ≥0.55 · FLAG ≥0.35 · DROP-CITE <0.35 ·
+  DROP-SENTENCE for a MUST-verify claim with no span. Placement lifts Claude `citations_agent.md`
+  verbatim (one cite per source per sentence, after the period). The existing `bad uncited-gate`
+  (step 16) is the forward ship-block downstream.
 
-**Open RE dependency:** exact citation placement/verification rules — see RE-gaps doc, item OAI-2 /
-CLR-2.
+**RE status:** the placement/verification rules (OAI-2, CLR-2) are now **closed-by-source** — folded
+in above.
 
 ---
 
@@ -188,15 +223,26 @@ The entire Full pipeline (0.5 → 1 → 1.5 → 1.6 → 2 → 4* → 5 → 6* �
 
 ---
 
-## 10. Open questions → RE dependencies
+## 10. RE status (the gaps are now answered — 2026-05-30 batch)
 
-The design is buildable today from what we already reverse-engineered, but four points would be
-*calibrated better* with fresh captures. These are detailed, per-source, in
-`2026-05-29-bad-research-fast-mode-RE-gaps.md`:
+The RE handoff's gaps were reverse-engineered and committed to `researchfms`
+(`teardowns/DEEP_RESEARCH_FAST_MODE_RE.md` + R5 deltas on all five DR teardowns). Status:
 
-1. The loop's **early-stop / coverage heuristic** (every tool leaves it fuzzy) — P0.
-2. Perplexity DR **planner** prompt (we have the writer, not the planner) — P1.
-3. **Plan → query-batch** mapping + breadth→K mapping — P1.
-4. **Citation placement / verification** rules for the slim grounding pass — P1.
+- **XSTOP-1 (the P0) — CLOSED-by-source.** The keyless 4-clause stop rule above is synthesized from
+  five open-source DR clones (open_deep_research, gpt-researcher, dzhng, smolagents,
+  local-deep-research), each constant cited. The two un-closeable commercial behaviors (OpenAI &
+  Anthropic RL/server-side stop judgement — OAI-1, CLR-2) are **substituted** by this explicit
+  auditable policy, not chased.
+- **PPX-1, OAI-2, OAI-3, CLR-1, CLR-3, GRK-1/2 — CLOSED-by-source.** Notably CLR-3 settled: the lead
+  sets only `prompt` on a sub-researcher (no model/tools/cap) — confirms our prompt-level
+  `stop_conditions` breadth-fan-out contract. OAI-2 gives the citation-placement discipline for the
+  slim grounding pass.
+- **PPX-4 — DEBUNKED.** The "T5-XXL 3-5 phrasings / entropy-cutoff 0.85" claims trace to a 3rd-party
+  speculation repo; **do not carry them into the replica** (they never were in our design).
+- **NEEDS-LIVE-CAPTURE (non-blocking):** PPX-2/3, GEM-1(c)/2/3 — these are *calibration* of the
+  numeric thresholds (e.g. fitting `FAST_MIN_NEW_DOMAINS` to real per-step domain-novelty curves)
+  via the shipped capture harness. The replica runs correctly on the DESIGNED defaults today; the
+  harness is an RE-folder tuning tool, not a build dependency.
 
-None block starting implementation; they sharpen constants and prompts.
+**Net effect on this design:** the Fast loop's stop logic moves from "model-judged (RE-dependent)" to
+the concrete, evidence-anchored, keyless rule in §3 — no remaining blockers.

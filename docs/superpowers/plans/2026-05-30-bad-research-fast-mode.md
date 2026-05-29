@@ -495,29 +495,50 @@ git commit -m "feat(skills): decompose emits a scope_brief for the fast writer"
 - Modify: `src/bad_research/skills/routing_constants.py` (`:6-13` loop bounds; add `FAST_SUBRESEARCHER_K`)
 - Test: `tests/test_skills/test_router.py` or `test_router_effort.py` — add a constant-presence test
 
-- [ ] **Step 1: Write the failing constant test.** Add to `tests/test_skills/test_router_effort.py`:
+- [ ] **Step 1: Write the failing constant test.** Add to `tests/test_skills/test_router_effort.py`. These values are the evidence-anchored set from the RE synthesis (`researchfms/teardowns/DEEP_RESEARCH_FAST_MODE_RE.md` PART 2.2 — each cited to a cloned DR repo):
 
 ```python
-def test_fast_loop_constants_present_and_bumped():
-    assert R.FAST_MAX_STEPS == 6
-    assert R.FAST_MAX_CALLS == 14
-    assert R.FAST_TIMEOUT_S == 600
-    assert R.FAST_SUBRESEARCHER_K == 3
+def test_fast_loop_constants_present_and_anchored():
+    assert R.FAST_MAX_STEPS == 6                 # open_deep_research supervisor cap; Perplexity hard-caps 10
+    assert R.FAST_MAX_QUERIES_PER_STEP == 4      # dzhng breadth default
+    assert R.FAST_MAX_RESULTS_PER_QUERY == 5     # dzhng + gpt-researcher agree
+    assert R.FAST_MIN_NEW_DOMAINS == 2           # "last 2 searches returned similar info" -> novelty floor
+    assert R.FAST_STALL_PATIENCE == 1            # fast mode stops after the first stalled step
+    assert R.FAST_MIN_SOURCES_PER_SUBQ == 3      # open_deep_research "3+ relevant sources"
+    assert R.FAST_MAX_SUBQUESTIONS == 3          # three clones converge on 3
+    assert R.FAST_SUBRESEARCHER_K == 3           # breadth fan-out cap
+    assert R.FAST_TIMEOUT_S == 600               # wall-clock safety net (8-10 min budget)
+    assert R.FAST_RESERVE_SYNTH_FRAC == 0.25     # reserve 25% of budget for the writer
+    assert R.FAST_CONTENT_TRIM_CHARS == 25000    # dzhng + gpt-researcher agree
+    assert R.FAST_TEMPERATURE == 0.4             # gpt-researcher planner/extractor temp
 ```
+
+(Note: `FAST_RESERVE_SYNTH_FRAC` (a fraction) is **distinct** from the existing token-valued `RESERVE_FOR_SYNTHESIS = 40_000` — do not rename or clobber that. We do NOT add `FAST_CONFIDENCE_STOP` (needs a calibrated scorer we lack keyless), periodic-replanning, or a separate `FAST_MAX_CALLS` — all skipped as overkill; the step×queries budget + the novelty gate bound the loop.)
 
 - [ ] **Step 2: Run to verify fail.**
 
 Run: `uv run pytest tests/test_skills/test_router_effort.py -k fast_loop -v --no-cov`
 Expected: FAIL — `AttributeError: module ... has no attribute 'FAST_MAX_STEPS'`.
 
-- [ ] **Step 3: Rename + bump in `routing_constants.py`.** Replace lines `:6-13`:
+- [ ] **Step 3: Replace the loop bounds in `routing_constants.py`.** Replace lines `:6-13` (the old `AGENTIC_FAST_*` block) with the evidence-anchored FAST set (each value cited in RE synthesis PART 2.2):
 
 ```python
-# Fast-route ReAct loop bounds (Perplexity max_steps + Claude guards). The 8-10 min
-# budget allows a wider loop than the old <3 min agentic-fast (was 10/15/300).
-FAST_MAX_STEPS = 6
-FAST_MAX_CALLS = 14
-FAST_TIMEOUT_S = 600
+# ---- Fast-route loop constants (keyless deep-research replica) ----
+# Evidence-anchored: see researchfms/teardowns/DEEP_RESEARCH_FAST_MODE_RE.md PART 2.2, each
+# value cited to a cloned DR repo (open_deep_research / gpt-researcher / dzhng / smolagents /
+# local-deep-research). The 8-10 min budget sits at the LOW end of the open-clone range.
+FAST_MAX_STEPS            = 6      # hard step cap (open_deep_research supervisor=6; Perplexity caps 10)
+FAST_MAX_QUERIES_PER_STEP = 4      # parallel queries fanned out per step (dzhng breadth=4)
+FAST_MAX_RESULTS_PER_QUERY = 5     # SERP results per query (dzhng + gpt-researcher agree)
+FAST_MIN_NEW_DOMAINS      = 2      # < this many NEW distinct domains in a step => diminishing returns
+FAST_STALL_PATIENCE       = 1      # consecutive low-novelty steps tolerated before stopping
+FAST_MIN_SOURCES_PER_SUBQ = 3      # distinct domains to mark a sub-question "green" (coverage gate)
+FAST_MAX_SUBQUESTIONS     = 3      # sub-questions the decomposer emits in fast mode
+FAST_CONTENT_TRIM_CHARS   = 25000  # per-page content cap before it enters context
+FAST_TEMPERATURE          = 0.4    # planner/extractor temperature
+FAST_RESERVE_SYNTH_FRAC   = 0.25   # fraction of budget reserved for the writer (distinct from
+                                   # the token-valued RESERVE_FOR_SYNTHESIS below — do NOT merge)
+FAST_TIMEOUT_S            = 600    # wall-clock safety net (belt-and-suspenders on the step cap)
 
 # Breadth-shape parallel sub-researcher fan-out cap for the fast loop.
 FAST_SUBRESEARCHER_K = 3
@@ -527,7 +548,7 @@ SUBAGENT_FANOUT_DEFAULT = 3
 SUBAGENT_FANOUT_MAX = 20
 ```
 
-(Grep for any other `AGENTIC_FAST_` references: `grep -rn "AGENTIC_FAST_" src tests` — there should be none in Python after this; the skill markdown references are updated in Task 10.)
+(Then `grep -rn "AGENTIC_FAST_" src tests` — there should be no Python references after this; skill-markdown references are updated in Task 10. Leave the existing `RESERVE_FOR_SYNTHESIS = 40_000` token constant untouched.)
 
 - [ ] **Step 4: Run to verify pass.**
 
@@ -539,7 +560,7 @@ Expected: PASS.
 ```bash
 uv run ruff check src/bad_research/skills/routing_constants.py && uv run mypy src/bad_research/skills/routing_constants.py
 git add src/bad_research/skills/routing_constants.py tests/test_skills/test_router_effort.py
-git commit -m "refactor(constants): AGENTIC_FAST_* -> FAST_* (6/14/600) + FAST_SUBRESEARCHER_K"
+git commit -m "feat(constants): evidence-anchored FAST_* stop-rule constants (XSTOP-1)"
 ```
 
 ---
@@ -556,12 +577,20 @@ git commit -m "refactor(constants): AGENTIC_FAST_* -> FAST_* (6/14/600) + FAST_S
 def test_fast_has_loop_bounds_and_planner_writer(skills_dir):
     body = (skills_dir / "bad-research-fast.md").read_text()
     assert "FAST_MAX_STEPS" in body and "6" in body
-    assert "600" in body and "14" in body          # timeout + call cap
+    assert "600" in body                            # FAST_TIMEOUT_S wall-clock guard
     assert "planner" in body.lower() and "writer" in body.lower()
     assert "bad funnel-gather" in body or "funnel" in body.lower()
     assert "[N]" in body                            # per-sentence single-index cites
     assert "breadth" in body.lower()                # shape-aware fan-out
     assert "bad-research-fetcher" in body           # the parallel sub-researcher
+
+
+def test_fast_has_auditable_stop_rule(skills_dir):
+    body = (skills_dir / "bad-research-fast.md").read_text()
+    assert "research_complete" in body              # keyless convergence flag
+    assert "distinct domain" in body.lower()        # the new-domains novelty proxy
+    assert "FAST_MIN_NEW_DOMAINS" in body and "FAST_MIN_SOURCES_PER_SUBQ" in body
+    assert "checklist" in body.lower()              # per-sub-question coverage
 ```
 
 - [ ] **Step 2: Run to verify fail.**
@@ -569,7 +598,7 @@ def test_fast_has_loop_bounds_and_planner_writer(skills_dir):
 Run: `uv run pytest tests/test_skills/test_fast_skill.py -v --no-cov`
 Expected: FAIL — body still has old bounds (10/300/15) and no breadth branch.
 
-- [ ] **Step 3: Rewrite the loop section of `bad-research-fast.md`.** Replace the `## The loop (planner → writer split)` section so it (a) reads `research/prompt-decomposition.json` `query_shape`, (b) bumps the bounds to `FAST_MAX_STEPS` (6) / `FAST_MAX_CALLS` (14) / `FAST_TIMEOUT_S` (600s), and (c) branches on shape. Use this content:
+- [ ] **Step 3: Rewrite the loop section of `bad-research-fast.md`.** Replace the `## The loop (planner → writer split)` section so it (a) reads `research/prompt-decomposition.json` `query_shape`, (b) maintains a per-sub-question coverage checklist + cumulative seen-domains/URLs sets, (c) branches on shape, (d) applies the auditable XSTOP-1 4-clause stop rule, and (e) passes the writer ONLY `(original_query, dedup'd evidence, prior learnings)` — never the planner trace, with a partial-answer-better-than-none fallback (Perplexity §R5.2/§R5.4). Use this content:
 
 ```markdown
 ## The loop (shape-aware, planner → writer split)
@@ -591,23 +620,41 @@ The single-loop body (straightforward/depth), persisting `(thought, action, obse
 to `research/temp/react-trace.md`:
 
 ​```
-step = 0; calls = 0; deadline = now + 600       # FAST_TIMEOUT_S
-while step < 6 and now < deadline:               # FAST_MAX_STEPS
+step=0; stalled=0; deadline=now+600                      # FAST_TIMEOUT_S (wall-clock safety net)
+next_queries = sub_questions[:FAST_MAX_QUERIES_PER_STEP]  # step-0 queries = the sub-questions
+while step < 6 and next_queries and now < deadline:      # (1) hard cap = FAST_MAX_STEPS
     step += 1
-    THINK: one paragraph — what's still unknown, what to fetch.
-    if coverage complete: break                  # model-judged stop (see RE-gaps XSTOP-1)
-    ACT: a LIST of ≤3-4 fanned queries (not one search):
+    before = (len(seen_domains), len(seen_urls))
+    ACT: fan out <=4 queries (FAST_MAX_QUERIES_PER_STEP), <=5 results each (FAST_MAX_RESULTS_PER_QUERY):
         bad funnel-gather "<q>" --mode light --vault-tag <tag> --max-queries 4 --read-top-k 12 --json
-        calls += 1
+        for each NEW url: seen_domains.add(domain); add that domain to the checklist entry of the sub-q this query served
     OBSERVE: bad retrieve "<original verbatim query>" --mode light --top-k 12 --json
-        calls += 1
-    if calls >= 14: break                         # FAST_MAX_CALLS
+    new_domains, new_urls = deltas vs `before`           # loop counters, ZERO model calls
+    if all sub-qs have >= FAST_MIN_SOURCES_PER_SUBQ (3) distinct domains: break          # (2) coverage complete
+    if new_domains < FAST_MIN_NEW_DOMAINS (2) and new_urls < FAST_MIN_NEW_DOMAINS:
+        stalled += 1
+        if stalled >= FAST_STALL_PATIENCE (1): break                                     # (3) diminishing returns
+    else: stalled = 0
+    decision = REFLECT(...)                               # the reflect/stop JSON below (one model call)
+    if decision.research_complete or decision.coverage_complete or decision.can_answer_confidently: break   # (4) model-declared
+    next_queries = decision.next_queries[:FAST_MAX_QUERIES_PER_STEP]   # target WEAKEST sub-qs; never repeat/paraphrase a past query
+# reserve FAST_RESERVE_SYNTH_FRAC (25%) of budget for the writer; a partial answer beats no answer
 ​```
 
-**Math queries:** use `execute_python` in ACT, never compute in prose.
+**Math queries:** use `execute_python` in ACT, never compute in prose. The domain/URL deltas are
+loop counters, not model claims — the stop is auditable even if the model lies about diminishing returns.
+
+### Reflect/stop prompt (emit once per step — returns ONE JSON object)
+
+Embed the verbatim reflect/stop prompt from the RE synthesis (`researchfms/teardowns/DEEP_RESEARCH_FAST_MODE_RE.md` PART 2.3, ~lines 534-575). It shows the planner the loop-computed `new_distinct_domains`/`new_distinct_urls` + the coverage checklist + trimmed step findings, enforces the HARD LIMITS (stop if every sub-q has FAST_MIN_SOURCES_PER_SUBQ+ domains / stop if new_domains < FAST_MIN_NEW_DOMAINS / stop if answerable), and returns ONLY:
+
+    { "learnings": [...], "checklist_update": {"<sub-q>": <distinct-domain count>, ...},
+      "coverage_complete": <bool>, "diminishing_returns": <bool>,
+      "can_answer_confidently": <bool>, "research_complete": <bool>,
+      "next_queries": [...] }   // [] when research_complete is true
 ```
 
-Keep the `## Write (the writer split — system B)` section's Perplexity contract (per-sentence `[N]`, no `## References`, tables not lists), but allow the length to scale up for breadth runs (the 8-10 min budget). Update the `## Next step` so it points at the slim citation-grounding pass (Task 11) before the slim critic.
+Keep the `## Write (the writer split — system B)` section's Perplexity contract (per-sentence `[N]`, no `## References`, tables not lists); length scales up for breadth runs. Add three lifts the R5 deltas confirmed: (i) the writer receives ONLY `(original_query, dedup'd evidence, prior learnings)`, never the planner's raw trace (Perplexity §R5.2) — and once the writer starts, the loop does NOT fan out again (Grok terminal-synthesis seam, `GROK_HEAVY.md:598`); (ii) a word governor — ≤25 words verbatim from any single source, ≤1 quote/source (Claude copyright cap; OpenAI `[wordlim 200]`); (iii) partial-answer-better-than-none if the loop stopped early. Update `## Next step` to point at the slim citation-grounding pass (Task 11) before the slim critic.
 
 - [ ] **Step 4: Run to verify pass.**
 
@@ -655,6 +702,8 @@ def test_citation_verifier_has_slim_fast_mode(skills_dir):
     body = (skills_dir / "bad-research-11.5-citation-verifier.md").read_text()
     assert "slim" in body.lower() and "fast" in body.lower()
     assert "Edit" in body  # slim mode applies dispositions inline (no step-14 patcher)
+    assert "common knowledge" in body.lower()       # the OpenAI 3-tier cite exemption
+    assert "DROP-CITE" in body or "ACCEPT" in body   # the grounding-score thresholds
 ```
 
 - [ ] **Step 2: Run to verify fail.**
@@ -667,20 +716,28 @@ Expected: FAIL — no slim mode / no grounding call yet.
 ```markdown
 ## Slim mode (fast route)
 
-On the `fast` route there is no step-14 patcher, so the slim pass applies dispositions
-INLINE. Run the same Tier-A byte-identity + Tier-B LineSpanJudge check, then act
-directly with Edit (this invocation is Read+Edit, not Read-locked):
+On the `fast` route there is no step-14 patcher, so the slim pass applies dispositions INLINE
+(this invocation is Read+Edit, not Read-locked). It runs the same Tier-A byte-identity + Tier-B
+LineSpanJudge check, then acts directly with Edit. **This gate is the genuinely additive quality
+step** — Anthropic's CitationAgent has NO faithfulness check, so unsupported claims would otherwise
+ship silently uncited (`CLAUDE_RESEARCH.md` R5.2); OpenAI's faithfulness is RL-internal/un-portable.
+
+**Which sentences to check (OpenAI 3-tier, `OPENAI_DEEP_RESEARCH.md` §R5.1C — keeps it cheap):**
+MUST verify the load-bearing facts + anything likely changed since cutoff (numbers, dates, prices,
+versions, "current/latest"); SHOULD verify other web-supportable statements; EXEMPT common knowledge
+and pure synthesis. Then run the same check, dispositioned inline:
 
 ​```bash
 bad verify-citations --report research/notes/final_report_<vault_tag>.md \
     --vault-tag <vault_tag> --json
 ​```
 
-- `supported` → keep.
-- `partial` → soften the sentence (surgical Edit).
-- `unsupported` → drop the `[N]` cite (surgical Edit); if the claim is load-bearing, fetch
-  a source (`bad fetch --tier-max 3`) and re-cite.
-- `contradicted` → engage/correct (surgical Edit).
+- **Disposition by support score (OpenAI thresholds, §R5.3):** ACCEPT ≥0.75 keep · TIGHTEN ≥0.55
+  narrow the claim to what the span supports (Edit) · FLAG ≥0.35 soften/hedge (Edit) · DROP-CITE
+  <0.35 remove the `[N]`; if load-bearing, `bad fetch --tier-max 3` and re-cite · DROP-SENTENCE: a
+  MUST-verify claim with no supporting span is struck.
+- **Placement (Claude `citations_agent.md`, verbatim R5.1):** key facts only (not common knowledge),
+  one citation per (source, sentence) placed AFTER the period, never mid-fragment.
 
 Skip Tier-C re-fetch arbitration and the `--effort high` self-consistency vote (full-tier
 only). This pass sits just upstream of the step-16.6 `bad uncited-gate` ship-block — backward

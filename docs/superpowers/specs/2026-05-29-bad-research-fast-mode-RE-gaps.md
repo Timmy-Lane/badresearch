@@ -3,6 +3,14 @@
 **Date:** 2026-05-29
 **Companion to:** `2026-05-29-bad-research-fast-mode-design.md`
 **For:** the reverse-engineering effort in `~/Desktop/researchfms` (teardowns/).
+**STATUS (2026-05-30): RESOLVED.** The RE was executed — see
+`researchfms/teardowns/DEEP_RESEARCH_FAST_MODE_RE.md` (the XSTOP-1 synthesis + a runnable capture
+harness, mining five open-source DR clones) and the R5 delta sections on the five DR teardowns.
+**XSTOP-1 closed-by-source** (keyless 4-clause stop rule + evidence-anchored `FAST_*` constants);
+PPX-1 / OAI-2 / OAI-3 / CLR-1 / CLR-3 / GRK-1/2 closed; **PPX-4 debunked** (T5-XXL / entropy-cutoff
+were 3rd-party speculation — do not implement); the remainder (PPX-2/3, GEM-1c/2/3) are non-blocking
+live-capture *calibration*. Findings folded into the design spec §3/§5/§10 and plan Tasks 9-11. The
+per-source gap list below is retained as the original handoff record.
 **Scope discipline:** this lists ONLY what serves the **keyless Fast mode**. Proprietary internals
 (indexes, embedders, RL recipes, inference engines) are explicitly out of scope — see §7. Each item
 has an **ID**, a **capture target**, **why it matters for Fast**, a **method**, and a **priority**
