@@ -98,7 +98,7 @@ ROUTER_SURVEY_MAX_ATOMIC = 40
 #                     current population of Tokyo?"
 #
 # CRITICAL: query_shape is a NEW field that ADDS the fan-out shape. It MUST NOT
-# change classify_route's agentic-fast/light/full decision (the golden corpus's
+# change classify_route's fast/full decision (the golden corpus's
 # decompose-component checks assert that route). The classifier reuses the
 # existing modality + contestedness signals; it never feeds back into the route.
 

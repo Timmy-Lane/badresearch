@@ -124,7 +124,7 @@ the entry skill and invoking the query-router (step 1.5). The router still owns 
 
 7. **Classify `pipeline_tier` and `response_format`.**
 
-   **`pipeline_tier` is an initial tier *signal*, not the final routing decision.** It records this step's read of how much pipeline the query wants (`light` vs `full`). The authoritative routing decision — the `route` field (`agentic-fast` / `light` / `full`) that the orchestrator actually sequences from — is made downstream by the query-router (step 1.5), which reads this `pipeline_tier` as input and never down-routes a justified `full`. Set `pipeline_tier` honestly here; let step 1.5 own `route`.
+   **`pipeline_tier` is an initial tier *signal*, not the final routing decision.** It records this step's read of how much pipeline the query wants (`light` vs `full`). The authoritative routing decision — the `route` field (`fast` / `full`) that the orchestrator actually sequences from — is made downstream by the query-router (step 1.5), which reads this `pipeline_tier` as input and never down-routes a justified `full`. Set `pipeline_tier` honestly here; let step 1.5 own `route`.
 
    **`pipeline_tier`** — how much pipeline to run:
 

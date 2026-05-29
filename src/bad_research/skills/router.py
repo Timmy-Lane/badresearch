@@ -1,12 +1,12 @@
 """Query router — classify the Step-1 decompose output into a pipeline mode.
 
 Reuses the existing atomic-item analysis (no new classifier). The decision
-tree is verbatim from DR-loops §9.2:
+tree (2-route consolidation; the former agentic-fast + light bands both map to
+`fast` now — the split is an internal shape+effort knob, not a route):
 
-  agentic-fast  if atomic_items <= 2 AND no contradiction terms AND no time_periods
-                AND response_format == "short" AND single domain
-  light         elif response_format == "structured" OR atomic_items 3-6 OR mild tension
-  full          else (multi-domain, contested, argumentative, time_periods, >=7 items)
+  full  if multi-domain, contested, argumentative, time_periods, >=7 items, or a
+        pipeline_tier == "full" floor
+  fast  else (the bounded planner->writer loop — formerly agentic-fast/light)
 
 [SEMANTIC-TIERING 2026-05-28] Two corrections to the post-B-5 behaviour:
 
@@ -95,7 +95,7 @@ def _pipeline_tier_floor_full(decomp: dict[str, Any]) -> bool:
 
     [SEMANTIC-TIERING 2026-05-28] This is the SEMANTIC depth signal the router must
     honour as a FLOOR: when the model (step 1) judged the query deep enough to want
-    the full pipeline, classify_route must never demote it to light/agentic-fast.
+    the full pipeline, classify_route must never demote it to fast.
     Mechanical heuristics escalate above this, never below. A missing or `"light"`
     pipeline_tier returns False (no floor) — preserving every fixture that omits it."""
     return decomp.get("pipeline_tier") == "full"
@@ -244,7 +244,7 @@ def plan_gate_fires(
         `ROUTER_LIGHT_MAX_ATOMIC` (a broad survey the modality gate spared from
         full but which is still wide enough to mis-scope), OR an explicit
         `est_cost` is at/above `PLAN_GATE_COST_THRESHOLD`. A cheap bounded run
-        (agentic-fast / small light, no cost over threshold) is below the bar: a
+        (a small `fast` route, no cost over threshold) is below the bar: a
         wrong sub-question there costs less than the approval round-trip.
 
     The interactivity flags are supplied by the orchestrator at step 1.6 (it knows

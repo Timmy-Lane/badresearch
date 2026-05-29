@@ -10,7 +10,7 @@ description: >
 
 # Step 11.5 — Citation verifier (backward grounding)
 
-**Tier gate:** SKIP for `light` and `agentic-fast` (their grounding is the
+**Tier gate:** SKIP for `fast` (its grounding is the
 forward binding-at-fetch + the step-16 gate). Runs for `full` only, after
 step 11 (synthesize), before step 12 (critics).
 

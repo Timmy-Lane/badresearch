@@ -119,18 +119,18 @@ def test_default_kwargs_are_non_interactive_so_it_never_fires():
 
 
 def test_trivial_interactive_query_does_not_fire():
-    # Interactive but cheap (agentic-fast, <= 2 atomic, no cost over threshold) →
+    # Interactive but cheap (fast route, <= 2 atomic, no cost over threshold) →
     # no plan gate; the gate is only for expensive runs.
     d = _decomp(sub_questions=["what is the capital of France"], response_format="short")
-    assert classify_route(d) == "agentic-fast"
+    assert classify_route(d) == "fast"
     assert plan_gate_fires(d, interactive=True, wrapped=False, auto=False) is False
 
 
 def test_light_under_max_interactive_does_not_fire():
-    # A light-tier query within ROUTER_LIGHT_MAX_ATOMIC, low cost → not expensive →
+    # A fast-route query within ROUTER_LIGHT_MAX_ATOMIC, low cost → not expensive →
     # no gate even though interactive.
     d = _decomp(sub_questions=["q1", "q2", "q3", "q4"], response_format="structured")
-    assert classify_route(d) == "light"
+    assert classify_route(d) == "fast"
     assert plan_gate_fires(d, interactive=True, wrapped=False, auto=False) is False
 
 

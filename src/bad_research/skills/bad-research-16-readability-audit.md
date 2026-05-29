@@ -147,7 +147,7 @@ This is the audit trail. If a future review finds a readability problem we shoul
 ## Step 16.6 — No-uncited-claim hard gate (deterministic ship-block)
 
 After readability edits, run the deterministic ($0) grounding gate. It is a
-**ship-block** for ALL routes (agentic-fast / light / full): the report does
+**ship-block** for ALL routes (fast / full): the report does
 NOT ship if any non-trivial factual claim lacks a verifiable citation resolving
 to a `claim_anchors` row.
 

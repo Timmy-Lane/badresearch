@@ -17,8 +17,8 @@ def test_grader_skill_runs_the_loop_with_cap_3(skills_dir):
     assert "full" in body.lower()  # full-tier only
     # the judge->patch->re-judge loop shape
     assert "re-judge" in body.lower() or "re-grade" in body.lower()
-    # it does NOT run on light/agentic-fast (anti-overkill, dossier §4.1)
-    assert "agentic-fast" in body and "light" in body
+    # it does NOT run on the fast route (anti-overkill, dossier §4.1)
+    assert "fast" in body.lower()
 
 
 def test_grader_skill_feeds_findings_to_patcher(skills_dir):
