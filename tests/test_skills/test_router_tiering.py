@@ -95,7 +95,7 @@ def test_explicit_survey_modality_still_light():
         domains=["tech"],
         modality="survey",
     )
-    assert classify_route(d) == "light"
+    assert classify_route(d) == "fast"
 
 
 def test_explicit_compare_modality_still_light():
@@ -106,7 +106,7 @@ def test_explicit_compare_modality_still_light():
         domains=["tech"],
         modality="compare",
     )
-    assert classify_route(d) == "light"
+    assert classify_route(d) == "fast"
 
 
 # ── C: pipeline_tier == "full" is a FLOOR ────────────────────────────────────
@@ -154,18 +154,18 @@ def test_pipeline_tier_absent_imposes_no_floor():
     # existing small-light decomp with no pipeline_tier → still light as before.
     d = _decomp(sub_questions=["q1", "q2", "q3", "q4"], response_format="structured")
     assert "pipeline_tier" not in d
-    assert classify_route(d) == "light"
+    assert classify_route(d) == "fast"
 
 
-def test_pipeline_tier_light_imposes_no_floor():
+def test_pipeline_tier_light_imposes_no_fast_floor():
     # an explicit pipeline_tier="light" must NOT raise the route; the trivial
-    # agentic-fast case stays agentic-fast.
+    # fast case stays fast.
     d = _decomp(
         sub_questions=["what is the capital of France"],
         response_format="short",
         pipeline_tier="light",
     )
-    assert classify_route(d) == "agentic-fast"
+    assert classify_route(d) == "fast"
 
 
 # ── E: route_reason reflects the new logic ────────────────────────────────────

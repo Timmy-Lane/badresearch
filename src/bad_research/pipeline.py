@@ -35,7 +35,7 @@ from bad_research.config import BadResearchConfig
 
 _LOG = logging.getLogger("bad_research.pipeline")
 
-Route = Literal["agentic-fast", "light", "full"]
+Route = Literal["fast", "full"]
 Tier = Literal["triage", "work", "heavy"]
 
 # Representative blended $/token rates per tier (input, output). reasoning +
@@ -112,7 +112,7 @@ class RunResult:
 
     report: str
     corpus: list[dict[str, Any]] = field(default_factory=list)
-    route: Route = "light"
+    route: Route = "fast"
     cost: Any = None  # the cost meter that was populated
 
 
@@ -245,7 +245,7 @@ def run_query(
     route = _route(query, cfg, cm)
     cm.record(stage="route", tier="triage", search_queries=0)
 
-    mode = "light" if route in ("agentic-fast", "light") else "full"
+    mode = "light" if route == "fast" else "full"
 
     # Stage: gather (funnel — $0 model cost; search_queries are the billable unit).
     corpus = _gather(query, mode, cfg, cm)

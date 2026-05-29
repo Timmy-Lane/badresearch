@@ -31,7 +31,7 @@ from typing import Any, Literal
 
 from bad_research.skills import routing_constants as R  # noqa: N812
 
-Route = Literal["agentic-fast", "light", "full"]
+Route = Literal["fast", "full"]
 QueryShape = Literal["straightforward", "breadth_first", "depth_first"]
 
 # The 3-way Claude Research fan-out-shape taxonomy (research_lead_agent.md:12-29).
@@ -181,56 +181,39 @@ def _full_triggers(decomp: dict[str, Any]) -> list[str]:
 
 
 def classify_route(decomp: dict[str, Any]) -> Route:
-    n = _atomic_count(decomp)
     fmt = decomp.get("response_format", "structured")
     time_periods = decomp.get("time_periods") or []
     contradiction = decomp.get("contradiction_terms") or []
     domains = decomp.get("domains") or []
     multi_domain = len(domains) >= 3
 
-    # FULL: an explicit decompose `pipeline_tier == "full"` (the SEMANTIC depth
-    # FLOOR — SEMANTIC-TIERING 2026-05-28), Lens-D primaries, dialectics, source
-    # tensions, multi-domain breadth, OR a breadth count that survives the modality
-    # gate. The floor means the router never demotes a query the model judged deep;
-    # a broad-but-shallow EXPLICIT-survey (low contestedness) is still NOT forced
-    # full by item count alone (the B-5 down-route).
+    # FULL: explicit pipeline_tier floor, time_periods, argumentative, contradiction,
+    # multi-domain, or a breadth count that survives the modality gate. UNCHANGED.
     if (_pipeline_tier_floor_full(decomp)
             or time_periods or fmt == "argumentative" or contradiction
             or multi_domain or _breadth_forces_full(decomp)):
         return "full"
 
-    # AGENTIC-FAST: trivial, bounded, single-domain, short.
-    if (n <= R.ROUTER_AGENTIC_MAX_ATOMIC and not contradiction
-            and not time_periods and fmt == "short" and not multi_domain):
-        return "agentic-fast"
-
-    # LIGHT: the middle band — structured coverage, 3-6 atomic items, OR a
-    # low-contested broad-curation survey that the modality gate spared from full.
-    return "light"
+    # FAST: everything else. The former agentic-fast (trivial/bounded) and light
+    # (mid-band structured) bands both run the bounded planner->writer loop; the
+    # split is now an internal shape+effort knob, not a route.
+    return "fast"
 
 
 def route_reason(decomp: dict[str, Any]) -> str:
-    """A one-line, human-readable rationale for the chosen route.
-
-    Used by the router skill to write the `## Route rationale` line and by the
-    `bad route` CLI's JSON `reason` field.
-    """
+    """A one-line, human-readable rationale for the chosen route."""
     route = classify_route(decomp)
     n = _atomic_count(decomp)
     modality = detect_modality(decomp)
     if route == "full":
         triggers = _full_triggers(decomp)
         return "full: " + ("; ".join(triggers) if triggers else "complex query")
-    if route == "agentic-fast":
-        return f"agentic-fast: {n} atomic item(s), short, single-domain, no tension"
-    # LIGHT: call out when an EXPLICIT broad-curation modality spared a high-breadth
-    # query from full (the B-5 gate) so the rationale line is auditable. Only an
-    # explicit modality reaches here with n > ceiling now — a lexically-inferred
-    # survey no longer buys the raised ceiling (SEMANTIC-TIERING 2026-05-28).
+    # FAST: call out when an EXPLICIT broad-curation modality spared a high-breadth
+    # query from full (the B-5 gate) so the rationale line is auditable.
     if _explicit_breadth_modality(decomp) and n > R.ROUTER_LIGHT_MAX_ATOMIC:
-        return (f"light: {n} atomic item(s) but explicit {modality} modality / low "
+        return (f"fast: {n} atomic item(s) but explicit {modality} modality / low "
                 f"contestedness — breadth alone does not force full (B-5)")
-    return f"light: {n} atomic item(s) / structured coverage, no full-tier trigger"
+    return f"fast: {n} atomic item(s), no full-tier trigger"
 
 
 def plan_gate_fires(

@@ -83,7 +83,7 @@ def test_broad_shallow_survey_routes_light_not_full():
         entities=[], response_format="structured",
         contradiction_terms=[], domains=["tech"], modality="survey",
     )
-    assert classify_route(d) == "light"
+    assert classify_route(d) == "fast"
 
 
 def test_broad_shallow_compare_many_items_routes_light():
@@ -92,7 +92,7 @@ def test_broad_shallow_compare_many_items_routes_light():
         response_format="structured", contradiction_terms=[],
         domains=["tech"], modality="compare",
     )
-    assert classify_route(d) == "light"
+    assert classify_route(d) == "fast"
 
 
 # ── DIRECTION 2: contested/deep must STILL route full (no over-correction) ──
@@ -165,5 +165,5 @@ def test_route_reason_mentions_modality_when_down_routed():
         response_format="structured", modality="survey",
     )
     reason = route_reason(d).lower()
-    assert "light" in reason
+    assert "fast" in reason
     assert "survey" in reason or "modality" in reason or "curation" in reason

@@ -19,19 +19,19 @@ def test_constants_match_interfaces():
     assert R.ROUTER_AGENTIC_MAX_ATOMIC == 2 and R.ROUTER_LIGHT_MAX_ATOMIC == 6
 
 
-def test_trivial_single_domain_routes_agentic_fast():
+def test_trivial_single_domain_routes_fast():
     d = _decomp(sub_questions=["what is the capital of France"], response_format="short")
-    assert classify_route(d) == "agentic-fast"
+    assert classify_route(d) == "fast"
 
 
-def test_two_atomic_no_tension_routes_agentic_fast():
+def test_two_atomic_no_tension_routes_fast():
     d = _decomp(sub_questions=["q1", "q2"], response_format="short")
-    assert classify_route(d) == "agentic-fast"
+    assert classify_route(d) == "fast"
 
 
-def test_structured_midsize_routes_light():
+def test_structured_midsize_routes_fast():
     d = _decomp(sub_questions=["q1", "q2", "q3", "q4"], response_format="structured")
-    assert classify_route(d) == "light"
+    assert classify_route(d) == "fast"
 
 
 def test_time_periods_force_full():
@@ -52,16 +52,16 @@ def test_multi_domain_routes_full():
     assert classify_route(d) == "full"
 
 
-def test_short_with_three_atomic_routes_light():
-    # 3 atomic items, short format, single domain → not agentic (>2), not full → light
+def test_short_with_three_atomic_routes_fast():
+    # 3 atomic items, short format, single domain → not full → fast
     d = _decomp(sub_questions=["q1", "q2", "q3"], response_format="short")
-    assert classify_route(d) == "light"
+    assert classify_route(d) == "fast"
 
 
 def test_entities_count_toward_atomic():
-    # 2 sub_questions + 1 entity = 3 atomic → light, not agentic-fast
+    # 2 sub_questions + 1 entity = 3 atomic → fast
     d = _decomp(sub_questions=["q1", "q2"], entities=["X"], response_format="short")
-    assert classify_route(d) == "light"
+    assert classify_route(d) == "fast"
 
 
 def test_route_reason_is_nonempty_string():
