@@ -283,7 +283,7 @@ Context compaction may eat parts of this conversation. If you're unsure what ste
    - Step 5: vault notes with `type: interim` (`$HPR search "" --tag <vault_tag> --type interim -j`)
    - Step 6: `research/temp/tensions.md` (cross-locus + orphan tensions; Step 6.5 merges the former step-7 source-tensions into this single artifact)
    - Step 8: `research/corpus-critic-gaps.json`, `research/temp/corpus-critic-results.md`
-   - Step 10: `research/temp/evidence-digest.md` (built inline in Step 10.0b Part 2, full only — formerly step 9), then `research/temp/draft-{a,b,c}.md` (or `research/notes/final_report_<vault_tag>.md` for light tier single-pass)
+   - Step 10: `research/temp/evidence-digest.md` (built inline in Step 10.0b Part 2, full only — formerly step 9), then `research/temp/draft-{a,b,c}.md` (full only; the `fast` route writes `research/notes/final_report_<vault_tag>.md` directly via the bad-research-fast writer)
    - Step 11: `research/temp/synthesis-plan.md`, `research/temp/synthesis-outline.md`, `research/temp/synthesis-evidence.md`, `research/temp/synthesis-pass1.md`, `research/notes/final_report_<vault_tag>.md`
    - Step 11.5: `research/temp/citation-verify-actions.json` (citation-verifier dispositions; full only)
    - Step 12: `research/critic-findings-{dialectic,depth,width,instruction}.json`
@@ -315,7 +315,7 @@ for f in research/critic-findings-dialectic.json \
 done
 ```
 
-(Light tier skips critics + patcher entirely — the critic-findings and patch-log files won't exist. That's expected; only `polish-log.json` is required for light.)
+(The `fast` route skips the full 4-critic fan-out + patcher entirely — those critic-findings and patch-log files won't exist. That's expected; only `polish-log.json` is required for `fast`.)
 
 Then run lint:
 ```bash
@@ -331,15 +331,15 @@ If any rule returns `error` severity issues, address them before declaring compl
 
 ## Invariants you cannot break (the canonical rules — ALWAYS in force)
 
-1. **PATCH, NEVER REGENERATE after step 11.** Once step 11 produces the synthesized final report (or step 10 for light tier), the only modifications are surgical Edit hunks from step 14 (patcher) and step 15 (polish-auditor). Both subagents are tool-locked to `[Read, Edit]`. If a critic's finding would require rewriting a whole section, it escalates to you as a structural issue — not a rewrite. Keep hunks surgical.
-2. **One final report.** Step 11's synthesizer writes the final report ONCE. No re-synthesizing. (Light tier: step 10 writes it once.)
+1. **PATCH, NEVER REGENERATE after step 11.** Once step 11 produces the synthesized final report (or the bad-research-fast writer on the `fast` route), the only modifications are surgical Edit hunks from step 14 (patcher) and step 15 (polish-auditor). Both subagents are tool-locked to `[Read, Edit]`. If a critic's finding would require rewriting a whole section, it escalates to you as a structural issue — not a rewrite. Keep hunks surgical.
+2. **One final report.** Step 11's synthesizer writes the final report ONCE. No re-synthesizing. (`fast` route: the bad-research-fast writer writes it once.)
 3. **At least one dialectical locus.** Step 4 must surface ≥1 dialectical locus unless skip is justified.
 4. **Every interim note commits to a position.** Step 5 investigators end with `## Committed position`.
 5. **`research/temp/tensions.md` exists when loci count ≥ 1.** Step 6 is mandatory whenever step 4 produced any loci.
 6. **Steps are sequential at the outermost level, parallel within.** You cannot start step N+1 before step N completes. Within a step, parallelism is mandatory when there are multiple subagents.
 7. **Canonical research query is gospel everywhere.** Every subagent gets the verbatim query.
 8. **Hygiene rules apply to the final report only.** Workspace artifacts (scaffold, loci JSONs, interim notes, comparisons.md, patch log) can look however they need to look.
-9. **RESPECT THE TIER GATE — never skip or add a step.** For `full` tier, ALL 13 steps run; for `light`, the prescribed 5 steps run. Don't add steps "for thoroughness"; don't drop steps "for budget." The tier is a binding contract.
+9. **RESPECT THE TIER GATE — never skip or add a step.** For `full`, ALL 13 steps run; for `fast`, the prescribed bounded-loop sequence runs (loop → slim grounding → slim critic → polish → gate). Don't add steps "for thoroughness"; don't drop steps "for budget." The route is a binding contract.
 10. **Step 10 triple-draft ensemble is MANDATORY for `full` tier.** You MUST spawn 3 `bad-research-draft-orchestrator` subagents. Writing `research/notes/final_report_<vault_tag>.md` directly in step 10 (instead of going through the synthesizer in step 11) is a PIPELINE VIOLATION for these tiers.
 11. **Step 11 synthesis is MANDATORY for `full` tier.** The synthesizer subagent (Read+Write tool-locked) writes the final report from the 3 drafts. The orchestrator does NOT write the final report itself for these tiers.
 12. **Subagents read full source text.** Draft sub-orchestrators MUST batch-read every note in their `must_read_note_ids` list before writing. Fetchers MUST chase 3-8 primary sources via citation chains.
