@@ -3,20 +3,21 @@ name: bad-research-fast
 user-invocable: false
 description: >
   The bounded-ReAct fast mode of Bad Research (fast route only) — a
-  step-bounded (max_steps ≤ 10) planner→writer loop that produces a fast, cheap,
-  per-sentence-cited answer, replacing the 16-step pipeline.
+  step-bounded (FAST_MAX_STEPS ≤ 6) shape-aware planner→writer loop that
+  produces a fast, cheap, per-sentence-cited answer, replacing the 16-step
+  pipeline.
 ---
 
-# Fast — bounded ReAct
+# Fast — shape-aware bounded ReAct
 
 **Tier gate:** Runs ONLY for the `fast` route. It does NOT run the
 width-sweep funnel (`bad funnel-gather`) as a fixed step; it does a bounded
 loop that *calls* the funnel / retrieval per iteration. No clarifier, no
 decompose-time fan-out — fast by design.
 
-**Goal:** answer a trivial, bounded, single-domain query in < 3 minutes and
-$1–5 with grounded per-sentence citations. Terminate when the model judges
-coverage complete OR the step cap is hit — whichever comes first.
+**Goal:** answer a bounded query in < 10 minutes and $1–5 with grounded
+per-sentence citations. Terminate via the auditable XSTOP-1 4-clause stop rule
+(below) — whichever clause fires first.
 
 ## Recover state
 
@@ -27,44 +28,126 @@ Read:
 If `route != "fast"`, STOP and return to the entry skill — you were
 invoked by mistake.
 
-## The loop (planner → writer split)
+## The loop (shape-aware, planner → writer split)
 
-You are the **planner** (system A). Run a ReAct loop, persisting an auditable
-`(thought, action, observation)` trace to `research/temp/react-trace.md`:
+Read `query_shape` from `research/prompt-decomposition.json` and the one-paragraph
+`scope_brief` (your framing). Then run by shape:
+
+- **straightforward** → ONE bounded ReAct loop, ≤3 steps.
+- **depth_first** → ONE bounded ReAct loop, up to `FAST_MAX_STEPS` (6) steps,
+  reflect-then-narrow (each step deepens the prior).
+- **breadth_first** → spawn K = min(n_independent_subq, `FAST_SUBRESEARCHER_K` = 3)
+  parallel `bad-research-fetcher` sub-researchers, ONE per sub-question, each a
+  bounded fetch loop (`FETCHER_TOOLCALL_CAP["light"]`, `FETCHER_TIMEOUT_S`). You are
+  the LEADER and the ONLY writer (sub-researchers return claims+sources, never prose).
+  Use the seven-piece subagent spawn contract from the entry skill. Gather all waves
+  (per-wave deadline = `FETCHER_TIMEOUT_S`) before writing.
+
+You are the **planner** (system A). Maintain, across the whole run, a per-sub-question
+coverage **checklist** (each sub-question → the set of distinct supporting domains seen
+so far) plus cumulative `seen_domains` / `seen_urls` sets. A sub-question is GREEN once
+it has `FAST_MIN_SOURCES_PER_SUBQ` (3) distinct domains.
+
+The single-loop body (straightforward/depth), persisting `(thought, action, observation)`
+to `research/temp/react-trace.md`:
 
 ```
-step = 0; calls = 0; deadline = now + 300s     # AGENTIC_FAST_TIMEOUT_S
-while step < 10 and now < deadline:             # AGENTIC_FAST_MAX_STEPS
+step=0; stalled=0; deadline=now+600                      # FAST_TIMEOUT_S (wall-clock safety net)
+next_queries = sub_questions[:FAST_MAX_QUERIES_PER_STEP]  # step-0 queries = the sub-questions
+while step < 6 and next_queries and now < deadline:      # (1) hard cap = FAST_MAX_STEPS
     step += 1
-    THINK: write one paragraph to react-trace.md — what's still unknown, what to fetch.
-    if you judge coverage complete: break        # model-judged stop
-    ACT (one step = a LIST of queries, fanned out, NOT one search):
-        bad funnel-gather "<query>" --mode light --vault-tag <tag> \
-            --max-queries 6 --read-top-k 12 --json
-      # the funnel fans out, dedups, ranks, reads (Tier 0→3), filters, chunks,
-      # stores in vault, and returns top_chunks — you read ONLY top_chunks.
-      calls += 1
-    OBSERVE: read the returned top_chunks; rerank against the ORIGINAL query:
-        bad retrieve "<original verbatim query>" --mode light --top-k 12 --json
-      calls += 1
-    append the (thought, action, observation) to react-trace.md
-    if calls >= 15: break                        # AGENTIC_FAST_MAX_CALLS guard
+    before = (len(seen_domains), len(seen_urls))
+    ACT: fan out <=4 queries (FAST_MAX_QUERIES_PER_STEP), <=5 results each (FAST_MAX_RESULTS_PER_QUERY):
+        bad funnel-gather "<q>" --mode light --vault-tag <tag> --max-queries 4 --read-top-k 12 --json
+        for each NEW url: seen_domains.add(domain); add that domain to the checklist entry of the sub-q this query served
+    OBSERVE: bad retrieve "<original verbatim query>" --mode light --top-k 12 --json
+    new_domains, new_urls = deltas vs `before`           # loop counters, ZERO model calls
+    if all sub-qs have >= FAST_MIN_SOURCES_PER_SUBQ (3) distinct domains: break          # (2) coverage complete
+    if new_domains < FAST_MIN_NEW_DOMAINS (2) and new_urls < FAST_MIN_NEW_DOMAINS:
+        stalled += 1
+        if stalled >= FAST_STALL_PATIENCE (1): break                                     # (3) diminishing returns
+    else: stalled = 0
+    decision = REFLECT(...)                               # the reflect/stop JSON below (one model call)
+    if decision.research_complete or decision.coverage_complete or decision.can_answer_confidently: break   # (4) model-declared
+    next_queries = decision.next_queries[:FAST_MAX_QUERIES_PER_STEP]   # target WEAKEST sub-qs; never repeat/paraphrase a past query
+# reserve FAST_RESERVE_SYNTH_FRAC (25%) of budget for the writer; a partial answer beats no answer
 ```
 
-**Hard guards (safety net):** never exceed 10 steps, 15 tool
-calls, or 300 seconds. These are belt-and-suspenders on top of the
-model-judged stop — a stuck loop must die.
+**Math queries:** use `execute_python` in ACT, never compute in prose. The domain/URL deltas are
+loop counters, not model claims — the stop is auditable even if the model lies about diminishing returns.
 
-**Math queries:** if the question needs computation over retrieved numbers,
-use `execute_python` (Bash → a sandboxed `python -c`) in the ACT phase rather
-than guessing — never compute in prose.
+### Reflect/stop prompt (emit once per step — returns ONE JSON object)
+
+After each retrieval step the planner emits this prompt and acts on the returned JSON
+without a second model call. The harness computes the `new_distinct_domains` /
+`new_distinct_urls` deltas + the coverage checklist BEFORE the prompt is built (zero
+extra model calls) and merely *shows* them — so the stop decision stays auditable from
+the loop's own counters even if the model lies about `diminishing_returns`.
+
+```text
+SYSTEM:
+You are the planner for a fast web-research loop. After each batch of search results you must (a)
+record what you learned, (b) assess coverage against the sub-question checklist, (c) decide whether
+to stop or issue the next batch of queries. Be decisive: this is a SPEED-optimized loop, not an
+exhaustive one. Bias toward stopping. Return ONLY valid JSON, no prose, no markdown fences.
+
+USER:
+Original question: {original_query}
+Today: {today}
+
+Sub-question coverage checklist (each item: sub-question -> distinct supporting domains so far):
+{checklist_json}
+
+New sources retrieved THIS step:
+- new distinct domains this step: {new_domains_this_step}
+- new distinct URLs this step: {new_urls_this_step}
+- cumulative distinct domains: {cumulative_domains}
+
+Newly retrieved content (trimmed to FAST_CONTENT_TRIM_CHARS):
+{step_findings}
+
+Decide, following these HARD LIMITS:
+- STOP if every sub-question already has FAST_MIN_SOURCES_PER_SUBQ+ distinct supporting domains.
+- STOP if this step added fewer than FAST_MIN_NEW_DOMAINS new distinct domains AND fewer than
+  FAST_MIN_NEW_DOMAINS new distinct URLs (the frontier has saturated — more searching will repeat).
+- STOP if you can already answer the original question comprehensively and confidently.
+- Otherwise CONTINUE and propose up to FAST_MAX_QUERIES_PER_STEP NEW search queries that target the
+  WEAKEST (fewest-source) sub-questions. Each query must be unique and not a paraphrase of any past
+  query. Do NOT propose queries for sub-questions that are already green.
+
+Return ONLY this JSON:
+{
+  "learnings": ["<concise, entity- and number-dense fact extracted from the new sources>", ...],
+  "checklist_update": {"<sub-question>": <count of distinct domains now supporting it>, ...},
+  "coverage_complete": <true|false>,
+  "diminishing_returns": <true|false>,
+  "can_answer_confidently": <true|false>,
+  "research_complete": <true|false>,        // true => stop now (the keyless ResearchComplete signal)
+  "next_queries": ["<query>", ...]          // [] if research_complete is true
+}
+```
+
+The loop treats `research_complete == true` OR `coverage_complete == true` OR
+`diminishing_returns == true` (for `FAST_STALL_PATIENCE` steps) OR the structural cap as the
+stop trigger.
 
 ## Write (the writer split — system B)
 
-When the loop ends, you become the **writer**. The writer sees the RANKED
-top-chunks (the evidence), NOT the planner's raw reasoning trace. Write the
-answer in ONE pass:
-- Direct answer first; 500–2000 words (short response_format).
+When the loop ends, you become the **writer**. Three boundary lifts the R5 deltas confirmed:
+
+1. **Writer context boundary (Perplexity §R5.2):** the writer receives ONLY
+   `(original_query, dedup'd evidence, prior learnings)` — never the planner's raw
+   `react-trace.md`. Once the writer starts, the loop does NOT fan out again
+   (Grok terminal-synthesis seam, `GROK_HEAVY.md:598`).
+2. **Word governor (Claude copyright cap; OpenAI `[wordlim 200]`):** ≤25 words verbatim
+   from any single source, ≤1 quote per source.
+3. **Partial-answer-better-than-none (Perplexity §R5.4):** if the loop stopped early
+   (cap / stall), still write the best grounded answer from what was gathered — flag the
+   thin sub-questions rather than refusing.
+
+Write the answer in ONE pass:
+- Direct answer first; length scales with shape — 500–2000 words (straightforward/depth);
+  longer for `breadth_first` runs (one section per sub-question), tables not bullet lists.
 - Per-sentence single-index `[N]` citations: each index in its own bracket
   (`[1][2]`, never `[1,2]`), ≤3 per sentence, no space before the bracket.
 - No `## References` section in the prose — the `[N]` resolves to the vault
