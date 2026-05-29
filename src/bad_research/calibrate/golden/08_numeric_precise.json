@@ -15,7 +15,7 @@
   "components": {
     "decompose": {
       "decomp": {"sub_questions": ["speed of light in vacuum?", "how is the metre defined?"], "entities": ["speed of light", "metre"], "time_periods": [], "response_format": "short", "contradiction_terms": [], "domains": ["physics"]},
-      "expected_route": "light"
+      "expected_route": "fast"
     },
     "retrieval": {"expect_note_ids": ["1", "2"]}
   }

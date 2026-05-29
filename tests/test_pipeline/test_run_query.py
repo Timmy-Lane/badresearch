@@ -26,7 +26,7 @@ def test_simple_cost_meter_records_and_totals():
 
 def test_run_query_returns_report_and_corpus(monkeypatch):
     # Stub the stage seams so no network/LLM/vault is touched.
-    monkeypatch.setattr(P, "_route", lambda q, cfg, cm: "agentic-fast")
+    monkeypatch.setattr(P, "_route", lambda q, cfg, cm: "fast")
     monkeypatch.setattr(
         P, "_gather", lambda q, mode, cfg, cm: [{"note_id": "n1", "text": "evidence one"}]
     )
@@ -42,7 +42,7 @@ def test_run_query_returns_report_and_corpus(monkeypatch):
     assert isinstance(res, RunResult)
     assert res.report == "The answer is X [1]."
     assert isinstance(res.corpus, list) and res.corpus[0]["note_id"] == "n1"
-    assert res.route == "agentic-fast"
+    assert res.route == "fast"
 
 
 def test_run_query_populates_cost_meter_at_stage_boundaries(monkeypatch):
@@ -69,7 +69,7 @@ def test_run_query_populates_cost_meter_at_stage_boundaries(monkeypatch):
 
 def test_run_query_default_cost_meter(monkeypatch):
     # run_query mints a SimpleCostMeter when None is passed.
-    monkeypatch.setattr(P, "_route", lambda q, cfg, cm: "agentic-fast")
+    monkeypatch.setattr(P, "_route", lambda q, cfg, cm: "fast")
     monkeypatch.setattr(P, "_gather", lambda q, mode, cfg, cm: [])
     monkeypatch.setattr(P, "_retrieve", lambda q, mode, cfg, cm: [])
     monkeypatch.setattr(P, "_synthesize", lambda q, chunks, route, cfg, cm: "x")
