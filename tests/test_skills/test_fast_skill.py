@@ -24,3 +24,10 @@ def test_fast_has_auditable_stop_rule(skills_dir):
     assert "distinct domain" in body.lower()        # the new-domains novelty proxy
     assert "FAST_MIN_NEW_DOMAINS" in body and "FAST_MIN_SOURCES_PER_SUBQ" in body
     assert "checklist" in body.lower()              # per-sub-question coverage
+
+
+def test_fast_runs_slim_citation_grounding_before_gate(skills_dir):
+    body = (skills_dir / "bad-research-fast.md").read_text()
+    # slim backward-grounding sits between the writer and the step-16 uncited gate
+    assert "verify-citations" in body
+    assert "uncited" in body.lower()

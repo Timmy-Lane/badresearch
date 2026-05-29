@@ -156,14 +156,21 @@ Write the answer in ONE pass:
 
 ## Exit criterion
 
-- `research/notes/final_report_<vault_tag>.md` exists, in the short range
+- `research/notes/final_report_<vault_tag>.md` exists, length-appropriate for the shape
 - `research/temp/react-trace.md` has the full (thought, action, observation) trace
-- Every non-trivial sentence carries a `[N]` resolving to a vault note
+- Every non-trivial sentence carries a `[N]` resolving to a vault note (the slim
+  citation-grounding pass + the step-16.6 `bad uncited-gate` enforce this)
 
 ## Next step
 
-Return to the entry skill (`bad-research`). Fast runs the light-tier
-slim single critic before polish (E3 — one adversarial dialectic+instruction
-pass, findings applied inline; no fan-out, no patcher): invoke
-`Skill(skill: "bad-research-12-critics")` (its **Light-tier slim critic** section),
-THEN `Skill(skill: "bad-research-15-polish")`, then the step-16 gate.
+Return to the entry skill (`bad-research`). After the writer, sequence:
+
+1. **Slim citation grounding** — invoke `Skill(skill: "bad-research-11.5-citation-verifier")`
+   (its **Slim mode (fast route)** section): backward-ground the cited sentences with
+   `bad verify-citations`, applying ACCEPT/TIGHTEN/FLAG/DROP-CITE dispositions INLINE (Read+Edit,
+   no patcher). This sits upstream of the step-16.6 `bad uncited-gate` ship-block.
+2. **Slim single critic** — `Skill(skill: "bad-research-12-critics")` (its **Light-tier slim
+   critic** section): one adversarial dialectic+instruction pass, findings applied inline; no
+   fan-out, no patcher.
+3. **Polish** — `Skill(skill: "bad-research-15-polish")`.
+4. Then the step-16 gate (`bad uncited-gate`).
