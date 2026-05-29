@@ -1262,8 +1262,8 @@ Limit total output to sub-assumptions of the top-5 claims only (cost ceiling).
 
 
 # ---------------------------------------------------------------------------
-# E3 — SLIM light-tier critic. The light + agentic-fast routes skip the
-# full-tier 4-critic fan-out (and the patcher loop) and go straight to polish,
+# E3 — SLIM light-tier critic. The fast route skips the
+# full-tier 4-critic fan-out (and the patcher loop) and goes straight to polish,
 # so they get NO adversarial pass today. This single critic gives them ONE
 # adversarial review before polish: it merges the dialectic angle (ignored /
 # straw-manned counter-evidence) and the instruction angle (atomic items the
@@ -1276,8 +1276,8 @@ LIGHT_CRITIC_AGENT = """\
 ---
 name: bad-research-light-critic
 description: >
-  Use this agent on the light / agentic-fast routes of the bad-research pipeline —
-  the routes that skip the full-tier 4-critic fan-out. It is ONE slim adversarial
+  Use this agent on the fast route of the bad-research pipeline —
+  the route that skips the full-tier 4-critic fan-out. It is ONE slim adversarial
   critic over the final report, merging the dialectic angle (ignored or straw-manned
   counter-evidence) and the instruction angle (atomic items the prompt named that the
   draft missed, under-covered, reordered, or reformatted). Runs on Sonnet (cheaper than
@@ -1287,17 +1287,17 @@ tools: Bash, Read, Write
 color: red
 ---
 
-You are the LIGHT critic — the single adversarial pass on the light / agentic-fast
-routes. The full pipeline runs four separate Opus critics (dialectic, depth, width,
-instruction); the cheap routes can't afford that, so YOU cover the two highest-leverage
+You are the LIGHT critic — the single adversarial pass on the fast
+route. The full pipeline runs four separate Opus critics (dialectic, depth, width,
+instruction); the cheap route can't afford that, so YOU cover the two highest-leverage
 angles in one pass. You do NOT rewrite the draft. You emit a findings list. There is no
 patcher on the light path: the orchestrator applies your CRITICAL findings inline (one
 surgical pass) or surfaces them.
 
 ## Pipeline position
 
-You run as the light-tier step 12, AFTER the draft (light step 10 single-draft, or the
-agentic-fast ReAct loop) and BEFORE polish (step 15). The full-tier 4-critic fan-out and
+You run as the light-tier step 12, AFTER the draft (the fast
+ReAct loop) and BEFORE polish (step 15). The full-tier 4-critic fan-out and
 the patcher loop are NOT in your path — you are the entire adversarial layer for these
 routes. Everything before you is on disk: the vault (search it for counter-evidence) and
 the draft at `research/notes/final_report_<vault_tag>.md`.
@@ -3523,7 +3523,7 @@ def _install_light_critic_agent(vault_root: Path, hpr_path: str) -> str | None:
         vault_root,
         "bad-research-light-critic.md",
         content,
-        "sonnet light critic (slim dialectic+instruction, light/agentic-fast)",
+        "sonnet light critic (slim dialectic+instruction, fast)",
     )
 
 
@@ -3747,7 +3747,7 @@ _BAD_RESEARCH_STEP_SKILLS = [
     "bad-research-fresh-review",
     "bad-research-15-polish",
     "bad-research-16-readability-audit",
-    "bad-research-agentic-fast",
+    "bad-research-fast",
 ]
 
 

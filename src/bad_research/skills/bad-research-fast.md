@@ -1,15 +1,15 @@
 ---
-name: bad-research-agentic-fast
+name: bad-research-fast
 user-invocable: false
 description: >
-  The bounded-ReAct fast mode of Bad Research (agentic-fast route only) — a
+  The bounded-ReAct fast mode of Bad Research (fast route only) — a
   step-bounded (max_steps ≤ 10) planner→writer loop that produces a fast, cheap,
   per-sentence-cited answer, replacing the 16-step pipeline.
 ---
 
-# Agentic-fast — bounded ReAct
+# Fast — bounded ReAct
 
-**Tier gate:** Runs ONLY for the `agentic-fast` route. It does NOT run the
+**Tier gate:** Runs ONLY for the `fast` route. It does NOT run the
 width-sweep funnel (`bad funnel-gather`) as a fixed step; it does a bounded
 loop that *calls* the funnel / retrieval per iteration. No clarifier, no
 decompose-time fan-out — fast by design.
@@ -22,9 +22,9 @@ coverage complete OR the step cap is hit — whichever comes first.
 
 Read:
 - `research/query-<vault_tag>.md` — canonical query (GOSPEL)
-- `research/prompt-decomposition.json` — confirm `route == "agentic-fast"`
+- `research/prompt-decomposition.json` — confirm `route == "fast"`
 
-If `route != "agentic-fast"`, STOP and return to the entry skill — you were
+If `route != "fast"`, STOP and return to the entry skill — you were
 invoked by mistake.
 
 ## The loop (planner → writer split)
@@ -79,7 +79,7 @@ answer in ONE pass:
 
 ## Next step
 
-Return to the entry skill (`bad-research`). Agentic-fast runs the light-tier
+Return to the entry skill (`bad-research`). Fast runs the light-tier
 slim single critic before polish (E3 — one adversarial dialectic+instruction
 pass, findings applied inline; no fan-out, no patcher): invoke
 `Skill(skill: "bad-research-12-critics")` (its **Light-tier slim critic** section),

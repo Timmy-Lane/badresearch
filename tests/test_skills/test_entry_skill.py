@@ -13,7 +13,7 @@ def test_entry_skill_has_three_route_sequences(skills_dir):
         assert route in body
     assert "bad-research-0.5-clarify" in body
     assert "bad-research-query-router" in body
-    assert "bad-research-agentic-fast" in body
+    assert "bad-research-fast" in body
     assert "bad-research-11.5-citation-verifier" in body
     assert "bad-research-fresh-review" in body
     # lazy step-skill install on first invocation
