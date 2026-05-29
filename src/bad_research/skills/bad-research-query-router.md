@@ -3,7 +3,7 @@ name: bad-research-query-router
 user-invocable: false
 description: >
   Step 1.5 of the Bad Research pipeline — classifies the decomposition into a
-  route (agentic-fast / light / full) and writes it to
+  route (fast / full) and writes it to
   research/prompt-decomposition.json.
 ---
 
@@ -13,10 +13,10 @@ description: >
 never down-routes a query that step 1 marked `full` for a stated reason —
 contested topics, time_periods, and argumentative formats always route `full`.
 
-**Goal:** route trivial/single-domain queries to the cheap bounded ReAct
-fast-mode (Reason+Act loop, step-capped), mid-size structured queries to
-`light`, and complex/contested queries to the full 16-step pipeline. The signal
-is Bad Research's OWN Step-1 decomposition — no new classifier.
+**Goal:** route trivial/bounded/mid-size structured queries to the cheap bounded
+ReAct `fast` mode (Reason+Act loop, step-capped) and complex/contested queries to
+the full 16-step pipeline. The signal is Bad Research's OWN Step-1 decomposition —
+no new classifier.
 
 **`pipeline_tier` vs `route`:** step 1 set `pipeline_tier` as an initial tier
 *signal*; this step makes the authoritative routing decision and writes it to
@@ -37,30 +37,29 @@ Read:
    bad route --decomposition research/prompt-decomposition.json --json
    ```
    It applies this fixed decision tree (mirrors `router.py::classify_route`):
-   - **agentic-fast** if atomic_items ≤ 2 AND no contradiction terms AND no
-     time_periods AND response_format == "short" AND single domain
-   - **light** elif response_format == "structured" OR atomic_items 3–6
-   - **full** else (multi-domain, contested, argumentative, time_periods, ≥7 items)
+   - **fast** if NOT a full-tier trigger (no contradiction terms, no time_periods,
+     not argumentative, not multi-domain, breadth survives the modality gate)
+   - **full** else
 
    The command prints
-   `{"route": "agentic-fast"|"light"|"full", "reason": "...", "query_shape": "straightforward"|"breadth_first"|"depth_first", "shape_reason": "...", "applied": false}`.
+   `{"route": "fast"|"full", "reason": "...", "query_shape": "straightforward"|"breadth_first"|"depth_first", "shape_reason": "...", "applied": false}`.
 
    **`query_shape` is ORTHOGONAL to the route** (E12, Claude Research
    `research_lead_agent.md:12-29`). The route is the cost tier — *how many*
-   resources (agentic-fast/light/full). The shape is the fan-out arrangement —
+   resources (fast/full). The shape is the fan-out arrangement —
    *how they're arranged*: `depth_first` (one topic, multiple perspectives →
    investigators run **sequentially**, each reading the prior's committed
    position), `breadth_first` (independent sub-questions → investigators run **in
    parallel**, importance-ordered, `K = min(n_subq, cap)`), `straightforward` (a
    **single** investigator). The `query_shape` field is NEW and ADDS the fan-out
    shape; it **does not change the route** decision — `classify_route`'s
-   agentic-fast/light/full output is identical with or without it. A `full` route
+   fast/full output is identical with or without it. A `full` route
    can carry any of the three shapes; steps 4–5 branch their fan-out on the shape.
 
 2. **Honor the existing tier.** If step 1 set `pipeline_tier: "full"` for a
    stated reason (time_periods present, argumentative, contested), the router
-   MUST NOT down-route below `full`. The router can only refine `light` ↔
-   `agentic-fast` and up-route to `full`; never silently demote a `full`.
+   MUST NOT down-route below `full`. The router can only choose `fast`
+   or up-route to `full`; never silently demote a `full`.
 
 3. Write the chosen route back into the decomposition:
    ```bash
@@ -75,7 +74,7 @@ Read:
 
 ## Exit criterion
 
-- `research/prompt-decomposition.json` has a `"route"` field ∈ {agentic-fast, light, full}
+- `research/prompt-decomposition.json` has a `"route"` field ∈ {fast, full}
 - `research/prompt-decomposition.json` has a `"query_shape"` field ∈ {straightforward, breadth_first, depth_first}
 - A route never demotes a justified `full`
 - The `query_shape` write never changed the `route` (orthogonal — shape ADDS, route is unchanged)
@@ -84,6 +83,5 @@ Read:
 ## Next step
 
 Return to the entry skill (`bad-research`). Sequence by route:
-- **agentic-fast** → `Skill(skill: "bad-research-agentic-fast")` (then straight to step 15 polish)
-- **light** → `Skill(skill: "bad-research-2-width-sweep")` (light path)
+- **fast** → `Skill(skill: "bad-research-fast")` (then the slim citation-grounding pass + slim critic before step 15 polish)
 - **full** → `Skill(skill: "bad-research-2-width-sweep")` (full path)

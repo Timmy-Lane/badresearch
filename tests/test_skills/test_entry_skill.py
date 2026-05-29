@@ -7,9 +7,9 @@ def test_entry_skill_valid(skills_dir, known_skills):
     assert validate_skill(p, known_skills) == []
 
 
-def test_entry_skill_has_three_route_sequences(skills_dir):
+def test_entry_skill_has_two_route_sequences(skills_dir):
     body = (skills_dir / "bad-research.md").read_text()
-    for route in ("agentic-fast", "light", "full"):
+    for route in ("fast", "full"):
         assert route in body
     assert "bad-research-0.5-clarify" in body
     assert "bad-research-query-router" in body
