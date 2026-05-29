@@ -113,7 +113,7 @@ def char_span_to_line_range(
         # Use inclusive overlap: the span touches this line if cs < char_end and ce > char_start.
         # Treat char_end == char_start (empty span) as touching the line that contains char_start.
         span_end = char_end if char_end > char_start else char_start + 1
-        if cs < span_end and ce > char_start or (cs <= char_start < ce):
+        if (cs < span_end and ce > char_start) or (cs <= char_start < ce):
             line_no = i + 1  # 1-based
             if line_start is None:
                 line_start = line_no
