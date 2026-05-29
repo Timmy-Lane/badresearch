@@ -423,10 +423,11 @@ Expected: a list of remaining hits (plan-gate test, light-critic test, the slim-
 
 - [ ] **Step 3: Update residual skill docs.** In the step skills' "Tier gate" lines, replace "light / agentic-fast" with "fast" wherever the slim-critic / skip-on-shallow behavior is described (`bad-research-12-critics.md`, `bad-research-12.5-grader.md`, `bad-research-11.5-citation-verifier.md` tier-gate, `bad-research-fresh-review.md`, `bad-research-0.5-clarify.md:16`, `bad-research-16-readability-audit.md:150`, `bad-research-1-decompose.md:127`). These are prose; no test asserts the old strings except those already swept.
 
-- [ ] **Step 4: Run the FULL suite with coverage + lint + types.**
+- [ ] **Step 4: Run the FULL suite + lint + types.**
 
-Run: `uv run pytest -q && uv run ruff check src tests && uv run mypy src`
-Expected: all green, coverage ≥ 80%. Fix any straggler `grep` hit that fails.
+Run: `uv run pytest -q` — **the full pytest suite MUST be green, coverage ≥ 80%.** This is the real ship gate; once every residual route-string assertion is swept the suite goes green. Known stragglers to sweep (besides this task's named files): `tests/test_skills/test_plan_gate.py` (:125 `agentic-fast`, :133 `light`), `tests/test_skills/test_light_critic.py` (:61/:89 old skill filename), and **three install tests carrying the old skill name** — `tests/test_install/test_step_list.py:8`, `tests/test_install/test_install_cli_e2e.py:34`, `tests/test_install/test_install_project.py:10`. Also triage every other `grep` hit (route-string → `fast`; funnel-`mode`/`pipeline_tier`/`tier` value → LEAVE).
+
+Then `uv run ruff check src tests` and `uv run mypy src` — these MUST introduce **NO NEW errors vs the `ee692ce` baseline**. The repo carries pre-existing failures that are NOT ours to fix: ~17 ruff errors in `tests/test_web/*` (unused imports) and ~142 mypy errors across ~31 files. Verify "no new" by comparing the HEAD error set to `ee692ce` (line-number shifts of an identical message do not count as new). Do **not** attempt to zero out the pre-existing baseline.
 
 - [ ] **Step 5: Commit (Stage 1 complete — working 2-mode router).**
 
@@ -766,7 +767,7 @@ git commit -m "feat(skills): slim citation-grounding pass on the fast route"
 
 ## Final verification (after Task 11)
 
-- [ ] **Whole suite + lint + types green:** `uv run pytest -q && uv run ruff check src tests && uv run mypy src` — all pass, coverage ≥ 80%.
+- [ ] **Whole pytest suite green:** `uv run pytest -q` — all pass, coverage ≥ 80%. `uv run ruff check src tests` + `uv run mypy src` introduce **no NEW errors** vs `ee692ce` (pre-existing baseline ≈17 ruff in `tests/test_web/*` + ≈142 mypy — not ours to fix).
 - [ ] **No residual old route strings:** `grep -rn "agentic-fast\|agentic_fast\|AGENTIC_FAST" src tests` returns nothing (skill prose + Python both swept).
 - [ ] **Route literals consistent:** `grep -rn 'Literal\["fast"' src/bad_research` shows both `router.py` and `pipeline.py`.
 - [ ] **CLI smoke:** `uv run bad route --help` lists `--fast` / `--full`; a multi-domain decomposition with `--fast` returns `{"route": "fast"}`.
