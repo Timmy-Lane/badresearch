@@ -28,6 +28,10 @@ def route_cmd(
     auto: bool = typer.Option(False, "--auto"),
     fast: bool = typer.Option(False, "--fast", help="Force the fast route (override auto)."),
     full: bool = typer.Option(False, "--full", help="Force the full route (override auto)."),
+    ultrafast: bool = typer.Option(
+        False, "--ultrafast",
+        help="Force the ultrafast route (commercial-DR middle tier; override auto).",
+    ),
     json_output: bool = typer.Option(False, "--json", "-j"),
 ) -> None:
     """Classify a Step-1 decomposition into a pipeline route (fast|full).
@@ -54,12 +58,16 @@ def route_cmd(
     path = Path(decomposition)
     decomp = json.loads(path.read_text(encoding="utf-8"))
     route = classify_route(decomp)
-    if fast and full:
-        raise typer.BadParameter("--fast and --full are mutually exclusive")
+    if sum([fast, full, ultrafast]) > 1:
+        raise typer.BadParameter("--fast, --full, and --ultrafast are mutually exclusive")
     if fast:
-        route = "fast"
+        route, reason = "fast", "fast: forced by --fast override"
     elif full:
-        route = "full"
+        route, reason = "full", "full: forced by --full override"
+    elif ultrafast:
+        route, reason = "ultrafast", "ultrafast: forced by --ultrafast override (commercial-DR middle tier)"
+    else:
+        reason = route_reason(decomp)
     shape = classify_query_shape(decomp)
     would_gate = plan_gate_fires(
         decomp, interactive=interactive, wrapped=wrapped, auto=auto
@@ -70,7 +78,7 @@ def route_cmd(
         path.write_text(json.dumps(decomp, indent=2), encoding="utf-8")
     out = {
         "route": route,
-        "reason": route_reason(decomp),
+        "reason": reason,
         "query_shape": shape,
         "shape_reason": shape_reason(decomp),
         "applied": apply,
