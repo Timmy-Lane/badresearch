@@ -76,6 +76,13 @@ async def fan_out(queries: list[Any], providers: list[Any]) -> list[Any]:
     async def _one(provider: Any, q: Any) -> list[Any]:
         try:
             results = await acall(provider.search_ex, q)
+        except NotImplementedError:
+            # A provider that cannot run in THIS context (e.g. the host
+            # WebSearch tool adapter invoked from a CLI subprocess) raises
+            # NotImplementedError. Skip it explicitly so it can never starve the
+            # fan-out — the surviving keyless providers carry the run. This is the
+            # named contract the standalone/CLI path relies on (SPEC §13 failover).
+            return []
         except Exception:
             return []  # degrade: a dead provider drops out, never aborts the run
         for i, r in enumerate(results):

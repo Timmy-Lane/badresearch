@@ -25,9 +25,20 @@ class VaultStore:
     bookkeeping (the `sources` row). Returns the note_id (the note file stem).
     """
 
-    def __init__(self, vault: Any, *, fetch_tier: int = 1):
+    def __init__(self, vault: Any, *, fetch_tier: int = 1, tags: list[str] | None = None):
         self._vault = vault
         self._fetch_tier = fetch_tier
+        # Run-scoped tags (the funnel's vault_tag) applied to EVERY stored note so
+        # `bad search --tag <vault_tag>` and the corpus survey can find the run's
+        # corpus. Without this the funnel stored untagged notes that no
+        # tag-filtered survey could see.
+        self._tags = [t for t in (tags or []) if t]
+        # Note ids stored this run, in store order. The standalone CLI funnel
+        # reports THIS as "sources gathered" — the corpus on disk is the
+        # load-bearing output, independent of the Stage-F rerank (whose
+        # host-model reranker cannot score inside a CLI subprocess and would
+        # otherwise make the run look empty).
+        self.stored_note_ids: list[str] = []
 
     def store_note(self, *, title: str, body: str, url: str, provider: str) -> str:
         from bad_research.core.note import write_note
@@ -36,6 +47,7 @@ class VaultStore:
             self._vault.notes_dir,
             title=title or url,
             body=body,
+            tags=list(self._tags),
             status="draft",
             source=url,
             extra_frontmatter={
@@ -45,6 +57,7 @@ class VaultStore:
             },
         )
         note_id = note_path.stem
+        self.stored_note_ids.append(note_id)
 
         # Best-effort: record the sources row so authority/recency survive. The
         # funnel never fails on a bookkeeping miss — markdown is the truth.

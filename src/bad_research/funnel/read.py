@@ -82,7 +82,15 @@ async def read_top_k(
 
     async def _fetch(url: str) -> Any:
         async with sem:
-            return await acall(fetcher.fetch_tiered, url, tier_max=1)
+            try:
+                return await acall(fetcher.fetch_tiered, url, tier_max=1)
+            except Exception:
+                # A single page's fetch failure (403/paywall/timeout/parse error)
+                # must NEVER abort the whole read wave — asyncio.gather would
+                # propagate the first exception and zero the run. Degrade to
+                # "skip this URL"; the survivors carry the funnel (the same
+                # failover contract fan_out applies per-provider, SPEC §13).
+                return None
 
     async def _try_read(url: str) -> Any:
         nonlocal reads_done
