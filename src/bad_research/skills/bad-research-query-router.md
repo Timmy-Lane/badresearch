@@ -68,13 +68,19 @@ Read:
    This adds the top-level `"route"` field AND the `"query_shape"` field to
    `research/prompt-decomposition.json` (both written in the one `--apply` call).
 
+   **Ultrafast override:** if the run was launched with `--ultrafast` (or the user
+   explicitly asked for "ultrafast mode"), run instead
+   `bad route --decomposition research/prompt-decomposition.json --apply --ultrafast --json`,
+   which forces `route="ultrafast"`. `--ultrafast` is mutually exclusive with
+   `--fast`/`--full`.
+
 4. Record a one-line rationale (the CLI's `reason` field) in `research/scaffold.md`
    under a `## Route rationale` subsection. Add the CLI's `shape_reason` on the
    next line as the `query_shape` rationale (which fan-out arrangement and why).
 
 ## Exit criterion
 
-- `research/prompt-decomposition.json` has a `"route"` field ∈ {fast, full}
+- `research/prompt-decomposition.json` has a `"route"` field ∈ {fast, full, ultrafast}
 - `research/prompt-decomposition.json` has a `"query_shape"` field ∈ {straightforward, breadth_first, depth_first}
 - A route never demotes a justified `full`
 - The `query_shape` write never changed the `route` (orthogonal — shape ADDS, route is unchanged)
@@ -84,4 +90,5 @@ Read:
 
 Return to the entry skill (`bad-research`). Sequence by route:
 - **fast** → `Skill(skill: "bad-research-fast")` (then the slim citation-grounding pass + slim critic before step 15 polish)
+- **ultrafast** → `Skill(skill: "bad-research-ultrafast")` (commercial-DR middle tier — plan → K parallel researchers → leader synthesis; then the same slim citation-grounding + slim critic tail as fast)
 - **full** → `Skill(skill: "bad-research-2-width-sweep")` (full path)

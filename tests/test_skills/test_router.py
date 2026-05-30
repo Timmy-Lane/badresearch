@@ -71,3 +71,15 @@ def test_route_reason_is_nonempty_string():
 def test_route_reason_mentions_full_trigger():
     d = _decomp(time_periods=[{"period": "Q3 2024"}])
     assert "time_period" in route_reason(d).lower() or "full" in route_reason(d).lower()
+
+
+def test_classify_route_never_auto_emits_ultrafast():
+    # ultrafast is an explicit-only override (--ultrafast / "ultrafast mode"); the
+    # auto-classifier only ever returns fast/full, so the golden corpus is unaffected.
+    cases = [
+        _decomp(sub_questions=["what is the capital of France"], response_format="short"),
+        _decomp(sub_questions=["q1", "q2", "q3"], domains=["a", "b", "c"],
+                response_format="argumentative", contradiction_terms=["x"]),
+    ]
+    for d in cases:
+        assert classify_route(d) in ("fast", "full")

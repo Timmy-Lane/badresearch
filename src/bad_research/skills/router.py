@@ -31,7 +31,7 @@ from typing import Any, Literal
 
 from bad_research.skills import routing_constants as R  # noqa: N812
 
-Route = Literal["fast", "full"]
+Route = Literal["fast", "full", "ultrafast"]
 QueryShape = Literal["straightforward", "breadth_first", "depth_first"]
 
 # The 3-way Claude Research fan-out-shape taxonomy (research_lead_agent.md:12-29).
