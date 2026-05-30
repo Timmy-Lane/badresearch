@@ -23,6 +23,18 @@ FAST_TIMEOUT_S            = 600    # wall-clock safety net (belt-and-suspenders 
 # Breadth-shape parallel sub-researcher fan-out cap for the fast loop.
 FAST_SUBRESEARCHER_K = 3
 
+# ---- Ultrafast-route constants (keyless commercial-DR middle tier) ----
+# Sits between FAST_* and the full-tier caps: plan -> K parallel researchers ->
+# leader-only sectioned synthesis. Parallel fetchers => wall-clock ~= one wave
+# (~5-6 min) + synthesis/grounding (~4-6 min) = the 5-15 min target. Tunable;
+# no control flow depends on the exact values (the skill prose reads them).
+ULTRAFAST_MAX_SUBQUESTIONS     = 8     # report sections / parallel researcher streams (fast=3)
+ULTRAFAST_SUBRESEARCHER_K      = 6     # parallel bad-research-fetcher cap (fast FAST_SUBRESEARCHER_K=3)
+ULTRAFAST_MIN_SOURCES_PER_SUBQ = 4     # distinct domains to mark a sub-question green (fast=3)
+ULTRAFAST_FETCHER_TIMEOUT_S    = 360   # per-researcher soft deadline (FETCHER_TIMEOUT_S default=300)
+ULTRAFAST_RESERVE_SYNTH_FRAC   = 0.30  # budget reserved for the longer synthesis (FAST_RESERVE_SYNTH_FRAC=0.25)
+ULTRAFAST_TIMEOUT_S            = 900    # wall-clock safety net, 15 min (FAST_TIMEOUT_S=600)
+
 # Parallel subagent fan-out (Claude depth-1) — INTERFACES / CLR §CE.5,§CE.10
 SUBAGENT_FANOUT_DEFAULT = 3
 SUBAGENT_FANOUT_MAX = 20
@@ -160,7 +172,7 @@ SHAPE_FANOUT: dict[str, dict[str, object]] = {
 MAX_GRADER_REVISIONS = 3
 
 # Per-subagent runtime caps (Claude CE.5), keyless host guards. dossier 16 §3.2.
-FETCHER_TOOLCALL_CAP = {"light": 10, "full": 20}  # tool calls per fetcher
+FETCHER_TOOLCALL_CAP = {"light": 10, "ultrafast": 15, "full": 20}  # tool calls per fetcher
 FETCHER_TIMEOUT_S = 300       # soft-fail, return partial findings
 INVESTIGATOR_TIMEOUT_S = 900  # depth stage scaled (Grok 200s x cost)
 SUBAGENT_SOURCE_KILL = 100    # hard stop on sources touched (Claude)
