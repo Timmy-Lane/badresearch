@@ -17,8 +17,8 @@ questioned). Note: the `route` (incl. `fast`) is not yet known here —
 it is decided at step 1.5, *after* this clarifier — so 0.5 cannot key off the
 route. On a clean interactive run it always runs first.
 
-**Goal:** spend one cheap triage-tier (Haiku-class) decision to avoid wasting a
-$5–120 run on a misread query. Fire a clarification ONLY on genuine ambiguity;
+**Goal:** spend one cheap triage-tier (Haiku-class) decision to avoid a wasted
+run on a misread query. Fire a clarification ONLY on genuine ambiguity;
 otherwise proceed silently and distill a clean `brief`.
 
 ## Recover state

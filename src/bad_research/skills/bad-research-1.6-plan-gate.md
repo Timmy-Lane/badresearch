@@ -3,36 +3,37 @@ name: bad-research-1.6-plan-gate
 user-invocable: false
 description: >
   Step 1.6 of the Bad Research pipeline — a user-editable plan-gate (Gemini
-  collaborative_planning). On an interactive + expensive run it emits the research
-  plan (numbered sub-questions + per-sub-q source strategy + chosen route + a rough
-  cost/time estimate) and pauses for "approve / edit / proceed"; on edit it patches
-  research/prompt-decomposition.json before step 2. SKIPPED on every non-interactive
-  / `--auto` / wrapped run, so automated runs flow straight through.
+  collaborative_planning). On an interactive + full-route-or-broad-survey run it
+  emits the research plan (numbered sub-questions + per-sub-q source strategy +
+  chosen route + a rough scope summary) and pauses for "approve / edit / proceed";
+  on edit it patches research/prompt-decomposition.json before step 2. SKIPPED on
+  every non-interactive / `--auto` / wrapped run, so automated runs flow straight
+  through.
 ---
 
-# Step 1.6 — Plan-gate (user-editable, interactive expensive runs only)
+# Step 1.6 — Plan-gate (user-editable, interactive full-route-or-broad-survey runs only)
 
 **Tier gate:** Runs AFTER step 1.5 (route) and BEFORE step 2, **only** when the run
-is **interactive** AND **not** `--auto`/wrapped AND **expensive** — i.e. the deterministic
-predicate `router.py::plan_gate_fires` returns true. SKIP entirely (proceed straight to
-step 2) when ANY of these holds:
+is **interactive** AND **not** `--auto`/wrapped AND a **full-route or broad-survey**
+run — i.e. the deterministic predicate `router.py::plan_gate_fires` returns true. SKIP
+entirely (proceed straight to step 2) when ANY of these holds:
 
 - the run is **non-interactive** (a `-p` / automated / eval-gate / test run — the
   default; no human is present to approve),
 - `research/wrapper_contract.json` exists (a **wrapped** run — the query is binding
   GOSPEL, not to be questioned; mirrors exactly how 0.5-clarify skips), or
 - the run is `--auto`, or
-- the run is **cheap** (route `fast` within
-  `ROUTER_LIGHT_MAX_ATOMIC` atomic items and no cost estimate over the threshold).
+- the run is a **small bounded run** (route `fast` within
+  `ROUTER_LIGHT_MAX_ATOMIC` atomic items).
 
 **This gate is a SEPARATE step. It NEVER changes the route.** It does not re-run
 `classify_route`, never edits the `route`/`query_shape` fields, and never blocks an
 automated run. Its only effects are (a) to PAUSE for approval and (b), on edit, to
 patch the sub-question list the downstream steps research.
 
-**Goal:** prevent the dominant failure mode on an ambiguous/expensive query —
-spending a $60–120 full run researching the wrong sub-questions. One cheap human
-confirmation of the plan before the expensive fan-out begins.
+**Goal:** prevent the dominant failure mode on an ambiguous/broad query —
+running a full-route fan-out on the wrong sub-questions. One quick human
+confirmation of the plan before the deep fan-out begins.
 
 ## Recover state
 
@@ -52,7 +53,6 @@ Read:
    bad route --decomposition research/prompt-decomposition.json \
      --interactive            # ONLY when a human is at the keyboard; OMIT on -p/automated runs
      [--wrapped] [--auto]     # pass if wrapper_contract.json exists / --auto is set
-     [--est-cost <USD>]       # the run's rough cost estimate, if known
      --json
    ```
    Read `plan_gate.would_gate` from the JSON.
@@ -60,8 +60,9 @@ Read:
    - `would_gate == true` → continue to step 2 below (show the plan + pause).
 
    `would_gate` is `false` for every non-interactive run (no `--interactive`),
-   every wrapped run, every `--auto` run, and every cheap run — so the eval gate,
-   the test suite, and any `-p` pipeline run pass through here with NO pause.
+   every wrapped run, every `--auto` run, and every small bounded `fast` run — so
+   the eval gate, the test suite, and any `-p` pipeline run pass through here with
+   NO pause.
 
 2. **Emit the plan.** Surface a compact, human-readable plan to the user:
    - **Numbered sub-questions** — the `sub_questions` (+ `entities`) from the
@@ -73,9 +74,14 @@ Read:
    - **Chosen route + shape** — the `route` (fast / full) and
      `query_shape` (straightforward / breadth_first / depth_first) with the
      one-line `reason` / `shape_reason` from the router CLI.
-   - **Rough cost/time estimate** — the per-route band from the entry skill's route
-     table (`light` ≈ $5–15 / ~30–40 min; `full` ≈ $60–120 / ~1.5–2.5 h), adjusted
-     by any `--effort` override.
+   - **Scope note** — one line on the depth of the chosen route (fast = quick,
+     bounded, single-pass; full = deep, contested, adversarially-audited), adjusted
+     by any `--effort` override. Describe SCOPE, not cost or calendar time.
+
+   The plan describes WHAT will be researched and how deep, never a price or a
+   schedule. If you ever sketch effort, assume an agentic-coding world — think
+   hours-to-days, never weeks or months — and omit calendar estimates unless the
+   query explicitly asks.
 
 3. **Pause for: approve / edit / proceed.** Present exactly these three options:
    - **approve / proceed** → continue to step 2 unchanged.
@@ -83,7 +89,7 @@ Read:
      reword / reorder), then **patch `research/prompt-decomposition.json`**: rewrite
      the `sub_questions` (and `entities` if the user changed the entity set) to the
      approved list, preserving every other field. **Do NOT touch `route` or
-     `query_shape`** — an edit changes WHAT is researched, not the cost tier. If the
+     `query_shape`** — an edit changes WHAT is researched, not the route/depth. If the
      edited set materially changes breadth, you MAY re-run step 1.5 (`bad route
      --apply`) to re-derive the route from the new sub-questions — but only as an
      explicit re-route, never as a side effect of this gate.
@@ -94,7 +100,7 @@ Read:
 
 4. **Record the disposition** in `research/scaffold.md` under a `## Plan gate`
    subsection: `approved` | `edited` (+ a one-line summary of the edits) | `skipped
-   (non-interactive | wrapped | auto | cheap)`. This is the audit trail.
+   (non-interactive | wrapped | auto | small-bounded)`. This is the audit trail.
 
 ## Exit criterion
 
