@@ -9,9 +9,9 @@ predicate here in `router.py`.
 
 The predicate is a SEPARATE gate step — it MUST NOT influence `classify_route`.
 It fires ONLY when the run is interactive AND not `--auto`/wrapped AND the run is
-expensive (route == full OR atomic_items > ROUTER_LIGHT_MAX_ATOMIC OR est_cost
-over a threshold). A non-interactive / wrapped / `--auto` / test run NEVER gates —
-the eval gate + the whole test suite must flow straight through.
+a full-route or broad-survey run (route == full OR atomic_items >
+ROUTER_LIGHT_MAX_ATOMIC). A non-interactive / wrapped / `--auto` / test run NEVER
+gates — the eval gate + the whole test suite must flow straight through.
 """
 
 from __future__ import annotations
@@ -56,19 +56,6 @@ def test_breadth_over_light_max_interactive_fires():
         modality="survey",
     )
     assert plan_gate_fires(d, interactive=True, wrapped=False, auto=False) is True
-
-
-def test_high_est_cost_interactive_fires():
-    # Even a small-item structured query fires when the explicit cost estimate is
-    # above the threshold (the "expensive" arm of the predicate).
-    d = _decomp(sub_questions=["q1", "q2", "q3"], response_format="structured")
-    assert (
-        plan_gate_fires(
-            d, interactive=True, wrapped=False, auto=False,
-            est_cost=R.PLAN_GATE_COST_THRESHOLD + 1.0,
-        )
-        is True
-    )
 
 
 # ── It does NOT fire: non-interactive / wrapped / --auto / trivial ────────────
@@ -119,16 +106,16 @@ def test_default_kwargs_are_non_interactive_so_it_never_fires():
 
 
 def test_trivial_interactive_query_does_not_fire():
-    # Interactive but cheap (fast route, <= 2 atomic, no cost over threshold) →
-    # no plan gate; the gate is only for expensive runs.
+    # Interactive but a small bounded fast run (<= 2 atomic) → no plan gate; the
+    # gate is only for full-route or broad-survey runs.
     d = _decomp(sub_questions=["what is the capital of France"], response_format="short")
     assert classify_route(d) == "fast"
     assert plan_gate_fires(d, interactive=True, wrapped=False, auto=False) is False
 
 
 def test_light_under_max_interactive_does_not_fire():
-    # A fast-route query within ROUTER_LIGHT_MAX_ATOMIC, low cost → not expensive →
-    # no gate even though interactive.
+    # A fast-route query within ROUTER_LIGHT_MAX_ATOMIC → not a full/broad-survey
+    # run → no gate even though interactive.
     d = _decomp(sub_questions=["q1", "q2", "q3", "q4"], response_format="structured")
     assert classify_route(d) == "fast"
     assert plan_gate_fires(d, interactive=True, wrapped=False, auto=False) is False
@@ -155,8 +142,3 @@ def test_predicate_does_not_change_classify_route():
                 for auto in (True, False):
                     plan_gate_fires(d, interactive=interactive, wrapped=wrapped, auto=auto)
         assert classify_route(d) == before
-
-
-def test_cost_threshold_constant_exists():
-    assert isinstance(R.PLAN_GATE_COST_THRESHOLD, (int, float))
-    assert R.PLAN_GATE_COST_THRESHOLD > 0
