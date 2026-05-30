@@ -86,19 +86,37 @@ def route_cmd(
 
 # ── funnel-gather (Task 6/9/12) — the §6 scraper funnel ──────────────────────
 def _build_providers(cfg: object) -> list:
-    """Keyless web providers (KR-2). Default = the host WebSearch tool adapter +
-    the ddgs multi-engine lib; an optional self-host SearXNG when configured.
-    Intent-routed scholarly verticals are added by the skill (route_query), not
-    here — this builder supplies the always-on keyless breadth sources. Every
-    provider is cost_per_search=0.0, zero key. Degrades to [] on import error."""
+    """Keyless web providers for the STANDALONE / CLI funnel path (KR-2).
+
+    The provider order MUST lead with providers that actually return results when the
+    funnel runs as a `bad funnel-gather` subprocess. `WebSearchToolProvider`
+    wraps Claude Code's *host* WebSearch tool; that tool is invoked by the
+    orchestrator (the running agent), NOT by a Python subprocess — its
+    `search_ex` raises `NotImplementedError` here. In light mode the funnel
+    slices `deps.providers[:cfg.p_providers]` with `p_providers=1`, so a
+    host-tool provider sitting at index 0 would starve the whole run (the slice
+    would take ONLY the provider that can't run). We therefore lead with the
+    keyless HTTP providers — `DdgsProvider` (multi-engine breadth) — so the
+    light-mode `[:1]` slice always picks a working lane.
+
+    `WebSearchToolProvider` is still appended LAST so the in-agent path (where a
+    `links_source` is wired) can use it, and `fan_out` skips it cleanly when it
+    raises `NotImplementedError`. An optional self-host SearXNG is added when
+    configured. Every provider is cost_per_search=0.0, zero key. Degrades to []
+    on import error."""
     provs: list[Any] = []
     try:
         from bad_research.web.search.base import DdgsProvider, WebSearchToolProvider
-
-        provs.append(WebSearchToolProvider())
-        provs.append(DdgsProvider())
     except Exception:
         return []
+
+    # Keyless HTTP breadth lane FIRST — works in a subprocess (real httpx GETs).
+    try:
+        provs.append(DdgsProvider())
+    except Exception:
+        pass  # ddgs lib missing → fall through to the other lanes
+
+    # Optional self-host SearXNG (keyless JSON) as an additional breadth lane.
     endpoint = getattr(cfg, "searxng_endpoint", "") or ""
     if endpoint:
         try:
@@ -107,6 +125,14 @@ def _build_providers(cfg: object) -> list:
             provs.append(SearxngProvider(endpoint=endpoint))
         except Exception:
             pass
+
+    # Host WebSearch tool adapter LAST: usable on the in-agent path (a wired
+    # links_source), harmlessly skipped by fan_out's NotImplementedError guard
+    # on the CLI path where the host tool is unreachable.
+    try:
+        provs.append(WebSearchToolProvider())
+    except Exception:
+        pass
     return provs
 
 
@@ -162,11 +188,14 @@ def run_funnel(query: str, *, mode: str, vault_tag: str) -> dict:
     cfg = BadResearchConfig.load()
     vault = Vault.discover()
     engine = _build_engine(cfg, vault)
+    store = VaultStore(vault, tags=[vault_tag] if vault_tag else [])
     deps = FunnelDeps(
         providers=_build_providers(cfg),
         fetcher=_build_tiered_fetcher(cfg),
         postfetch_filter=_build_postfetch(cfg),
-        vault=VaultStore(vault),
+        # Tag every stored note with the run's vault_tag so the corpus survey
+        # (`bad search --tag <vault_tag>`) can find the run's corpus.
+        vault=store,
         retrieval=engine,
     )
     norm_mode = "full" if mode == "full" else "light"
@@ -181,7 +210,25 @@ def run_funnel(query: str, *, mode: str, vault_tag: str) -> dict:
             seen.add(nid)
             note_ids.append(nid)
         top_chunks.append(asdict(c) if is_dataclass(c) else dict(getattr(c, "__dict__", {})))
-    return {"note_ids": note_ids, "top_chunks": top_chunks, "n_read": len(note_ids)}
+
+    # Sources GATHERED = the corpus persisted to the vault this run. Stage F's
+    # reranked `top_chunks` are the in-agent model-feed view; its host-model
+    # reranker cannot score inside a CLI subprocess, so `note_ids` (chunk-derived)
+    # can be empty even when the corpus is full. The stored note ids are the
+    # load-bearing output the width-sweep corpus survey reads — surface them so a
+    # standalone run honestly reports >0 sources. Union (chunk order first, then
+    # any stored note the rerank dropped) keeps the model-relevant ordering.
+    stored_ids = getattr(store, "stored_note_ids", [])
+    for nid in stored_ids:
+        if nid not in seen:
+            seen.add(nid)
+            note_ids.append(nid)
+    return {
+        "note_ids": note_ids,
+        "top_chunks": top_chunks,
+        "n_read": len(note_ids),
+        "n_stored": len(stored_ids),
+    }
 
 
 def funnel_gather_cmd(

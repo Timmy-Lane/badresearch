@@ -93,6 +93,12 @@ dev = [
 [project.scripts]
 bad = "bad_research.cli:app"
 badr = "bad_research.cli:app"
+# The bundled skill shells out under `hyperresearch`/`$HPR`/`hpr` — the SAME
+# Typer app the `bad`/`badr` binaries invoke, so every registered command
+# (init, vault-tag, archive-run, search, lint, note show, …) is reachable
+# under all of these names.
+hyperresearch = "bad_research.cli:app"
+hpr = "bad_research.cli:app"
 
 [project.urls]
 Homepage = "https://github.com/LeventySeven/badresearch"

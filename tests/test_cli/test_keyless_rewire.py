@@ -182,15 +182,17 @@ async def test_real_builder_funnel_path_produces_corpus(monkeypatch):
 
     cfg = _Cfg()
     provs = RESEARCH._build_providers(cfg)
-    # Feed the REAL WebSearchToolProvider its host Links array (no network).
-    ws = next(p for p in provs if type(p).__name__ == "WebSearchToolProvider")
-    ws._links_source = lambda q, allowed=None, blocked=None: [
-        {"title": "Doc A", "url": "https://a.example/doc"},
-        {"title": "Doc B", "url": "https://b.example/doc"},
-    ]
-    # Drop the ddgs lane to [] (keyless, no network) — the websearch lane carries it.
+    # The keyless-correct cascade LEADS with DdgsProvider (the working HTTP lane);
+    # in light mode the funnel's `[:1]` slice picks it. Feed it canned results (no
+    # network) so the REAL provider object is exercised. The host WebSearchToolProvider
+    # cannot run in this (subprocess) context — it raises NotImplementedError and
+    # fan_out skips it — so it must NOT be the active provider.
     ddgs = next(p for p in provs if type(p).__name__ == "DdgsProvider")
-    monkeypatch.setattr(ddgs, "search", lambda *a, **k: [])
+    monkeypatch.setattr(ddgs, "search", lambda *a, **k: [
+        WebResult(url="https://a.example/doc", title="Doc A", content="a"),
+        WebResult(url="https://b.example/doc", title="Doc B", content="b"),
+    ])
+    assert provs[0] is ddgs, "keyless HTTP lane must lead the cascade"
 
     fetcher = RESEARCH._build_tiered_fetcher(cfg)  # REAL TieredFetcher
     # Patch the module-level fetch_tiered the REAL wrapper delegates to → canned content.
@@ -327,13 +329,17 @@ def _wire_real_funnel_deps(monkeypatch, tmp_path):
 
     cfg = _Cfg()
     provs = RESEARCH._build_providers(cfg)
-    ws = next(p for p in provs if type(p).__name__ == "WebSearchToolProvider")
-    ws._links_source = lambda q, allowed=None, blocked=None: [
-        {"title": "Attention Is All You Need", "url": "https://a.example/transformers"},
-        {"title": "Retrieval Augmented Generation", "url": "https://b.example/rag"},
-    ]
+    # Keyless-correct cascade: DdgsProvider (the working HTTP lane) leads, so the
+    # light-mode `[:1]` slice picks it. Inject canned results (no network). The host
+    # WebSearchToolProvider can't run here (NotImplementedError; fan_out skips it).
     ddgs = next(p for p in provs if type(p).__name__ == "DdgsProvider")
-    monkeypatch.setattr(ddgs, "search", lambda *a, **k: [])
+    monkeypatch.setattr(ddgs, "search", lambda *a, **k: [
+        WebResult(url="https://a.example/transformers",
+                  title="Attention Is All You Need", content="a"),
+        WebResult(url="https://b.example/rag",
+                  title="Retrieval Augmented Generation", content="b"),
+    ])
+    assert provs[0] is ddgs, "keyless HTTP lane must lead the cascade"
 
     fetcher = RESEARCH._build_tiered_fetcher(cfg)
 
