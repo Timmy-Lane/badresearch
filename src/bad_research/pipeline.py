@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from bad_research.config import BadResearchConfig
 
@@ -128,7 +128,10 @@ def _route(query: str, cfg: BadResearchConfig, cm: Any) -> Route:
         "sub_questions": [query], "entities": [], "time_periods": [],
         "response_format": "short", "contradiction_terms": [], "domains": ["general"],
     }
-    return classify_route(decomp)
+    # classify_route's return type includes the explicit-only "ultrafast" route, which is
+    # never auto-classified (guarded by test_classify_route_never_auto_emits_ultrafast); this
+    # headless path only ever yields fast/full, so narrow the wider router Route to pipeline's.
+    return cast(Route, classify_route(decomp))
 
 
 def _gather(query: str, mode: str, cfg: BadResearchConfig, cm: Any) -> list[dict[str, Any]]:
