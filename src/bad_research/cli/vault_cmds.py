@@ -6,44 +6,62 @@ Implements the 6 commands the bundled skill depends on but were never wired:
   archive-run   — move prior-run scratch files into runs/archive-<tag>-<ts>/
   search        — list/filter notes from vault (by tag / type / query)
   lint          — deterministic file-existence / content checks (4 rules)
-  note show     — read a single note by id and emit its body + frontmatter
+  note show     — read one or more notes by id and emit body + frontmatter
 
-All commands follow the --json/-j convention established in cli/research.py.
+All commands emit the canonical Envelope (`cli/_output.output` + `models.output`)
+so `--json` payloads match the shape the skill parses (`d["data"][...]`), the
+same wrapper `bad doctor`/`bad calibrate` already use.
 """
 
 from __future__ import annotations
 
 import json
-import os
+import re
 import secrets
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Any
 
 import typer
 
 from bad_research.cli._output import output
+from bad_research.models.output import error as envelope_error
+from bad_research.models.output import success
+
+if TYPE_CHECKING:
+    from bad_research.core.vault import Vault
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
-def _emit(data: dict, *, json_mode: bool) -> None:
-    """Emit data as JSON line (json_mode) or a brief human summary."""
+def _emit_success(data: Any, *, json_mode: bool, count: int | None = None,
+                  vault: str | None = None) -> None:
+    """Emit a success Envelope as a JSON line (json_mode) or a human summary."""
+    env = success(data, count=count, vault=vault)
     if json_mode:
-        print(json.dumps(data, default=str))
-    else:
-        # Human-readable fallback: just dump key=value pairs
+        output(env, json_mode=True)
+    elif isinstance(data, dict):
         for k, v in data.items():
             typer.echo(f"{k}: {v}")
+    else:
+        typer.echo(str(data))
 
 
-def _discover_vault() -> "Vault":  # type: ignore[name-defined]
+def _emit_error(message: str, *, json_mode: bool, code: str = "ERROR") -> None:
+    """Emit an error Envelope as a JSON line (json_mode) or a stderr message."""
+    if json_mode:
+        output(envelope_error(message, code=code), json_mode=True)
+    else:
+        typer.echo(f"ERROR: {message}", err=True)
+
+
+def _discover_vault() -> Vault:
     from bad_research.core.vault import Vault
     return Vault.discover()
 
 
-def _parse_note_frontmatter(path: Path) -> dict:
+def _parse_note_frontmatter(path: Path) -> dict[str, Any]:
     """Return frontmatter dict for a markdown file, with empty fallback."""
     try:
         from bad_research.core.frontmatter import parse_frontmatter
@@ -71,18 +89,17 @@ def init_cmd(
     root = Path(path).resolve()
     try:
         vault = Vault.init(root, name=name, research_dir=research_dir)
-        data = {
-            "ok": True,
-            "vault_root": str(vault.root),
-            "research_dir": str(vault.research_dir),
-            "db": str(vault.db_path),
-        }
-        _emit(data, json_mode=json_output)
     except VaultError as exc:
         # Already initialized — surface cleanly rather than crashing
-        data = {"ok": False, "error": str(exc), "vault_root": str(root)}
-        _emit(data, json_mode=json_output)
-        raise typer.Exit(code=1)
+        _emit_error(str(exc), json_mode=json_output, code="VAULT_EXISTS")
+        raise typer.Exit(code=1) from exc
+
+    data = {
+        "vault_root": str(vault.root),
+        "research_dir": str(vault.research_dir),
+        "db": str(vault.db_path),
+    }
+    _emit_success(data, json_mode=json_output, vault=str(vault.root))
 
 
 # ── vault-tag ────────────────────────────────────────────────────────────────
@@ -110,6 +127,8 @@ def vault_tag_cmd(
                 return True
         return False
 
+    suffix = ""
+    vault_tag = ""
     for _ in range(32):  # practically infinite — 16^6 = 16M possibilities
         suffix = secrets.token_hex(3)  # 3 bytes → 6 hex chars
         vault_tag = f"{slug}-{suffix}"
@@ -117,11 +136,12 @@ def vault_tag_cmd(
             break
     else:
         # Astronomically unlikely, but handle it
-        typer.echo("ERROR: could not mint a unique vault tag after 32 attempts", err=True)
+        _emit_error("could not mint a unique vault tag after 32 attempts",
+                    json_mode=json_output, code="TAG_COLLISION")
         raise typer.Exit(code=1)
 
     data = {"vault_tag": vault_tag, "slug": slug, "suffix": suffix}
-    _emit(data, json_mode=json_output)
+    _emit_success(data, json_mode=json_output, vault=str(vault.root))
 
 
 # ── archive-run ───────────────────────────────────────────────────────────────
@@ -181,13 +201,13 @@ def archive_run_cmd(
     has_temp = temp_dir.exists() and any(temp_dir.iterdir())
 
     if not to_move and not has_temp:
-        data = {
+        data: dict[str, Any] = {
             "archived": False,
             "reason": "nothing to archive",
             "moved_files": [],
             "archive_dir": None,
         }
-        _emit(data, json_mode=json_output)
+        _emit_success(data, json_mode=json_output, vault=str(vault.root))
         return
 
     # Build archive destination
@@ -213,16 +233,19 @@ def archive_run_cmd(
         "archive_dir": str(archive_dir),
         "moved_files": moved,
     }
-    _emit(data, json_mode=json_output)
+    _emit_success(data, json_mode=json_output, vault=str(vault.root))
 
 
 # ── search ────────────────────────────────────────────────────────────────────
 
 def search_cmd(
     query: str = typer.Argument("", help="Search query (empty = list/filter)"),
-    tag: Optional[str] = typer.Option(None, "--tag", help="Filter to notes tagged with this value"),
-    note_type: Optional[str] = typer.Option(None, "--type", help="Filter by note type (e.g. interim)"),
+    tag: str | None = typer.Option(None, "--tag", help="Filter to notes tagged with this value"),
+    note_type: str | None = typer.Option(None, "--type", help="Filter by note type (e.g. interim)"),
     top_k: int = typer.Option(20, "--top-k", "-k", help="Max results"),
+    include_body: bool = typer.Option(
+        False, "--include-body", help="Include each note's full body text in results"
+    ),
     json_output: bool = typer.Option(False, "--json", "-j", help="Emit JSON"),
 ) -> None:
     """Search or list vault notes.
@@ -230,21 +253,25 @@ def search_cmd(
     Empty QUERY with --tag/--type: plain metadata filter (no FTS, no reranker).
     Non-empty QUERY: FTS5 keyword search, optionally filtered by tag/type.
 
-    Returns a JSON array of note summaries: {id, title, type, tags, path, score}.
+    Emits the canonical Envelope with `data.results` — a JSON array of note
+    summaries {id, title, type, tags, path, status, url}. With --include-body
+    each result also carries its full `body` text.
     """
     vault = _discover_vault()
     notes_dir = vault.notes_dir
 
     if not notes_dir.exists():
-        data: dict = {"notes": [], "count": 0, "query": query, "tag": tag, "type": note_type}
-        _emit(data, json_mode=json_output)
+        _emit_success(
+            {"results": [], "count": 0, "query": query, "tag": tag, "type": note_type},
+            json_mode=json_output, count=0, vault=str(vault.root),
+        )
         return
 
     # ── Phase 1: collect candidate note files ──────────────────────────────
     # Always use disk-glob + frontmatter so results match the filesystem
     # without requiring a DB sync step. This is correct for both the empty-
     # query (list) path and as a pre-filter before FTS scoring.
-    candidates: list[dict] = []
+    candidates: list[dict[str, Any]] = []
     for md_path in sorted(notes_dir.glob("*.md")):
         fm = _parse_note_frontmatter(md_path)
         note_id = fm.get("id") or md_path.stem
@@ -264,14 +291,15 @@ def search_cmd(
             "tags": note_tags,
             "path": str(md_path),
             "status": fm.get("status") or "draft",
+            "url": fm.get("source") or "",
             "_body_path": md_path,
         })
 
     # ── Phase 2: FTS scoring for non-empty queries ─────────────────────────
-    results: list[dict] = []
+    results: list[dict[str, Any]] = []
     if query.strip():
         q_lower = query.lower()
-        scored: list[tuple[float, dict]] = []
+        scored: list[tuple[float, dict[str, Any]]] = []
         for note in candidates:
             try:
                 body = note["_body_path"].read_text(encoding="utf-8").lower()
@@ -289,11 +317,24 @@ def search_cmd(
     else:
         results = candidates[:top_k]
 
-    # Strip internal helper key
-    clean = [{k: v for k, v in n.items() if k != "_body_path"} for n in results]
+    # Attach body if requested, then strip the internal helper key. The body is
+    # frontmatter-stripped (matching `note show`) so downstream skills get clean
+    # evidence text, not raw YAML.
+    clean: list[dict[str, Any]] = []
+    for n in results:
+        body_path: Path = n["_body_path"]
+        item = {k: v for k, v in n.items() if k != "_body_path"}
+        if include_body:
+            try:
+                from bad_research.core.frontmatter import parse_frontmatter
+                _meta, body_text = parse_frontmatter(body_path.read_text(encoding="utf-8"))
+                item["body"] = body_text
+            except Exception:
+                item["body"] = ""
+        clean.append(item)
 
-    data = {"notes": clean, "count": len(clean), "query": query, "tag": tag, "type": note_type}
-    _emit(data, json_mode=json_output)
+    data = {"results": clean, "count": len(clean), "query": query, "tag": tag, "type": note_type}
+    _emit_success(data, json_mode=json_output, count=len(clean), vault=str(vault.root))
 
 
 # ── lint ──────────────────────────────────────────────────────────────────────
@@ -316,28 +357,29 @@ _LINT_RULES: dict[str, str] = {
 
 _ALL_RULES = list(_LINT_RULES)
 
+_CITATION_RE = re.compile(r"\[\^[^\]]+\]|\[Source[^\]]*\]|\[\d+\]", re.IGNORECASE)
 
-def _lint_wrapper_report(research_dir: Path) -> list[dict]:
-    issues: list[dict] = []
+
+def _lint_wrapper_report(research_dir: Path) -> list[dict[str, Any]]:
+    issues: list[dict[str, Any]] = []
     # Find any final_report file
-    reports = list((research_dir / "notes").glob("final_report_*.md")) if (research_dir / "notes").exists() else []
+    notes_dir = research_dir / "notes"
+    reports = list(notes_dir.glob("final_report_*.md")) if notes_dir.exists() else []
     if not reports:
         issues.append({"severity": "error", "rule": "wrapper-report",
                        "message": "No final_report_<vault_tag>.md found in research/notes/"})
         return issues
     # Check for a citation-like marker
-    import re
-    citation_re = re.compile(r"\[\^[^\]]+\]|\[Source[^\]]*\]|\[\d+\]", re.IGNORECASE)
     for rpt in reports:
         body = rpt.read_text(encoding="utf-8")
-        if not citation_re.search(body):
+        if not _CITATION_RE.search(body):
             issues.append({"severity": "warning", "rule": "wrapper-report",
                            "message": f"{rpt.name} has no citation markers"})
     return issues
 
 
-def _lint_locus_coverage(research_dir: Path) -> list[dict]:
-    issues: list[dict] = []
+def _lint_locus_coverage(research_dir: Path) -> list[dict[str, Any]]:
+    issues: list[dict[str, Any]] = []
     loci_path = research_dir / "loci.json"
     if not loci_path.exists():
         # Absence is fine on agentic-fast/light (no step 4)
@@ -352,17 +394,15 @@ def _lint_locus_coverage(research_dir: Path) -> list[dict]:
     # Normalise: list of {id:...} or list of strings
     locus_ids: list[str] = []
     for item in (loci if isinstance(loci, list) else loci.get("loci", [])):
-        if isinstance(item, dict):
-            lid = item.get("id") or item.get("name") or ""
-        else:
-            lid = str(item)
+        lid = (item.get("id") or item.get("name") or "") if isinstance(item, dict) else str(item)
         if lid:
             locus_ids.append(lid)
 
     if not locus_ids:
         return issues
 
-    reports = list((research_dir / "notes").glob("final_report_*.md")) if (research_dir / "notes").exists() else []
+    notes_dir = research_dir / "notes"
+    reports = list(notes_dir.glob("final_report_*.md")) if notes_dir.exists() else []
     if not reports:
         return [{"severity": "error", "rule": "locus-coverage",
                  "message": "No final report to check locus coverage against"}]
@@ -375,15 +415,14 @@ def _lint_locus_coverage(research_dir: Path) -> list[dict]:
     return issues
 
 
-def _lint_scaffold_prompt(research_dir: Path) -> list[dict]:
-    issues: list[dict] = []
+def _lint_scaffold_prompt(research_dir: Path) -> list[dict[str, Any]]:
+    issues: list[dict[str, Any]] = []
     scaffold = research_dir / "scaffold.md"
     if not scaffold.exists():
         issues.append({"severity": "error", "rule": "scaffold-prompt",
                        "message": "research/scaffold.md does not exist"})
         return issues
     body = scaffold.read_text(encoding="utf-8")
-    import re
     # Look for a User Prompt section header followed by non-empty content
     match = re.search(r"#+\s*User Prompt\b.*?\n+(.+)", body, re.IGNORECASE | re.DOTALL)
     if not match or not match.group(1).strip():
@@ -392,8 +431,8 @@ def _lint_scaffold_prompt(research_dir: Path) -> list[dict]:
     return issues
 
 
-def _lint_patch_surgery(research_dir: Path) -> list[dict]:
-    issues: list[dict] = []
+def _lint_patch_surgery(research_dir: Path) -> list[dict[str, Any]]:
+    issues: list[dict[str, Any]] = []
     patch_log = research_dir / "patch-log.json"
     if not patch_log.exists():
         # Absence is acceptable on light/agentic-fast tiers
@@ -419,7 +458,7 @@ _RULE_CHECKERS = {
 
 
 def lint_cmd(
-    rule: Optional[str] = typer.Option(None, "--rule", help=(
+    rule: str | None = typer.Option(None, "--rule", help=(
         "Run a specific rule: wrapper-report | locus-coverage | scaffold-prompt | patch-surgery. "
         "Omit to run all rules."
     )),
@@ -436,24 +475,33 @@ def lint_cmd(
     rules_to_run = [rule] if rule else _ALL_RULES
     unknown = [r for r in rules_to_run if r not in _RULE_CHECKERS]
     if unknown:
-        typer.echo(f"ERROR: unknown rule(s): {', '.join(unknown)}. "
-                   f"Valid: {', '.join(_ALL_RULES)}", err=True)
+        _emit_error(
+            f"unknown rule(s): {', '.join(unknown)}. Valid: {', '.join(_ALL_RULES)}",
+            json_mode=json_output, code="UNKNOWN_RULE",
+        )
         raise typer.Exit(code=1)
 
-    all_issues: list[dict] = []
+    all_issues: list[dict[str, Any]] = []
     for r in rules_to_run:
         all_issues.extend(_RULE_CHECKERS[r](research_dir))
 
     has_error = any(i["severity"] == "error" for i in all_issues)
     data = {
-        "ok": not has_error,
         "rules_run": rules_to_run,
         "issues": all_issues,
         "issue_count": len(all_issues),
     }
-    _emit(data, json_mode=json_output)
+    # An error-severity issue means the lint FAILED — surface ok=false + exit 1.
     if has_error:
+        if json_output:
+            env = envelope_error("lint found error-severity issues", code="LINT_FAILED")
+            env.data = data
+            output(env, json_mode=True)
+        else:
+            _emit_success(data, json_mode=False)
         raise typer.Exit(code=1)
+
+    _emit_success(data, json_mode=json_output, vault=str(vault.root))
 
 
 # ── note (subgroup with 'show' subcommand) ────────────────────────────────────
@@ -465,58 +513,75 @@ note_app = typer.Typer(
 )
 
 
-@note_app.command("show")
-def note_show_cmd(
-    note_id: str = typer.Argument(..., help="Note id (stem of the .md file)"),
-    json_output: bool = typer.Option(False, "--json", "-j", help="Emit JSON"),
-) -> None:
-    """Show a vault note by id.
+def _read_one_note(vault: Vault, note_id: str) -> dict[str, Any]:
+    """Resolve a note by id (notes_dir then temp_dir) and return its payload.
 
-    Reads research/notes/<id>.md (or research/temp/<id>.md as fallback),
-    parses frontmatter, and emits {id, title, tags, type, status, body, path}.
+    Returns {ok:False, error, id} if the note is missing or unreadable so the
+    batch caller can report per-note status without aborting the whole request.
     """
     from bad_research.core.note import read_note
-    from bad_research.core.vault import VaultError
 
-    try:
-        vault = _discover_vault()
-    except VaultError as exc:
-        data = {"ok": False, "error": str(exc)}
-        _emit(data, json_mode=json_output)
-        raise typer.Exit(code=1)
-
-    # Search notes_dir first, then temp_dir
-    search_dirs = [vault.notes_dir, vault.temp_dir]
     note_path: Path | None = None
-    for d in search_dirs:
+    for d in (vault.notes_dir, vault.temp_dir):
         candidate = d / f"{note_id}.md"
         if candidate.exists():
             note_path = candidate
             break
 
     if note_path is None:
-        data = {"ok": False, "error": f"Note '{note_id}' not found", "id": note_id}
-        _emit(data, json_mode=json_output)
-        raise typer.Exit(code=1)
+        return {"ok": False, "error": f"Note '{note_id}' not found", "id": note_id}
 
     try:
         note = read_note(note_path, vault.root)
-        meta = note.meta.model_dump(mode="json", exclude_none=True)
-        data = {
-            "ok": True,
-            "id": note.meta.id or note_id,
-            "title": note.meta.title,
-            "tags": note.meta.tags or [],
-            "type": note.meta.type,
-            "status": note.meta.status,
-            "body": note.body,
-            "path": note.path,
-            "word_count": note.word_count,
-            "meta": meta,
-        }
     except Exception as exc:
-        data = {"ok": False, "error": str(exc), "id": note_id}
-        _emit(data, json_mode=json_output)
+        return {"ok": False, "error": str(exc), "id": note_id}
+
+    return {
+        "ok": True,
+        "id": note.meta.id or note_id,
+        "title": note.meta.title,
+        "tags": note.meta.tags or [],
+        "type": note.meta.type,
+        "status": note.meta.status,
+        "body": note.body,
+        "path": note.path,
+        "word_count": note.word_count,
+        "meta": note.meta.model_dump(mode="json", exclude_none=True),
+    }
+
+
+@note_app.command("show")
+def note_show_cmd(
+    note_ids: list[str] = typer.Argument(..., help="One or more note ids (stems of the .md files)"),
+    json_output: bool = typer.Option(False, "--json", "-j", help="Emit JSON"),
+) -> None:
+    """Show one or more vault notes by id.
+
+    Reads research/notes/<id>.md (or research/temp/<id>.md as fallback) for each
+    id, parses frontmatter, and emits the canonical Envelope with
+    `data.notes` — a list of per-note payloads {id, title, tags, type, status,
+    body, path, word_count, meta}. Exits non-zero if ANY requested id is missing.
+    """
+    from bad_research.core.vault import VaultError
+
+    try:
+        vault = _discover_vault()
+    except VaultError as exc:
+        _emit_error(str(exc), json_mode=json_output, code="NO_VAULT")
+        raise typer.Exit(code=1) from exc
+
+    notes = [_read_one_note(vault, nid) for nid in note_ids]
+    any_missing = any(not n["ok"] for n in notes)
+
+    data = {"notes": notes, "count": len(notes)}
+    if any_missing:
+        if json_output:
+            env = envelope_error("one or more notes not found", code="NOTE_NOT_FOUND")
+            env.data = data
+            env.count = len(notes)
+            output(env, json_mode=True)
+        else:
+            _emit_success(data, json_mode=False)
         raise typer.Exit(code=1)
 
-    _emit(data, json_mode=json_output)
+    _emit_success(data, json_mode=json_output, count=len(notes), vault=str(vault.root))
