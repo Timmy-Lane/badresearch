@@ -337,6 +337,181 @@ def search_cmd(
     _emit_success(data, json_mode=json_output, count=len(clean), vault=str(vault.root))
 
 
+# ── fetch ──────────────────────────────────────────────────────────────────────
+
+def _normalize_fetch_result(
+    url: str, *, tier_max: int | None, instruction: str | None
+) -> dict[str, Any]:
+    """Fetch + clean `url` and return a normalized {title, body, metadata, ...} dict.
+
+    Default path (no tier/instruction args): the keyless content pipeline
+    `web.content.fetch_clean` — deterministic, SSRF-guarded, no model. When
+    `--tier-max`/`--instruction` is set, route through the Tier 0→3 browse
+    ladder (`browse.fetch_tiered`) exactly as `core.fetcher.fetch_and_save`
+    does, so hard (JS/login/anti-bot) pages can escalate. Both shapes (the
+    fetch_clean dict and the ladder's WebResult) collapse to the SAME normalized
+    dict here.
+
+    The SSRF guard runs BEFORE any network call on both paths — a
+    private/loopback/metadata URL raises SSRFError, which the caller surfaces.
+    """
+    from bad_research.core.fetcher import assert_url_safe
+
+    # SSRF choke point — refuse internal targets before the first byte.
+    assert_url_safe(url)
+
+    use_ladder = tier_max is not None or instruction is not None
+    if use_ladder:
+        from bad_research.browse import fetch_tiered
+
+        res = fetch_tiered(
+            url,
+            tier_max=tier_max if tier_max is not None else 3,
+            instruction=instruction,
+        )
+        meta = dict(res.metadata or {})
+        return {
+            "title": res.title or meta.get("title") or "",
+            "body": res.content or "",
+            "metadata": meta,
+            "published_date": meta.get("published_date"),
+            "links": getattr(res, "links", []) or [],
+        }
+
+    from bad_research.web.content.fetch_clean import fetch_clean
+
+    d = fetch_clean(url)
+    meta = dict(d.get("metadata") or {})
+    return {
+        "title": meta.get("title") or "",
+        "body": d.get("markdown") or "",
+        "metadata": meta,
+        "published_date": d.get("published_date"),
+        "links": d.get("links") or [],
+    }
+
+
+def fetch_cmd(
+    url: str = typer.Argument(..., help="URL to fetch, clean, and store as a vault note"),
+    tag: str = typer.Option(..., "--tag", help="Vault tag to attach to the stored note"),
+    tier_max: int | None = typer.Option(
+        None, "--tier-max",
+        help="Fetch-tier ceiling (0→3 browse-ladder escalation). Omit for the "
+             "keyless deterministic content pipeline (Tier 0).",
+    ),
+    suggested_by: str | None = typer.Option(
+        None, "--suggested-by",
+        help="Note id whose citation chain led here (records provenance + a vault "
+             "graph edge for primary-source chasing).",
+    ),
+    suggested_by_reason: str | None = typer.Option(
+        None, "--suggested-by-reason",
+        help="One-line reason the suggesting note pointed at this URL.",
+    ),
+    instruction: str | None = typer.Option(
+        None, "--instruction",
+        help="Typed-extract / agentic-browse instruction for the Tier 2-3 ladder "
+             "rungs (implies the browse ladder).",
+    ),
+    json_output: bool = typer.Option(False, "--json", "-j", help="Emit JSON"),
+) -> None:
+    """Fetch a URL, clean it, and store the result as a tagged vault note.
+
+    The core CORPUS bridge the fetcher subagent + skills (steps 2/5/13/16, 11.5)
+    call. Uses the keyless content pipeline (`web.content.fetch_clean`) by
+    default; `--tier-max`/`--instruction` route through the Tier 0→3 browse
+    ladder so hard pages escalate. The SSRF guard refuses private/loopback/
+    metadata URLs before any fetch runs.
+
+    Provenance: `--suggested-by <note-id>` records the citing note in
+    frontmatter AND embeds a `[[note-id]]` wiki-link in the body so the vault
+    graph carries the citation-ancestry edge the width-sweep clustering uses.
+
+    Emits the canonical Envelope with `data` = {note_id, url, title,
+    word_count, tag, suggested_by, ...}.
+    """
+    from bad_research.core.fetcher import SSRFError
+    from bad_research.core.note import write_note
+    from bad_research.core.vault import VaultError
+
+    try:
+        vault = _discover_vault()
+    except VaultError as exc:
+        _emit_error(str(exc), json_mode=json_output, code="NO_VAULT")
+        raise typer.Exit(code=1) from exc
+
+    try:
+        norm = _normalize_fetch_result(url, tier_max=tier_max, instruction=instruction)
+    except SSRFError as exc:
+        # The SSRF guard refusal — surface it cleanly (the skills rely on this).
+        _emit_error(str(exc), json_mode=json_output, code="SSRF_REFUSED")
+        raise typer.Exit(code=1) from exc
+    except Exception as exc:  # network/parse failure — typed error, never a stacktrace
+        _emit_error(f"fetch failed: {exc}", json_mode=json_output, code="FETCH_ERROR")
+        raise typer.Exit(code=1) from exc
+
+    body = norm["body"]
+    if not body.strip():
+        _emit_error(
+            f"no content extracted from {url!r} (paywall / empty / unfetchable)",
+            json_mode=json_output, code="EMPTY_CONTENT",
+        )
+        raise typer.Exit(code=1)
+
+    title = norm["title"] or url
+    meta = norm["metadata"]
+    from urllib.parse import urlsplit
+
+    extra: dict[str, Any] = {
+        "source": url,
+        "source_domain": urlsplit(url).netloc,
+        "fetched_at": datetime.now(UTC).isoformat(),
+        "fetch_provider": "fetch_clean" if (tier_max is None and instruction is None) else "tiered",
+    }
+    if norm.get("published_date"):
+        extra["published"] = norm["published_date"]
+    if suggested_by:
+        extra["suggested_by"] = suggested_by
+        if suggested_by_reason:
+            extra["suggested_by_reason"] = suggested_by_reason
+
+    # Provenance edge: embed a [[suggesting-note]] wiki-link so sync indexes the
+    # citation-ancestry edge in the vault graph (width-sweep clusters on it).
+    note_body = body
+    if suggested_by:
+        reason = f" — {suggested_by_reason}" if suggested_by_reason else ""
+        note_body = f"{body}\n\n> Suggested by [[{suggested_by}]]{reason}\n"
+
+    note_path = write_note(
+        vault.notes_dir,
+        title=title,
+        body=note_body,
+        tags=[tag] if tag else [],
+        status="draft",
+        note_type="note",  # fetched sources are plain notes — the type the corpus
+                            # survey / draft subagents count (NoteType has no 'source';
+                            # the survey applies NO type filter, it counts by tag).
+        source=url,
+        extra_frontmatter=extra,
+    )
+    note_id = note_path.stem
+
+    data = {
+        "note_id": note_id,
+        "url": url,
+        "title": title,
+        "word_count": len(body.split()),
+        "tag": tag,
+        "path": str(note_path.relative_to(vault.root)),
+        "tier_max": tier_max,
+        "suggested_by": suggested_by,
+        "published_date": norm.get("published_date"),
+        "source_domain": extra["source_domain"],
+        "language": meta.get("language"),
+    }
+    _emit_success(data, json_mode=json_output, vault=str(vault.root))
+
+
 # ── lint ──────────────────────────────────────────────────────────────────────
 
 _LINT_RULES: dict[str, str] = {

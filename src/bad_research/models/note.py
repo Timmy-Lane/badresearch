@@ -92,6 +92,8 @@ class NoteMeta(BaseModel):
     expires: datetime | None = None      # Auto-stale after this date
     summary: str | None = None
     raw_file: str | None = None          # Relative path to raw artifact (e.g. raw/<id>.pdf)
+    suggested_by: str | None = None      # Provenance: note id whose citation chain led here (`bad fetch --suggested-by`)
+    suggested_by_reason: str | None = None  # One-line reason the suggesting note pointed here
 
     @field_validator("tags", mode="before")
     @classmethod
