@@ -14,7 +14,7 @@
   "components": {
     "decompose": {
       "decomp": {"sub_questions": ["What is RAG?"], "entities": ["retrieval-augmented generation"], "time_periods": [], "response_format": "short", "contradiction_terms": [], "domains": ["ai"]},
-      "expected_route": "agentic-fast"
+      "expected_route": "fast"
     },
     "retrieval": {"expect_note_ids": ["1"]}
   }

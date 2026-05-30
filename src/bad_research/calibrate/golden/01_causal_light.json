@@ -15,7 +15,7 @@
   "components": {
     "decompose": {
       "decomp": {"sub_questions": ["Does aerobic exercise reduce resting heart rate?"], "entities": ["aerobic exercise", "resting heart rate"], "time_periods": [], "response_format": "short", "contradiction_terms": [], "domains": ["health"]},
-      "expected_route": "light"
+      "expected_route": "fast"
     },
     "retrieval": {"expect_note_ids": ["1", "2"]},
     "synthesis": {}

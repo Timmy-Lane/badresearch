@@ -1,12 +1,12 @@
 """Query router — classify the Step-1 decompose output into a pipeline mode.
 
 Reuses the existing atomic-item analysis (no new classifier). The decision
-tree is verbatim from DR-loops §9.2:
+tree (2-route consolidation; the former agentic-fast + light bands both map to
+`fast` now — the split is an internal shape+effort knob, not a route):
 
-  agentic-fast  if atomic_items <= 2 AND no contradiction terms AND no time_periods
-                AND response_format == "short" AND single domain
-  light         elif response_format == "structured" OR atomic_items 3-6 OR mild tension
-  full          else (multi-domain, contested, argumentative, time_periods, >=7 items)
+  full  if multi-domain, contested, argumentative, time_periods, >=7 items, or a
+        pipeline_tier == "full" floor
+  fast  else (the bounded planner->writer loop — formerly agentic-fast/light)
 
 [SEMANTIC-TIERING 2026-05-28] Two corrections to the post-B-5 behaviour:
 
@@ -31,7 +31,7 @@ from typing import Any, Literal
 
 from bad_research.skills import routing_constants as R  # noqa: N812
 
-Route = Literal["agentic-fast", "light", "full"]
+Route = Literal["fast", "full"]
 QueryShape = Literal["straightforward", "breadth_first", "depth_first"]
 
 # The 3-way Claude Research fan-out-shape taxonomy (research_lead_agent.md:12-29).
@@ -95,7 +95,7 @@ def _pipeline_tier_floor_full(decomp: dict[str, Any]) -> bool:
 
     [SEMANTIC-TIERING 2026-05-28] This is the SEMANTIC depth signal the router must
     honour as a FLOOR: when the model (step 1) judged the query deep enough to want
-    the full pipeline, classify_route must never demote it to light/agentic-fast.
+    the full pipeline, classify_route must never demote it to fast.
     Mechanical heuristics escalate above this, never below. A missing or `"light"`
     pipeline_tier returns False (no floor) — preserving every fixture that omits it."""
     return decomp.get("pipeline_tier") == "full"
@@ -181,56 +181,39 @@ def _full_triggers(decomp: dict[str, Any]) -> list[str]:
 
 
 def classify_route(decomp: dict[str, Any]) -> Route:
-    n = _atomic_count(decomp)
     fmt = decomp.get("response_format", "structured")
     time_periods = decomp.get("time_periods") or []
     contradiction = decomp.get("contradiction_terms") or []
     domains = decomp.get("domains") or []
     multi_domain = len(domains) >= 3
 
-    # FULL: an explicit decompose `pipeline_tier == "full"` (the SEMANTIC depth
-    # FLOOR — SEMANTIC-TIERING 2026-05-28), Lens-D primaries, dialectics, source
-    # tensions, multi-domain breadth, OR a breadth count that survives the modality
-    # gate. The floor means the router never demotes a query the model judged deep;
-    # a broad-but-shallow EXPLICIT-survey (low contestedness) is still NOT forced
-    # full by item count alone (the B-5 down-route).
+    # FULL: explicit pipeline_tier floor, time_periods, argumentative, contradiction,
+    # multi-domain, or a breadth count that survives the modality gate. UNCHANGED.
     if (_pipeline_tier_floor_full(decomp)
             or time_periods or fmt == "argumentative" or contradiction
             or multi_domain or _breadth_forces_full(decomp)):
         return "full"
 
-    # AGENTIC-FAST: trivial, bounded, single-domain, short.
-    if (n <= R.ROUTER_AGENTIC_MAX_ATOMIC and not contradiction
-            and not time_periods and fmt == "short" and not multi_domain):
-        return "agentic-fast"
-
-    # LIGHT: the middle band — structured coverage, 3-6 atomic items, OR a
-    # low-contested broad-curation survey that the modality gate spared from full.
-    return "light"
+    # FAST: everything else. The former agentic-fast (trivial/bounded) and light
+    # (mid-band structured) bands both run the bounded planner->writer loop; the
+    # split is now an internal shape+effort knob, not a route.
+    return "fast"
 
 
 def route_reason(decomp: dict[str, Any]) -> str:
-    """A one-line, human-readable rationale for the chosen route.
-
-    Used by the router skill to write the `## Route rationale` line and by the
-    `bad route` CLI's JSON `reason` field.
-    """
+    """A one-line, human-readable rationale for the chosen route."""
     route = classify_route(decomp)
     n = _atomic_count(decomp)
     modality = detect_modality(decomp)
     if route == "full":
         triggers = _full_triggers(decomp)
         return "full: " + ("; ".join(triggers) if triggers else "complex query")
-    if route == "agentic-fast":
-        return f"agentic-fast: {n} atomic item(s), short, single-domain, no tension"
-    # LIGHT: call out when an EXPLICIT broad-curation modality spared a high-breadth
-    # query from full (the B-5 gate) so the rationale line is auditable. Only an
-    # explicit modality reaches here with n > ceiling now — a lexically-inferred
-    # survey no longer buys the raised ceiling (SEMANTIC-TIERING 2026-05-28).
+    # FAST: call out when an EXPLICIT broad-curation modality spared a high-breadth
+    # query from full (the B-5 gate) so the rationale line is auditable.
     if _explicit_breadth_modality(decomp) and n > R.ROUTER_LIGHT_MAX_ATOMIC:
-        return (f"light: {n} atomic item(s) but explicit {modality} modality / low "
+        return (f"fast: {n} atomic item(s) but explicit {modality} modality / low "
                 f"contestedness — breadth alone does not force full (B-5)")
-    return f"light: {n} atomic item(s) / structured coverage, no full-tier trigger"
+    return f"fast: {n} atomic item(s), no full-tier trigger"
 
 
 def plan_gate_fires(
@@ -261,7 +244,7 @@ def plan_gate_fires(
         `ROUTER_LIGHT_MAX_ATOMIC` (a broad survey the modality gate spared from
         full but which is still wide enough to mis-scope), OR an explicit
         `est_cost` is at/above `PLAN_GATE_COST_THRESHOLD`. A cheap bounded run
-        (agentic-fast / small light, no cost over threshold) is below the bar: a
+        (a small `fast` route, no cost over threshold) is below the bar: a
         wrong sub-question there costs less than the approval round-trip.
 
     The interactivity flags are supplied by the orchestrator at step 1.6 (it knows

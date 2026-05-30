@@ -27,9 +27,11 @@ def route_cmd(
     wrapped: bool = typer.Option(False, "--wrapped"),
     auto: bool = typer.Option(False, "--auto"),
     est_cost: float | None = typer.Option(None, "--est-cost"),
+    fast: bool = typer.Option(False, "--fast", help="Force the fast route (override auto)."),
+    full: bool = typer.Option(False, "--full", help="Force the full route (override auto)."),
     json_output: bool = typer.Option(False, "--json", "-j"),
 ) -> None:
-    """Classify a Step-1 decomposition into a pipeline route (agentic-fast|light|full).
+    """Classify a Step-1 decomposition into a pipeline route (fast|full).
 
     Also emits `query_shape` (E12, Claude Research) — the fan-out SHAPE
     (straightforward|breadth_first|depth_first), ORTHOGONAL to the route. The
@@ -53,6 +55,12 @@ def route_cmd(
     path = Path(decomposition)
     decomp = json.loads(path.read_text(encoding="utf-8"))
     route = classify_route(decomp)
+    if fast and full:
+        raise typer.BadParameter("--fast and --full are mutually exclusive")
+    if fast:
+        route = "fast"
+    elif full:
+        route = "full"
     shape = classify_query_shape(decomp)
     would_gate = plan_gate_fires(
         decomp, interactive=interactive, wrapped=wrapped, auto=auto, est_cost=est_cost

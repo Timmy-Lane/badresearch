@@ -10,7 +10,7 @@ description: >
 
 # Step 14.5 — Fresh-context review (single pass)
 
-**Tier gate:** SKIP for `light` and `agentic-fast`. Runs for `full` only, after
+**Tier gate:** SKIP for `fast`. Runs for `full` only, after
 the patcher (step 14), before polish (step 15).
 
 **Goal:** spend ONE fresh reviewer pass to catch what the in-context critics

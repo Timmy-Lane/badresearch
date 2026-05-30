@@ -10,8 +10,8 @@ description: >
 
 # Step 12.5 — Grader loop (judge → patch → re-judge)
 
-**Tier gate:** FULL tier ONLY. SKIP entirely for `light` and `agentic-fast` —
-their quality contract is the forward binding + the deterministic uncited gate; a
+**Tier gate:** FULL tier ONLY. SKIP entirely for the `fast` route —
+its quality contract is the forward binding + the deterministic uncited gate; a
 grader loop on a $1–15 fast query is the overkill we explicitly reject. Run only
 when the route in `research/prompt-decomposition.json` is `full`.
 
@@ -221,7 +221,7 @@ Record the non-PASS in the log for the audit trail; do NOT loop a 4th time.
 - `research/grader-log.json` exists with `rounds` set and `final_passed` recorded.
 - The grader loop ran ≤ MAX_GRADER_REVISIONS (3) rounds.
 - `research/notes/final_report_<vault_tag>.md` reflects any grader-driven patches.
-- For a `light` / `agentic-fast` route: this step was skipped (no `grader-log.json`).
+- For a `fast` route: this step was skipped (no `grader-log.json`).
 
 ---
 

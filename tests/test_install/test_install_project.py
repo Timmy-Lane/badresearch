@@ -7,7 +7,7 @@ def test_project_install_drops_all_step_skills(tmp_path):
     install_hooks(root, hpr_path="bad")
     skills = root / ".claude" / "skills"
     assert (skills / "bad-research-1-decompose" / "SKILL.md").exists()
-    assert (skills / "bad-research-agentic-fast" / "SKILL.md").exists()
+    assert (skills / "bad-research-fast" / "SKILL.md").exists()
     assert (skills / "bad-research" / "SKILL.md").exists()  # entry skill too
 
 

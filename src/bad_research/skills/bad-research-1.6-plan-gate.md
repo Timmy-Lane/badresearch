@@ -22,7 +22,7 @@ step 2) when ANY of these holds:
 - `research/wrapper_contract.json` exists (a **wrapped** run — the query is binding
   GOSPEL, not to be questioned; mirrors exactly how 0.5-clarify skips), or
 - the run is `--auto`, or
-- the run is **cheap** (route `agentic-fast`, or `light` within
+- the run is **cheap** (route `fast` within
   `ROUTER_LIGHT_MAX_ATOMIC` atomic items and no cost estimate over the threshold).
 
 **This gate is a SEPARATE step. It NEVER changes the route.** It does not re-run
@@ -70,7 +70,7 @@ Read:
      class the fetchers will chase (primary docs / papers / vendor sites / news /
      code) and the search angle. Derive this from the modality + the sub-question
      phrasing; keep it to a phrase, not a paragraph.
-   - **Chosen route + shape** — the `route` (agentic-fast / light / full) and
+   - **Chosen route + shape** — the `route` (fast / full) and
      `query_shape` (straightforward / breadth_first / depth_first) with the
      one-line `reason` / `shape_reason` from the router CLI.
    - **Rough cost/time estimate** — the per-route band from the entry skill's route

@@ -145,17 +145,17 @@ def test_shape_reason_is_nonempty_string():
 
 def test_route_unchanged_trivial_single_domain():
     d = _decomp(sub_questions=["what is the capital of France"], response_format="short")
-    assert classify_route(d) == "agentic-fast"
+    assert classify_route(d) == "fast"
     # adding shape classification on the same decomp does not move the route
     _ = classify_query_shape(d)
-    assert classify_route(d) == "agentic-fast"
+    assert classify_route(d) == "fast"
 
 
 def test_route_unchanged_structured_midsize():
     d = _decomp(sub_questions=["q1", "q2", "q3", "q4"], response_format="structured")
-    assert classify_route(d) == "light"
+    assert classify_route(d) == "fast"
     _ = classify_query_shape(d)
-    assert classify_route(d) == "light"
+    assert classify_route(d) == "fast"
 
 
 def test_route_unchanged_contested_full():
@@ -189,9 +189,9 @@ def test_route_unchanged_broad_survey_light():
         entities=[], response_format="structured",
         contradiction_terms=[], domains=["tech"], modality="survey",
     )
-    assert classify_route(d) == "light"
+    assert classify_route(d) == "fast"
     _ = classify_query_shape(d)
-    assert classify_route(d) == "light"
+    assert classify_route(d) == "fast"
 
 
 # ── skill-prose: the three shapes + their fan-out arrangement ──────────────────

@@ -88,6 +88,7 @@ the entry skill and invoking the query-router (step 1.5). The router still owns 
     "What is the specific question this addresses?",
     "..."
   ],
+  "scope_brief": "One paragraph: the core subject, what the report will and will not cover, and the boundary conditions. The fast-mode writer reads this as its framing.",
   "entities": [
     {"name": "Bronze Saints", "type": "category", "required_fields": ["techniques", "arcs", "fate"]}
   ],
@@ -118,13 +119,15 @@ the entry skill and invoking the query-router (step 1.5). The router still owns 
 }
 ```
 
+   **Author the `scope_brief`.** Write one tight paragraph naming the core subject, what the report will and will not cover, and the boundary conditions. The fast-mode writer reads this as its framing (it never sees the planner trace), so it must stand alone.
+
 5. **Omit nothing the prompt names explicitly.** List every numbered ask, every named entity, every format cue as a separate atomic item, even if they feel redundant. The instruction-critic catches false-positive atomic items cheaply; it cannot catch false-negatives.
 
 6. **Do NOT include wrapper-contract requirements here** — those live in `research/wrapper_contract.json` separately. The decomposition is ONLY about what the user's actual prompt named.
 
 7. **Classify `pipeline_tier` and `response_format`.**
 
-   **`pipeline_tier` is an initial tier *signal*, not the final routing decision.** It records this step's read of how much pipeline the query wants (`light` vs `full`). The authoritative routing decision — the `route` field (`agentic-fast` / `light` / `full`) that the orchestrator actually sequences from — is made downstream by the query-router (step 1.5), which reads this `pipeline_tier` as input and never down-routes a justified `full`. Set `pipeline_tier` honestly here; let step 1.5 own `route`.
+   **`pipeline_tier` is an initial tier *signal*, not the final routing decision.** It records this step's read of how much pipeline the query wants (`light` vs `full`). The authoritative routing decision — the `route` field (`fast` / `full`) that the orchestrator actually sequences from — is made downstream by the query-router (step 1.5), which reads this `pipeline_tier` as input and never down-routes a justified `full`. Set `pipeline_tier` honestly here; let step 1.5 own `route`.
 
    **`pipeline_tier`** — how much pipeline to run:
 
@@ -203,6 +206,7 @@ the entry skill and invoking the query-router (step 1.5). The router still owns 
 
 - `research/prompt-decomposition.json` exists, is valid JSON, every atomic item traces to the research_query
 - `pipeline_tier` + `response_format` + `query_shape` + `citation_style` are all set
+- `scope_brief` is a one-paragraph framing (subject + in/out-of-scope + boundary conditions) the fast-mode writer can read standalone
 - `research/temp/coverage-matrix.md` exists with **zero `Gap? = YES` rows**
 - `research/scaffold.md` includes a Tier rationale subsection
 

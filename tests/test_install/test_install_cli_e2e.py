@@ -31,4 +31,4 @@ def test_bad_install_project(tmp_path, monkeypatch):
     res = runner.invoke(app, ["install", str(proj), "--project", "--json"])
     assert res.exit_code == 0, res.output
     assert (proj / ".claude" / "skills" / "bad-research" / "SKILL.md").exists()
-    assert (proj / ".claude" / "skills" / "bad-research-agentic-fast" / "SKILL.md").exists()
+    assert (proj / ".claude" / "skills" / "bad-research-fast" / "SKILL.md").exists()

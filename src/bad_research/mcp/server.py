@@ -415,7 +415,7 @@ def update_note(note_id: str, status: str = "", add_tags: str = "", remove_tags:
 
 @server.tool()
 def route_query(decomposition_path: str) -> str:
-    """Classify a Step-1 decomposition into a pipeline route (agentic-fast|light|full).
+    """Classify a Step-1 decomposition into a pipeline route (fast|full).
 
     Args:
         decomposition_path: path to research/prompt-decomposition.json

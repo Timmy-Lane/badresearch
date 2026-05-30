@@ -57,12 +57,12 @@ When you invoke a Skill, that skill's full procedure is loaded into your context
 | # | Skill name | What it does | Tiers |
 |---|---|---|---|
 | 0.5 | `bad-research-0.5-clarify` | Triage clarifier — ≤3 default-proceed questions before decompose | all (skipped only on `--auto`/wrapped runs) |
-| 1.5 | `bad-research-query-router` | Classify the decomposition into a route (`agentic-fast` / `light` / `full`) | all |
+| 1.5 | `bad-research-query-router` | Classify the decomposition into a route (`fast` / `full`) | all |
 | 1.6 | `bad-research-1.6-plan-gate` | User-editable plan-gate — emit the plan, pause for approve/edit/proceed | interactive + expensive only (skipped on non-interactive / `--auto` / wrapped / cheap runs) |
 | 11.5 | `bad-research-11.5-citation-verifier` | Backward grounding — bind every claim to a source note | full |
 | 12.5 | `bad-research-12.5-grader` | In-pipeline grader loop (judge → patch → re-judge, ≤3) — runs AFTER 13 despite its number (see the route table) | full |
 | 14.5 | `bad-research-fresh-review` | One fresh-context review pass | full |
-| — | `bad-research-agentic-fast` | The bounded-ReAct fast mode (a *route*, not a numbered step — replaces steps 2–14 when route == `agentic-fast`) | agentic-fast |
+| — | `bad-research-fast` | The bounded-ReAct fast mode (a *route*, not a numbered step — replaces steps 2–14 when route == `fast`) | fast |
 
 **Complete pipeline order (full tier), half-steps included:**
 
@@ -71,27 +71,27 @@ When you invoke a Skill, that skill's full procedure is loaded into your context
     → 12 → 13 → 12.5 → 14 → 14.5 → 15 → 16(+gate)
 ```
 
-`light` runs `0.5 → 1 → 1.5 → 1.6 → 2 → 10 → 12(slim critic) → 15 → 16(+gate)`; `agentic-fast` runs `1 → 1.5 → agentic-fast → 12(slim critic) → 15 → 16(+gate)`. Step 1.6 (plan-gate) is present in the interactive expensive path and is a no-op (skipped) on every non-interactive / `--auto` / wrapped / cheap run. Step 12 on the light/agentic-fast routes is the **slim single adversarial critic** (E3) — one dialectic+instruction pass, no 4-critic fan-out, no patcher — NOT the full-tier critique. See the per-route table below for cost/time.
+`fast` runs `0.5 → 1 → 1.5 → bad-research-fast → slim citation-grounding → 12(slim critic) → 15 → 16(+gate)`. Step 1.6 (plan-gate) is present in the interactive expensive path and is a no-op (skipped) on every non-interactive / `--auto` / wrapped / cheap run; it is not in the `fast` path. Step 12 on the `fast` route is the **slim single adversarial critic** (E3) — one dialectic+instruction pass, no 4-critic fan-out, no patcher — NOT the full-tier critique. See the per-route table below for cost/time.
 
 ---
 
 ## Tier routing
 
 Step 1 decomposes the query; the query-router (step 1.5) classifies the
-decomposition into a `route` (`agentic-fast` / `light` / `full`) written to
-`research/prompt-decomposition.json`. The **light tier** is the fast single-draft
-path (one curated draft, no adversarial review); the **full tier** is the
+decomposition into a `route` (`fast` / `full`) written to
+`research/prompt-decomposition.json`. The **fast route** is the bounded
+planner→writer loop (shape-aware, ± breadth fan-out, slim citation-grounding,
+one adversarial pass); the **full tier** is the
 deep path (triple-draft ensemble + synthesis + adversarial critics + grader loop
 + fresh review). After step 1.5, **read that file** for the
 `route`, then sequence steps according to this mode table:
 
 | Route | Step sequence | Cost | Time |
 |---|---|---|---|
-| `agentic-fast` | 0.5 → 1 → 1.5 → agentic-fast → 12(slim critic) → 15 → 16(+gate) | ~$1–5 | <3 min |
-| `light` | 0.5 → 1 → 1.5 → 1.6 → 2(funnel) → 10(single draft) → 12(slim critic) → 15 → 16(+gate) | ~$5–15 | ~30–40 min |
-| `full` | 0.5 → 1 → 1.5 → 1.6 → 2 → 4* → 5 → 6* → 8 → 10* → 11 → 11.5 → 12 → 13 → 12.5(grader loop) → 14 → 14.5(fresh-review) → 15 → 16(+gate+recitation) | ~$60–120 | ~1.5–2.5 h |
+| `fast` | 0.5 → 1 → 1.5 → bad-research-fast (shape-aware loop ± breadth fan-out) → slim citation-grounding → 12(slim critic) → 15 → 16(+gate) | ~$1–8 | ≤8–10 min |
+| `full` | 0.5 → 1 → 1.5 → 1.6 → 2 → 4* → 5 → 6* → 8 → 10* → 11 → 11.5 → 12 → 13 → 12.5 → 14 → 14.5 → 15 → 16(+gate+recitation) | ~$60–120 | ~1.5–2.5 h |
 
-**On 0.5 (clarify):** the route — including `agentic-fast` — is only decided at step 1.5, *after* 0.5 has already run, so 0.5 normally runs first on every interactive run. 0.5 is skipped **only on `--auto`/wrapped runs** (a wrapped run is one where `research/wrapper_contract.json` is present and the query is binding GOSPEL not to be questioned). `16(+gate)` is shorthand for "step 16 plus the deterministic no-uncited-claim ship-gate that runs after it on every route" — a *ship-gate* is a blocking quality check that must pass before the report can be delivered.
+**On 0.5 (clarify):** the route — including `fast` — is only decided at step 1.5, *after* 0.5 has already run, so 0.5 normally runs first on every interactive run. 0.5 is skipped **only on `--auto`/wrapped runs** (a wrapped run is one where `research/wrapper_contract.json` is present and the query is binding GOSPEL not to be questioned). `16(+gate)` is shorthand for "step 16 plus the deterministic no-uncited-claim ship-gate that runs after it on every route" — a *ship-gate* is a blocking quality check that must pass before the report can be delivered.
 
 **On 1.6 (plan-gate):** runs AFTER the route is known (step 1.5), only on an
 **interactive + expensive** run — it emits the plan (sub-questions + per-sub-q source
@@ -107,12 +107,12 @@ Where the half-step numbers map to:
 - 0.5 → `Skill(skill: "bad-research-0.5-clarify")` (triage clarifier; runs first on every interactive run, skipped only on `--auto`/wrapped runs)
 - 1.5 → `Skill(skill: "bad-research-query-router")` (the route decision)
 - 1.6 → `Skill(skill: "bad-research-1.6-plan-gate")` (user-editable plan-gate; interactive + expensive only, skipped on non-interactive / `--auto` / wrapped / cheap runs)
-- agentic-fast → `Skill(skill: "bad-research-agentic-fast")` (bounded-ReAct = a step-capped Reason+Act loop; replaces 2–14)
+- fast → `Skill(skill: "bad-research-fast")` (bounded-ReAct = a step-capped Reason+Act loop; replaces 2–14)
 - 11.5 → `Skill(skill: "bad-research-11.5-citation-verifier")` (backward grounding = binding each report claim back to its source note; full only)
 - 12.5 → `Skill(skill: "bad-research-12.5-grader")` (in-pipeline grader loop: judge→patch→re-judge ≤3; full only — slots between critics/gap-fetch and the patcher's final convergence)
 - 14.5 → `Skill(skill: "bad-research-fresh-review")` (one fresh-context pass; full only)
 
-**RESPECT THE ROUTE.** `agentic-fast` is the cheap bounded ReAct loop, not a
+**RESPECT THE ROUTE.** `fast` is the cheap bounded ReAct loop, not a
 degraded full run; do NOT add the 13 steps "to be thorough." `full` ALWAYS runs
 11.5 (citation verifier) and 14.5 (fresh-review). The deterministic
 no-uncited-claim gate in step 16 is a **ship-block for ALL routes**. If
@@ -133,8 +133,8 @@ interactive (surfaced by `bad route --interactive --json` as `plan_gate.would_ga
 
 | `--effort` | route | drafters | fetcher fan-out | extended thinking |
 |---|---|---|---|---|
-| `minimal` | light, single draft | Haiku-tier | ≤4 | off |
-| `low` | light | Sonnet-tier | ≤8 | off |
+| `minimal` | fast, single draft | Haiku-tier | ≤4 | off |
+| `low` | fast | Sonnet-tier | ≤8 | off |
 | `medium` (default) | full | default | 10–12, loci ≤4 | on |
 | `high` | full, max | Opus-tier | 12, loci ≤6 | on |
 
@@ -212,7 +212,7 @@ Before you invoke any step skill, do this:
    - `Step 1 — Skill: bad-research-1-decompose`
    - `Step 1.5 — Skill: bad-research-query-router`
 
-   **Then**, after step 1.5 returns the `route`, seed the remaining todos from the matching row of the route table above (the `agentic-fast` / `light` / `full` step sequence). Do NOT seed all 13 steps up front and prune — you don't know the route yet, and a `light`/`agentic-fast` run never has most of them.
+   **Then**, after step 1.5 returns the `route`, seed the remaining todos from the matching row of the route table above (the `fast` / `full` step sequence). Do NOT seed all 13 steps up front and prune — you don't know the route yet, and a `fast` run never has most of them.
 
    The todo list survives context compaction; it's your durable memory of where you are in the chain.
 
@@ -227,19 +227,19 @@ Before you invoke any step skill, do this:
    It runs `bad route --apply` over the decomposition and writes the `route`
    field into `research/prompt-decomposition.json`.
 
-10. **Invoke step 1.6 (the plan-gate)** for `light`/`full` routes:
+10. **Invoke step 1.6 (the plan-gate)** for the `full` route:
     `Skill(skill: "bad-research-1.6-plan-gate")`. It self-decides via
     `bad route --interactive --json` (`plan_gate.would_gate`) whether to pause:
     on an interactive + expensive run it emits the plan and waits for
     approve/edit/proceed; on a non-interactive / `--auto` / wrapped / cheap run it
-    is a no-op and returns immediately. **Skip it for `agentic-fast`** (a cheap
+    is a no-op and returns immediately. **Skip it for `fast`** (a cheap
     bounded run is never gated). This step never changes the route.
 
 After step 1.5 (and the 1.6 plan-gate where it applies) returns, read
 `research/prompt-decomposition.json` for the `route`, then continue invoking step
-skills per the mode table above. For `agentic-fast`, invoke
-`Skill(skill: "bad-research-agentic-fast")` then jump to step 15 polish + step 16
-gate. After each step's exit criterion is met, mark its todo complete and move to
+skills per the mode table above. For `fast`, invoke
+`Skill(skill: "bad-research-fast")` then run the slim citation-grounding pass and
+slim critic before step 15 polish + step 16 gate. After each step's exit criterion is met, mark its todo complete and move to
 the next.
 
 ---
@@ -277,13 +277,13 @@ Context compaction may eat parts of this conversation. If you're unsure what ste
    - Step 0.5: `research/clarify.json` (+ `## Brief` in scaffold)
    - Step 1: `research/scaffold.md`, `research/prompt-decomposition.json`, `research/temp/coverage-matrix.md`
    - Step 1.5: the `route` field inside `research/prompt-decomposition.json` (+ `## Route rationale` in scaffold)
-   - agentic-fast: `research/temp/react-trace.md` (+ `research/notes/final_report_<vault_tag>.md`)
+   - fast: `research/temp/react-trace.md` (+ `research/notes/final_report_<vault_tag>.md`)
    - Step 2: vault notes tagged with vault_tag (`$HPR search "" --tag <vault_tag> -j`)
    - Step 4: `research/temp/contradiction-graph.json` + `research/temp/consensus-claims.json` (Step 4.0 preamble), then `research/loci.json`
    - Step 5: vault notes with `type: interim` (`$HPR search "" --tag <vault_tag> --type interim -j`)
    - Step 6: `research/temp/tensions.md` (cross-locus + orphan tensions; Step 6.5 merges the former step-7 source-tensions into this single artifact)
    - Step 8: `research/corpus-critic-gaps.json`, `research/temp/corpus-critic-results.md`
-   - Step 10: `research/temp/evidence-digest.md` (built inline in Step 10.0b Part 2, full only — formerly step 9), then `research/temp/draft-{a,b,c}.md` (or `research/notes/final_report_<vault_tag>.md` for light tier single-pass)
+   - Step 10: `research/temp/evidence-digest.md` (built inline in Step 10.0b Part 2, full only — formerly step 9), then `research/temp/draft-{a,b,c}.md` (full only; the `fast` route writes `research/notes/final_report_<vault_tag>.md` directly via the bad-research-fast writer)
    - Step 11: `research/temp/synthesis-plan.md`, `research/temp/synthesis-outline.md`, `research/temp/synthesis-evidence.md`, `research/temp/synthesis-pass1.md`, `research/notes/final_report_<vault_tag>.md`
    - Step 11.5: `research/temp/citation-verify-actions.json` (citation-verifier dispositions; full only)
    - Step 12: `research/critic-findings-{dialectic,depth,width,instruction}.json`
@@ -315,7 +315,7 @@ for f in research/critic-findings-dialectic.json \
 done
 ```
 
-(Light tier skips critics + patcher entirely — the critic-findings and patch-log files won't exist. That's expected; only `polish-log.json` is required for light.)
+(The `fast` route skips the full 4-critic fan-out + patcher entirely — those critic-findings and patch-log files won't exist. That's expected; only `polish-log.json` is required for `fast`.)
 
 Then run lint:
 ```bash
@@ -331,15 +331,15 @@ If any rule returns `error` severity issues, address them before declaring compl
 
 ## Invariants you cannot break (the canonical rules — ALWAYS in force)
 
-1. **PATCH, NEVER REGENERATE after step 11.** Once step 11 produces the synthesized final report (or step 10 for light tier), the only modifications are surgical Edit hunks from step 14 (patcher) and step 15 (polish-auditor). Both subagents are tool-locked to `[Read, Edit]`. If a critic's finding would require rewriting a whole section, it escalates to you as a structural issue — not a rewrite. Keep hunks surgical.
-2. **One final report.** Step 11's synthesizer writes the final report ONCE. No re-synthesizing. (Light tier: step 10 writes it once.)
+1. **PATCH, NEVER REGENERATE after step 11.** Once step 11 produces the synthesized final report (or the bad-research-fast writer on the `fast` route), the only modifications are surgical Edit hunks from step 14 (patcher) and step 15 (polish-auditor). Both subagents are tool-locked to `[Read, Edit]`. If a critic's finding would require rewriting a whole section, it escalates to you as a structural issue — not a rewrite. Keep hunks surgical.
+2. **One final report.** Step 11's synthesizer writes the final report ONCE. No re-synthesizing. (`fast` route: the bad-research-fast writer writes it once.)
 3. **At least one dialectical locus.** Step 4 must surface ≥1 dialectical locus unless skip is justified.
 4. **Every interim note commits to a position.** Step 5 investigators end with `## Committed position`.
 5. **`research/temp/tensions.md` exists when loci count ≥ 1.** Step 6 is mandatory whenever step 4 produced any loci.
 6. **Steps are sequential at the outermost level, parallel within.** You cannot start step N+1 before step N completes. Within a step, parallelism is mandatory when there are multiple subagents.
 7. **Canonical research query is gospel everywhere.** Every subagent gets the verbatim query.
 8. **Hygiene rules apply to the final report only.** Workspace artifacts (scaffold, loci JSONs, interim notes, comparisons.md, patch log) can look however they need to look.
-9. **RESPECT THE TIER GATE — never skip or add a step.** For `full` tier, ALL 13 steps run; for `light`, the prescribed 5 steps run. Don't add steps "for thoroughness"; don't drop steps "for budget." The tier is a binding contract.
+9. **RESPECT THE TIER GATE — never skip or add a step.** For `full`, ALL 13 steps run; for `fast`, the prescribed bounded-loop sequence runs (loop → slim grounding → slim critic → polish → gate). Don't add steps "for thoroughness"; don't drop steps "for budget." The route is a binding contract.
 10. **Step 10 triple-draft ensemble is MANDATORY for `full` tier.** You MUST spawn 3 `bad-research-draft-orchestrator` subagents. Writing `research/notes/final_report_<vault_tag>.md` directly in step 10 (instead of going through the synthesizer in step 11) is a PIPELINE VIOLATION for these tiers.
 11. **Step 11 synthesis is MANDATORY for `full` tier.** The synthesizer subagent (Read+Write tool-locked) writes the final report from the 3 drafts. The orchestrator does NOT write the final report itself for these tiers.
 12. **Subagents read full source text.** Draft sub-orchestrators MUST batch-read every note in their `must_read_note_ids` list before writing. Fetchers MUST chase 3-8 primary sources via citation chains.

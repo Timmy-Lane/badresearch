@@ -13,13 +13,28 @@ def test_grader_and_cap_constants_present_and_frozen():
     assert R.SUBAGENT_SOURCE_KILL == 100
 
 
+def test_fast_loop_constants_present_and_anchored():
+    assert R.FAST_MAX_STEPS == 6                 # open_deep_research supervisor cap; Perplexity hard-caps 10
+    assert R.FAST_MAX_QUERIES_PER_STEP == 4      # dzhng breadth default
+    assert R.FAST_MAX_RESULTS_PER_QUERY == 5     # dzhng + gpt-researcher agree
+    assert R.FAST_MIN_NEW_DOMAINS == 2           # "last 2 searches returned similar info" -> novelty floor
+    assert R.FAST_STALL_PATIENCE == 1            # fast mode stops after the first stalled step
+    assert R.FAST_MIN_SOURCES_PER_SUBQ == 3      # open_deep_research "3+ relevant sources"
+    assert R.FAST_MAX_SUBQUESTIONS == 3          # three clones converge on 3
+    assert R.FAST_SUBRESEARCHER_K == 3           # breadth fan-out cap
+    assert R.FAST_TIMEOUT_S == 600               # wall-clock safety net (8-10 min budget)
+    assert R.FAST_RESERVE_SYNTH_FRAC == 0.25     # reserve 25% of budget for the writer
+    assert R.FAST_CONTENT_TRIM_CHARS == 25000    # dzhng + gpt-researcher agree
+    assert R.FAST_TEMPERATURE == 0.4             # gpt-researcher planner/extractor temp
+
+
 def test_effort_levels_are_the_openai_four():
     assert R.EFFORT_LEVELS == ("minimal", "low", "medium", "high")
     # every level maps to a route + a fetcher fan-out cap (dossier 16 §6.1)
     for lvl in R.EFFORT_LEVELS:
         assert lvl in R.EFFORT_MAP
         row = R.EFFORT_MAP[lvl]
-        assert row["route"] in ("light", "full")
+        assert row["route"] in ("fast", "full")
         assert isinstance(row["fetchers_max"], int)
         assert isinstance(row["loci_max"], int)
         assert row["tier"] in ("triage", "work", "heavy", "default")
@@ -34,9 +49,9 @@ def test_effort_monotonic_fanout():
 from bad_research.skills.router import classify_route, degrade_order, effort_overrides
 
 
-def test_effort_overrides_minimal_forces_light_single_draft():
+def test_effort_overrides_minimal_forces_fast_single_draft():
     ov = effort_overrides("minimal")
-    assert ov["route"] == "light"
+    assert ov["route"] == "fast"
     assert ov["fetchers_max"] == 4
     assert ov["single_draft"] is True
 
@@ -61,7 +76,7 @@ def test_effort_can_downgrade_full_to_light():
               "response_format": "structured"}
     assert classify_route(decomp) == "full"
     ov = effort_overrides("minimal")
-    assert ov["route"] == "light"  # the override is the user's explicit floor/ceiling
+    assert ov["route"] == "fast"  # the override is the user's explicit floor/ceiling
 
 
 def test_degrade_order_is_tokens_last():

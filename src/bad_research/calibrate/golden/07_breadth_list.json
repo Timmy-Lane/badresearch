@@ -15,7 +15,7 @@
   "components": {
     "decompose": {
       "decomp": {"sub_questions": ["What are ACID properties?"], "entities": ["ACID", "transaction"], "time_periods": [], "response_format": "structured", "contradiction_terms": [], "domains": ["software"]},
-      "expected_route": "light"
+      "expected_route": "fast"
     },
     "retrieval": {"expect_note_ids": ["1", "2"]}
   }

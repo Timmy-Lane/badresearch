@@ -15,7 +15,7 @@
   "components": {
     "decompose": {
       "decomp": {"sub_questions": ["PostgreSQL default isolation?", "MySQL default isolation?"], "entities": ["PostgreSQL", "MySQL"], "time_periods": [], "response_format": "structured", "contradiction_terms": [], "domains": ["software"]},
-      "expected_route": "light"
+      "expected_route": "fast"
     },
     "retrieval": {"expect_note_ids": ["1", "2"]}
   }

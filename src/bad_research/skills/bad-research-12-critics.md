@@ -11,19 +11,19 @@ description: >
 
 **Tier gate:**
 - **`full` tier** → spawn all 5 critics (the fan-out below).
-- **`light` / `agentic-fast` routes** → run the SLIM single-critic section
+- **`fast` route** → run the SLIM single-critic section
   (**Light-tier slim critic**, below) — ONE adversarial pass, no fan-out, no patcher —
-  then proceed to step 15 (polish). (E3: the cheap routes used to skip straight to polish
-  with no adversarial pass at all; this gives them one.)
+  then proceed to step 15 (polish). (E3: the cheap route used to skip straight to polish
+  with no adversarial pass at all; this gives it one.)
 
 **Goal:** independent findings lists against the synthesized final report, each from a
 different adversarial angle. Critics complement rather than duplicate.
 
 ---
 
-## Light-tier slim critic (`light` / `agentic-fast` routes ONLY)
+## Light-tier slim critic (`fast` route ONLY)
 
-On the `light` and `agentic-fast` routes there is no 4-critic fan-out and no patcher
+On the `fast` route there is no 4-critic fan-out and no patcher
 (step 14). Instead, spawn ONE slim critic — the `bad-research-light-critic` agent — that
 merges the **dialectic** angle (ignored / straw-manned counter-evidence) and the
 **instruction** angle (atomic items the prompt named that the draft missed, under-covered,
@@ -41,7 +41,7 @@ NOT run on these routes.
 
      PIPELINE POSITION: You are the light-tier step 12 (slim single critic) of the
      Bad Research pipeline. The draft is at research/notes/final_report_<vault_tag>.md
-     (light step 10 single-draft, or the agentic-fast ReAct loop). There is NO patcher on
+     (the fast-route planner→writer loop). There is NO patcher on
      this route; after you return, the orchestrator applies your CRITICAL findings inline,
      then runs step 15 (polish).
 

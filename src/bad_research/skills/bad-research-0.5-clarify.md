@@ -13,7 +13,7 @@ description: >
 **Tier gate:** Runs first on every interactive run. SKIP only when the run is
 `--auto` or wrapped — i.e. when `research/wrapper_contract.json` exists or
 `--auto` is set (the wrapper/GOSPEL query is binding and must not be
-questioned). Note: the `route` (incl. `agentic-fast`) is not yet known here —
+questioned). Note: the `route` (incl. `fast`) is not yet known here —
 it is decided at step 1.5, *after* this clarifier — so 0.5 cannot key off the
 route. On a clean interactive run it always runs first.
 

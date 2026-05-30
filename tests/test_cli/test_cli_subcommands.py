@@ -14,7 +14,7 @@ def test_route_command_classifies(tmp_path):
                              "contradiction_terms": [], "domains": ["tech"]}))
     res = runner.invoke(app, ["route", "--decomposition", str(d), "--json"])
     assert res.exit_code == 0
-    assert json.loads(res.stdout)["route"] == "agentic-fast"
+    assert json.loads(res.stdout)["route"] == "fast"
 
 
 def test_route_apply_writes_field(tmp_path):
@@ -35,7 +35,7 @@ def test_route_apply_idempotent_and_reason_present(tmp_path):
                              "contradiction_terms": [], "domains": ["tech"]}))
     res = runner.invoke(app, ["route", "--decomposition", str(d), "--apply", "--json"])
     out = json.loads(res.stdout)
-    assert out["route"] == "light"
+    assert out["route"] == "fast"
     assert out["applied"] is True
     assert out["reason"]
 
@@ -53,8 +53,8 @@ def test_route_command_emits_query_shape(tmp_path):
     out = json.loads(res.stdout)
     assert out["query_shape"] == "straightforward"
     assert out["shape_reason"]
-    # the route field is still the unchanged agentic-fast classification
-    assert out["route"] == "agentic-fast"
+    # the route field is still the unchanged fast classification
+    assert out["route"] == "fast"
 
 
 def test_route_apply_writes_query_shape_field(tmp_path):
@@ -70,7 +70,28 @@ def test_route_apply_writes_query_shape_field(tmp_path):
     written = json.loads(d.read_text())
     assert written["query_shape"] == "breadth_first"
     # route is whatever it was before E12 (the B-5 survey down-route still holds)
-    assert written["route"] == "light"
+    assert written["route"] == "fast"
+
+
+def test_route_fast_flag_overrides(tmp_path):
+    # A decomposition the router would call "full" (multi-domain), forced to fast.
+    decomp = tmp_path / "decomp.json"
+    decomp.write_text(json.dumps({
+        "sub_questions": ["a", "b"], "entities": [], "time_periods": [],
+        "response_format": "structured", "contradiction_terms": [],
+        "domains": ["a", "b", "c"],
+    }))
+    result = runner.invoke(app, ["route", "--decomposition", str(decomp), "--fast", "--json"])
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["route"] == "fast"
+
+
+def test_route_fast_and_full_mutually_exclusive(tmp_path):
+    decomp = tmp_path / "decomp.json"
+    decomp.write_text(json.dumps({"sub_questions": ["a"], "entities": [], "domains": ["x"],
+                                  "response_format": "short"}))
+    result = runner.invoke(app, ["route", "--decomposition", str(decomp), "--fast", "--full"])
+    assert result.exit_code != 0
 
 
 # ── E11 plan-gate: route CLI reports the gate decision (default = no gate) ─────
