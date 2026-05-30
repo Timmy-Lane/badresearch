@@ -17,8 +17,9 @@ def test_every_step_skill_in_roster_has_a_file(skills_dir):
 
 def test_step_skill_roster_is_exactly_18_full_tier_stages():
     """Post-merge (C-1/C-2/C-3): the full-tier stage roster must contain exactly 18
-    invocable stages (excludes bad-research-fast, which is its own route, not
-    a full-tier step). The real roster is 19 entries; 19 - fast = 18.
+    invocable stages (excludes bad-research-fast AND bad-research-ultrafast, each
+    its own route, not a full-tier step). The real roster is 20 entries;
+    20 - fast - ultrafast = 18.
 
     NOTE: the C-6 plan asserted 17, but the actual `_BAD_RESEARCH_STEP_SKILLS` roster
     (counting the half-steps 0.5 / 1.5 / 1.6 / 11.5 that the plan's arithmetic omitted)
@@ -27,7 +28,7 @@ def test_step_skill_roster_is_exactly_18_full_tier_stages():
     from bad_research.core.hooks import _BAD_RESEARCH_STEP_SKILLS
 
     full_tier_steps = [s for s in _BAD_RESEARCH_STEP_SKILLS
-                       if s != "bad-research-fast"]
+                       if s not in ("bad-research-fast", "bad-research-ultrafast")]
     removed = {
         "bad-research-3-contradiction-graph",
         "bad-research-7-source-tensions",

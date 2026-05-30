@@ -29,3 +29,17 @@ def test_ultrafast_runs_slim_grounding_before_gate(skills_dir):
     body = (skills_dir / "bad-research-ultrafast.md").read_text()
     assert "verify-citations" in body
     assert "uncited" in body.lower()
+
+
+def test_entry_skill_wires_ultrafast_route(skills_dir):
+    body = (skills_dir / "bad-research.md").read_text()
+    assert "bad-research-ultrafast" in body
+    assert "--ultrafast" in body          # explicit-only selection documented
+    # the fetcher cap prose is updated to include the ultrafast key
+    assert '"ultrafast":15' in body or '"ultrafast": 15' in body
+
+
+def test_query_router_routes_ultrafast(skills_dir):
+    body = (skills_dir / "bad-research-query-router.md").read_text()
+    assert "--ultrafast" in body
+    assert "bad-research-ultrafast" in body
