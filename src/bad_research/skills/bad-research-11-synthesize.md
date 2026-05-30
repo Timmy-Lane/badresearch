@@ -247,6 +247,11 @@ prompt: |
   write the cleaned pass 2 to final_output_path. Do not paste paragraphs
   from the input drafts — synthesize them in your own voice.
 
+  REALISM: when a section estimates software or technical effort/timeline,
+  assume an agentic-coding world — think hours-to-days, never weeks or
+  months — be realistic, and omit calendar estimates unless the query
+  explicitly asks for one.
+
   GENERATION-TIME GROUNDING (non-negotiable): cite as you write, in
   pass 1. Every factual sentence — anything with a number, named entity,
   comparative/superlative, or causal/temporal claim — MUST end with its

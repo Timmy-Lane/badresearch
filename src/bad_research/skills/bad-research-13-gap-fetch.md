@@ -86,7 +86,7 @@ Read these inputs:
 - `research/temp/post-critic-fetch-log.md` exists (even if it says "no gaps found")
 - All fetch-worthy gaps attempted (proceed to step 14 whether or not all gaps were filled — unfilled gaps are noted in the log)
 
-**Cost:** +$1-3 per run (2-4 Sonnet fetchers). Most runs with good step 2 coverage will find 0-2 gaps, making this a near-no-op.
+**Cost:** cheap — a small targeted fan-out (2-4 fetchers). Most runs with good step 2 coverage will find 0-2 gaps, making this a near-no-op.
 
 ---
 

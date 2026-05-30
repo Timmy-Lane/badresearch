@@ -12,8 +12,8 @@ description: >
 
 **Tier gate:** FULL tier ONLY. SKIP entirely for the `fast` route —
 its quality contract is the forward binding + the deterministic uncited gate; a
-grader loop on a $1–15 fast query is the overkill we explicitly reject. Run only
-when the route in `research/prompt-decomposition.json` is `full`.
+grader loop on a small bounded fast query is the overkill we explicitly reject.
+Run only when the route in `research/prompt-decomposition.json` is `full`.
 
 **Goal:** raise the report's quality on the four non-citation axes (factual,
 completeness, source_quality, efficiency) by feeding the judge's defect findings
@@ -45,9 +45,9 @@ this step does not run.
 **aggregate** the critic findings: read all `research/critic-findings-*.json`
 files, collect their `findings` arrays into a single list, and ask the judge to
 score the five axes against those findings rather than independently re-scanning
-the corpus. This drops round-1 cost from a full Opus-tier corpus scan (~$3–5) to
-a ~$0.50 verdict-aggregation — the 4 critics in step 12 already did the corpus
-read, so round 1 is just a verdict over their findings, not a fresh scan.
+the corpus. This drops round-1 cost from a full Opus-tier corpus scan to a cheap
+verdict-aggregation — the 4 critics in step 12 already did the corpus read, so
+round 1 is just a verdict over their findings, not a fresh scan.
 
 **For rounds 2 and 3 only:** run the full corpus JSON build specified below,
 because the first patch may introduce new issues that are NOT in the original

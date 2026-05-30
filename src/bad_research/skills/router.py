@@ -222,16 +222,16 @@ def plan_gate_fires(
     interactive: bool = False,
     wrapped: bool = False,
     auto: bool = False,
-    est_cost: float | None = None,
 ) -> bool:
     """E11 user-editable plan-gate trigger (Gemini collaborative_planning,
     STEAL_LIST #3). Decides whether step bad-research-1.6-plan-gate should emit a
     plan and pause for "approve / edit / proceed" before step 2 runs.
 
     **This is a SEPARATE gate step — it does NOT and MUST NOT influence
-    classify_route.** It reads the same decomposition only to ask "is this run
-    expensive enough to be worth a human approval round-trip?"; the route output is
-    untouched (it merely reads `classify_route`'s decision, never mutates it).
+    classify_route.** It reads the same decomposition only to ask "is this a
+    full-route or broad-survey run worth a human approval round-trip?"; the route
+    output is untouched (it merely reads `classify_route`'s decision, never
+    mutates it).
 
     Fires iff ALL of:
       * `interactive` — a human is at the keyboard to approve/edit. The DEFAULT is
@@ -240,12 +240,11 @@ def plan_gate_fires(
       * not `wrapped` and not `auto` — a wrapped run (`research/wrapper_contract.json`
         present) or an `--auto` run carries a binding GOSPEL query that must not be
         questioned (mirrors exactly how 0.5-clarify skips for wrapper/auto).
-      * EXPENSIVE — the route is `full`, OR the atomic-item count exceeds
-        `ROUTER_LIGHT_MAX_ATOMIC` (a broad survey the modality gate spared from
-        full but which is still wide enough to mis-scope), OR an explicit
-        `est_cost` is at/above `PLAN_GATE_COST_THRESHOLD`. A cheap bounded run
-        (a small `fast` route, no cost over threshold) is below the bar: a
-        wrong sub-question there costs less than the approval round-trip.
+      * a FULL-ROUTE or BROAD-SURVEY run — the route is `full`, OR the atomic-item
+        count exceeds `ROUTER_LIGHT_MAX_ATOMIC` (a broad survey the modality gate
+        spared from full but which is still wide enough to mis-scope). A small
+        bounded `fast` run is below the bar: a wrong sub-question there costs less
+        than the approval round-trip.
 
     The interactivity flags are supplied by the orchestrator at step 1.6 (it knows
     whether the session is interactive and whether wrapper_contract.json exists);
@@ -257,7 +256,6 @@ def plan_gate_fires(
     return bool(
         route == "full"
         or _atomic_count(decomp) > R.ROUTER_LIGHT_MAX_ATOMIC
-        or (est_cost is not None and est_cost >= R.PLAN_GATE_COST_THRESHOLD)
     )
 
 

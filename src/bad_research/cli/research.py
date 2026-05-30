@@ -26,7 +26,6 @@ def route_cmd(
     interactive: bool = typer.Option(False, "--interactive"),
     wrapped: bool = typer.Option(False, "--wrapped"),
     auto: bool = typer.Option(False, "--auto"),
-    est_cost: float | None = typer.Option(None, "--est-cost"),
     fast: bool = typer.Option(False, "--fast", help="Force the fast route (override auto)."),
     full: bool = typer.Option(False, "--full", help="Force the full route (override auto)."),
     json_output: bool = typer.Option(False, "--json", "-j"),
@@ -63,7 +62,7 @@ def route_cmd(
         route = "full"
     shape = classify_query_shape(decomp)
     would_gate = plan_gate_fires(
-        decomp, interactive=interactive, wrapped=wrapped, auto=auto, est_cost=est_cost
+        decomp, interactive=interactive, wrapped=wrapped, auto=auto
     )
     if apply:
         decomp["route"] = route

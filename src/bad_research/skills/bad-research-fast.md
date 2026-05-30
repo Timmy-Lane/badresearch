@@ -15,7 +15,7 @@ width-sweep funnel (`bad funnel-gather`) as a fixed step; it does a bounded
 loop that *calls* the funnel / retrieval per iteration. No clarifier, no
 decompose-time fan-out — fast by design.
 
-**Goal:** answer a bounded query in < 10 minutes and $1–5 with grounded
+**Goal:** answer a bounded query quickly (a < 10 minute target) with grounded
 per-sentence citations. Terminate via the auditable XSTOP-1 4-clause stop rule
 (below) — whichever clause fires first.
 
@@ -144,6 +144,10 @@ When the loop ends, you become the **writer**. Three boundary lifts the R5 delta
 3. **Partial-answer-better-than-none (Perplexity §R5.4):** if the loop stopped early
    (cap / stall), still write the best grounded answer from what was gathered — flag the
    thin sub-questions rather than refusing.
+
+**Realism:** when the answer estimates software or technical effort, assume an
+agentic-coding world — think hours-to-days, never weeks or months — be realistic,
+and omit calendar estimates unless the query explicitly asks for one.
 
 Write the answer in ONE pass:
 - Direct answer first; length scales with shape — 500–2000 words (straightforward/depth);
