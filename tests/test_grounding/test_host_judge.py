@@ -13,11 +13,16 @@ import json
 import sqlite3
 
 from bad_research.grounding.anchors import AnchorStore, ClaimAnchor
-from bad_research.grounding.gate import CLAIM_QUOTE_OVERLAP_SKIP, claim_quote_overlap
+from bad_research.grounding.gate import (
+    CLAIM_QUOTE_OVERLAP_SKIP,
+    claim_quote_overlap,
+    numeric_or_negation_mismatch,
+)
 from bad_research.grounding.verifier import (
     CitationPresentNLI,
     CitationVerifier,
     HostJudgeNLI,
+    LineSpanJudge,
     VerifyVerdict,
     default_nli,
 )
@@ -51,6 +56,69 @@ def test_claim_quote_overlap_low_when_claim_paraphrases_a_different_topic():
     quote = "The author also enjoys hiking in the mountains on weekends"
     claim = "Quarterly revenue rose 40 percent year over year"
     assert claim_quote_overlap(claim, quote) < CLAIM_QUOTE_OVERLAP_SKIP
+
+
+# ── audit 2026-06-01 (row 6): numeric/negation guard on the near-verbatim band ──
+
+def test_numeric_or_negation_mismatch_flags_number_flip():
+    # same words, flipped number → mismatch (must escalate, not auto-entail)
+    assert numeric_or_negation_mismatch(
+        "Revenue grew 12 percent in the third quarter",
+        "Revenue grew 21 percent in the third quarter",
+    )
+
+
+def test_numeric_or_negation_mismatch_flags_negation_flip():
+    assert numeric_or_negation_mismatch(
+        "There is no evidence linking X to Y in the cohort",
+        "There is evidence linking X to Y in the cohort",
+    )
+
+
+def test_numeric_or_negation_mismatch_false_when_numbers_and_polarity_agree():
+    assert not numeric_or_negation_mismatch(
+        "Revenue grew 21 percent in the third quarter",
+        "Revenue grew 21 percent in the third quarter of the year",
+    )
+
+
+def test_numeric_or_negation_mismatch_false_when_claim_has_no_numbers():
+    # a claim with no digit token is never flagged on the numeric axis
+    assert not numeric_or_negation_mismatch(
+        "The treatment improved outcomes for patients",
+        "The treatment improved outcomes for patients in the trial",
+    )
+
+
+def test_line_span_judge_denies_near_verbatim_number_flip(fake_llm):
+    # A >=0.8-overlap report sentence that FLIPPED a number must NOT auto-entail —
+    # it returns NEUTRAL so the verifier escalates it to the batched host judge.
+    judge = LineSpanJudge(fake_llm)
+    span = "Revenue grew 21 percent in the third quarter of the year"
+    claim = "Revenue grew 12 percent in the third quarter of the year"
+    assert claim_quote_overlap(claim, span) >= CLAIM_QUOTE_OVERLAP_SKIP  # high overlap
+    scores = judge.predict(span, claim)  # predict(premise=span, hypothesis=claim)
+    assert scores["entailment"] < 0.70  # NEUTRAL, not auto-ENTAILMENT
+    assert len(fake_llm.calls) == 0  # predict itself never calls the host
+
+
+def test_line_span_judge_denies_near_verbatim_negation_flip(fake_llm):
+    judge = LineSpanJudge(fake_llm)
+    span = "There is evidence linking the additive to the disorder in the cohort"
+    claim = "There is no evidence linking the additive to the disorder in the cohort"
+    assert claim_quote_overlap(claim, span) >= CLAIM_QUOTE_OVERLAP_SKIP
+    scores = judge.predict(span, claim)
+    assert scores["entailment"] < 0.70  # escalated, not rubber-stamped
+
+
+def test_line_span_judge_accepts_near_verbatim_when_numbers_agree(fake_llm):
+    # the legitimate near-verbatim case still short-circuits to ENTAILMENT ($0).
+    judge = LineSpanJudge(fake_llm)
+    span = "Revenue grew 21 percent in the third quarter of the year"
+    claim = "Revenue grew 21 percent in the third quarter"
+    scores = judge.predict(span, claim)
+    assert scores["entailment"] >= 0.70
+    assert len(fake_llm.calls) == 0
 
 
 # ── HostJudgeNLI: pre-filter routes, judge catches drift ─────────────────────
@@ -141,6 +209,53 @@ def test_host_judge_batches_all_paraphrase_pairs_into_one_call(fake_llm):
     assert verdicts[a1.anchor_id] is VerifyVerdict.UNSUPPORTED
     assert verdicts[a2.anchor_id] is VerifyVerdict.UNSUPPORTED
     assert len(fake_llm.calls) == 1  # both paraphrases share ONE batched judge call
+
+
+# ── audit 2026-06-01 (row 7): keyless degrade — no host provider, no crash ────
+
+def test_keyless_no_host_provider_emits_worklist_not_rubber_stamp():
+    # With NO host provider (llm=None) a paraphrase citation must NOT crash and must
+    # NOT auto-pass — it lands in the needs_host_judgment worklist (PARTIAL, medium)
+    # for the orchestrator (host model) to judge inline.
+    body = "The author also enjoys hiking in the mountains on weekends."
+    quote = "The author also enjoys hiking in the mountains on weekends"
+    a = ClaimAnchor("nA", 0, len(quote), "Revenue rose 40%.", quote)
+    store = _store_with([a])
+    report = f"Quarterly revenue rose 40 percent year over year. [[{a.anchor_id}]]\n"
+    verifier = CitationVerifier(nli=LineSpanJudge(None), llm=None)
+    result = verifier.verify(report, store, {"nA": body})  # must not raise
+    f = result.findings[0]
+    assert f.verdict is VerifyVerdict.PARTIAL
+    assert f.needs_host_judgment is True
+    assert store.get(a.anchor_id).verified == 0
+
+
+def test_keyless_no_host_number_flip_lands_in_worklist():
+    # A near-verbatim claim that flipped a number, keyless + no host: NOT rubber-stamped.
+    body = "Revenue grew 21 percent in the third quarter of the year."
+    quote = "Revenue grew 21 percent in the third quarter of the year"
+    a = ClaimAnchor("nB", 0, len(quote), "Revenue grew 21 percent.", quote)
+    store = _store_with([a])
+    report = f"Revenue grew 12 percent in the third quarter of the year. [[{a.anchor_id}]]\n"
+    verifier = CitationVerifier(nli=LineSpanJudge(None), llm=None)
+    result = verifier.verify(report, store, {"nB": body})
+    f = result.findings[0]
+    assert f.needs_host_judgment is True
+    assert f.verdict is VerifyVerdict.PARTIAL
+
+
+def test_keyless_no_host_exact_quote_still_supported():
+    # The legitimate near-verbatim case still resolves SUPPORTED keyless ($0), no worklist.
+    body = "Latency dropped to 12.4 ms under load in the benchmark run."
+    quote = "Latency dropped to 12.4 ms under load"
+    a = ClaimAnchor("nC", 0, len(quote), "Latency fell to 12.4 ms.", quote)
+    store = _store_with([a])
+    report = f"Latency dropped to 12.4 ms under load. [[{a.anchor_id}]]\n"
+    verifier = CitationVerifier(nli=LineSpanJudge(None), llm=None)
+    result = verifier.verify(report, store, {"nC": body})
+    f = result.findings[0]
+    assert f.verdict is VerifyVerdict.SUPPORTED
+    assert f.needs_host_judgment is False
 
 
 # ── default_nli() wiring ─────────────────────────────────────────────────────
