@@ -7,6 +7,7 @@ passes an explicit tmp home.
 """
 
 import re
+from pathlib import Path
 
 from bad_research.core import hooks
 from bad_research.core.codex_install import (
@@ -21,7 +22,6 @@ from bad_research.core.codex_install import (
 )
 from bad_research.core.codex_translate import skillref_path
 
-
 # --- live roster derivation (NOT hardcoded) ---------------------------------
 
 def _live_step_count() -> int:
@@ -34,8 +34,7 @@ def _live_agent_count() -> int:
     Derived from the install loop in hooks.py (the `_install_*_agent(home, ...)`
     calls), so this tracks the real roster rather than a frozen number.
     """
-    src = (hooks.__file__,)
-    text = open(src[0], encoding="utf-8").read()
+    text = Path(hooks.__file__).read_text(encoding="utf-8")
     calls = re.findall(r"_install_\w+_agent\(home", text)
     return len(calls)
 
