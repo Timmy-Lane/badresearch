@@ -1,0 +1,62 @@
+[
+  {
+    "id": "h2h_01_causal",
+    "modality": "causal",
+    "query": "Does regular aerobic exercise causally reduce the risk of clinical depression, or is the association confounded? Weigh the experimental against the observational evidence."
+  },
+  {
+    "id": "h2h_02_comparison",
+    "modality": "comparison",
+    "query": "Compare PostgreSQL and MySQL (InnoDB) on default transaction isolation level, MVCC implementation, and the practical anomalies each default permits."
+  },
+  {
+    "id": "h2h_03_multidomain",
+    "modality": "multi-domain",
+    "query": "How does the EU AI Act's risk-tier framework interact with the technical reality of frontier-model evaluation? Address the legal, ML-engineering, and compliance-operations angles."
+  },
+  {
+    "id": "h2h_04_contested",
+    "modality": "contested",
+    "query": "Is a higher minimum wage on net beneficial for low-wage workers? Reconstruct the strongest case on each side from the empirical labor-economics literature and defend a position."
+  },
+  {
+    "id": "h2h_05_definitional",
+    "modality": "definitional",
+    "query": "What precisely distinguishes a 'zero-knowledge proof' from a 'zero-knowledge succinct non-interactive argument of knowledge' (zk-SNARK)? Define each and give the conditions that separate them."
+  },
+  {
+    "id": "h2h_06_recency",
+    "modality": "recency",
+    "query": "What changed in the most recent stable release of the Rust compiler, and what are the practically significant new language or std-library features for application developers?"
+  },
+  {
+    "id": "h2h_07_breadth_list",
+    "modality": "breadth-list",
+    "query": "Enumerate the open-source vector databases suitable for production RAG as of 2026, with each one's index types, persistence model, and the single clearest limitation."
+  },
+  {
+    "id": "h2h_08_numeric",
+    "modality": "numeric",
+    "query": "What is the measured energy cost per token (in joules) of inference for a 7B-parameter transformer on a single modern data-center GPU, and how does that figure vary with batch size and quantization?"
+  },
+  {
+    "id": "h2h_09_causal_policy",
+    "modality": "causal",
+    "query": "Did the 2010s expansion of urban bike-lane infrastructure causally increase cycling mode-share, or did it follow pre-existing demand? Separate the causal claims from the selection effects."
+  },
+  {
+    "id": "h2h_10_comparison_tech",
+    "modality": "comparison",
+    "query": "Compare gRPC and GraphQL for a public-facing API: transport, schema evolution, streaming support, browser reachability, and tooling maturity. Which fits which use case?"
+  },
+  {
+    "id": "h2h_11_contested_health",
+    "modality": "contested",
+    "query": "Is intermittent fasting more effective than continuous calorie restriction for sustained weight loss in adults? Adjudicate the conflicting trial evidence and state a defended conclusion."
+  },
+  {
+    "id": "h2h_12_recency_numeric",
+    "modality": "recency",
+    "query": "What are the headline benchmark scores (MMLU, GPQA, SWE-bench) reported for the frontier large language models released in the last twelve months, and which figures are vendor-reported versus independently reproduced?"
+  }
+]
