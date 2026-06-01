@@ -197,12 +197,13 @@ def gate_blocks_ship(findings: list[Finding]) -> bool:
 # as "≈ the quote" — verbatim/near-verbatim. NOTE: this band is NOT covered by Tier-A:
 # Tier-A byte-identity checks span-vs-body integrity (the quoted_support still sits at
 # [char_start:char_end] with a matching SHA), NOT report-sentence-vs-span fidelity. The
-# residual risk in this band — a >=0.8-overlap report sentence that flipped a number
-# ("grew 12%" vs a span saying "grew 21%") — is caught by the `[local]`/keyed entailment
-# lane (CrossEncoderNLI / Tier-C judge), not by Tier-A keyless. On the keyless+host
-# path we accept this near-verbatim band to bound host-token cost: the host judge adds
-# little over the lexical match and the number-flip boundary is a known keyless gap that
-# the `[local]`/keyed lane closes when installed/keyed. dossier §2.2.
+# old residual risk in this band — a >=0.8-overlap report sentence that flipped a number
+# or negation ("grew 12%" vs a span saying "grew 21%") — is now closed KEYLESSLY by
+# `numeric_or_negation_mismatch` below: such a pair is denied the shortcut and escalated
+# to the batched host-model judge (the `[local]`/keyed CrossEncoderNLI lane is still the
+# upgrade for the harder semantic-paraphrase cases). On the keyless+host path we accept
+# the near-verbatim band ONLY when numbers + negation agree, to bound host-token cost.
+# dossier §2.2.
 CLAIM_QUOTE_OVERLAP_SKIP = 0.8
 
 _WORD_RE = re.compile(r"[a-z0-9]+")
@@ -232,3 +233,49 @@ def claim_quote_overlap(claim: str, quote: str) -> float:
         return 1.0
     q = _content_tokens(quote)
     return len(c & q) / len(c)
+
+
+# ── Numeric / negation divergence guard (audit 2026-06-01, row 6) ──────────────
+# The >=0.8-overlap "near-verbatim -> ENTAILMENT, skip the judge" shortcut above used
+# to admit a claim that FLIPPED a number, date, or negation while keeping high lexical
+# overlap ("grew 12%" vs a span saying "grew 21%"; "does not cause" vs "causes"). That
+# was the keyless number-flip gap the docstring above deferred to the [local] lane.
+# This deterministic, keyless guard closes it: when the claim carries a number/date or
+# a negation polarity the span does not, the near-verbatim shortcut is DENIED so the
+# pair escalates to the batched host-model judge (JUDGE_SYSTEM already mandates exact
+# number matching and flags opposites). Conservative by design — it only ever *adds*
+# an escalation (one host call), never silences one, so it cannot mask a real support.
+_NUM_RE = re.compile(r"\d[\d,]*\.?\d*")
+_NEGATION = frozenset({
+    "not", "no", "never", "none", "cannot", "without", "neither", "nor",
+    "fails", "fail", "failed", "lacks", "lack", "absent", "unable",
+})
+
+
+def _numbers(text: str) -> set[str]:
+    """Bare numeric cores in `text`, commas + trailing dots stripped so '1,200' ->
+    '1200' and '21%' -> '21' (the '%' sits outside the match)."""
+    out: set[str] = set()
+    for m in _NUM_RE.findall(text or ""):
+        norm = m.replace(",", "").rstrip(".")
+        if norm:
+            out.add(norm)
+    return out
+
+
+def _has_negation(text: str) -> bool:
+    low = (text or "").lower()
+    if re.search(r"n't\b", low):  # contractions (doesn't / isn't / won't ...)
+        return True
+    return any(t in _NEGATION for t in _WORD_RE.findall(low))
+
+
+def numeric_or_negation_mismatch(claim: str, quote: str) -> bool:
+    """True when the CLAIM carries a number/date the QUOTE does not contain, OR the
+    two differ in negation polarity (one negates, the other doesn't). Used to DENY the
+    near-verbatim ENTAILMENT shortcut so such a pair is escalated to the host judge
+    instead of rubber-stamped. Keyless + deterministic + conservative."""
+    cn = _numbers(claim)
+    if cn and not cn <= _numbers(quote):
+        return True
+    return _has_negation(claim) != _has_negation(quote)

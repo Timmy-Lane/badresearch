@@ -141,11 +141,21 @@ hand-dispatch steps 2.2(legacy)–2.4 describe.
 
 ---
 
-## Step 2.3 — Utility scoring and selection
+## Step 2.3 (legacy) — Hand utility scoring and selection
 
-**Tier gate:** SKIP for `light`. Run for `full`.
+> **FALLBACK ONLY — do NOT run this on the preferred path.** This hand-scored
+> table is consumed by the legacy hand-dispatch fetcher waves (Step 2.4) and is
+> live ONLY when `bad funnel-gather` (Step 2.2) is unavailable or was skipped.
+> On the preferred funnel path the funnel does its OWN deterministic rank →
+> read Tier 0→3 → filter junk → chunk+store → rerank and returns `top_chunks`;
+> it never reads this eyeball table, so producing it there is wasted work.
+> **If you ran Step 2.2 (`bad funnel-gather`), SKIP straight to Step 2.5.**
+>
+> **Gate:** run ONLY when the funnel CLI is unavailable/skipped AND tier is
+> `full` (always skip for `light`).
 
-Before batching URLs, score each candidate URL on six dimensions (0–3 each, max composite 18):
+When the funnel is unavailable, score each candidate URL by hand on six
+dimensions (0–3 each, max composite 18) before batching:
 
 1. **Authority (0–3):** Primary data / government / academic (3) > institutional report (2) > quality journalism (1) > blog (0)
 2. **Novelty (0–3):** Unique domain or perspective (3) > partially overlapping (1) > redundant (0)
@@ -154,13 +164,17 @@ Before batching URLs, score each candidate URL on six dimensions (0–3 each, ma
 5. **Redundancy (0–3):** Likely novel content (3) > possibly overlapping (1) > almost certainly a rewrite (0)
 6. **Freshness (0–3):** For temporal topics: last 12 months (3), 1–3 years (2), 3–5 years (1), older (0). For foundational topics: canonical/seminal (3), recent derivative (1).
 
-**Selection rule:** Rank by composite utility score. Select the top N URLs (where N = batch capacity × batch count). Hard constraint: every atomic item must have ≥3 candidate URLs before low-utility URLs from well-covered items are included.
+**Selection rule:** Rank by composite utility score. Select the top N URLs (where N = batch capacity × batch count). Hard constraint: every atomic item must have ≥3 candidate URLs before low-utility URLs from well-covered items are included. (On the preferred path the funnel's internal rank/rerank supersedes this hand ranking.)
 
 Write to `research/temp/scored-urls.md`.
 
 ---
 
-## Step 2.4 — Parallel fetcher waves
+## Step 2.4 (legacy) — Parallel fetcher waves
+
+> **FALLBACK ONLY.** Consumes the Step 2.3 hand-scored batches. Run ONLY when
+> `bad funnel-gather` (Step 2.2) is unavailable/skipped. If you ran the funnel,
+> it already executed these fetcher/dedup/filter/store waves — SKIP to Step 2.5.
 
 **Wave 1 (main wave):** Spawn **10–12 fetcher subagents in ONE message** — true parallel execution. Each fetcher gets its own non-overlapping batch.
 

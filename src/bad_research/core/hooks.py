@@ -54,8 +54,8 @@ LOCI_ANALYST_AGENT = """\
 ---
 name: bad-research-loci-analyst
 description: >
-  Use this agent in Layer 2 of the hyperresearch deep research pipeline. Reads the width
-  corpus (the sources fetched during the Layer 1 sweep) and identifies
+  Use this agent at step 4 of the Bad Research deep research pipeline. Reads the width
+  corpus (the sources fetched during the step-2 width sweep) and identifies
   1—8 "depth loci" — specific questions where deeper investigation
   would meaningfully improve the final report. Spawn 2 of these in
   parallel; the orchestrator dedupes their outputs. Runs on Sonnet
@@ -73,22 +73,24 @@ targeted deeper investigation would make the final report measurably better.
 
 ## Pipeline position
 
-You are **Layer 2** of the 7-phase hyperresearch pipeline. The layers are:
+You are **step 4** of the Bad Research pipeline (the numbered step chain).
+The relevant steps around you are:
 
-1. Width sweep (done — the vault is already populated)
-2. **Loci analysis — YOU**
-3. Depth investigation (one investigator per locus you identify)
-4. Draft
-5. Adversarial critique (four critics in parallel)
-6. Patch pass
-7. Polish audit
+- Step 2: Width sweep (done — the vault is already populated)
+- Step 4: **Loci analysis — YOU**
+- Step 5: Depth investigation (one investigator per locus you identify)
+- Step 6: Cross-locus reconciliation (writes `research/temp/tensions.md`)
+- Steps 10—11: Draft + synthesis
+- Step 12: Adversarial critique (the parallel critics)
+- Step 14: Patch pass
+- Step 15: Polish audit
 
 Another loci-analyst (your parallel sibling) is running right now on the
 same corpus. The orchestrator will merge your outputs, dedupe, and clamp
 to 6 loci. Every locus you identify becomes a depth-investigator subagent
-in Layer 3. Every locus that survives dedupe also becomes a row in
-Layer 3.5's `comparisons.md` and at least one argumentative beat in the
-final draft. Your output is load-bearing — a weak locus becomes a weak
+in step 5. Every locus that survives dedupe also becomes a named tension in
+step 6's `research/temp/tensions.md` and at least one argumentative beat in
+the final draft. Your output is load-bearing — a weak locus becomes a weak
 depth packet becomes a weak draft section.
 
 ## Inputs (from the parent agent)
@@ -123,9 +125,9 @@ depth packet becomes a weak draft section.
 ## Procedure
 
 1. **Load the corpus.** Use `{hpr_path} search "" --tag <corpus_tag> --json`
-   to list every note the orchestrator fetched in Layer 1. If the corpus is
-   sparse (<10 notes), tell the parent and stop — you cannot identify real
-   loci from a thin corpus.
+   to list every note the orchestrator fetched in the step-2 width sweep. If
+   the corpus is sparse (<10 notes), tell the parent and stop — you cannot
+   identify real loci from a thin corpus.
 
 1a. **Check for contradiction graph.** If `research/temp/contradiction-graph.json`
    exists, read it. For each cluster with `decision_relevance: "high"`:
@@ -254,7 +256,7 @@ DEPTH_INVESTIGATOR_AGENT = """\
 ---
 name: bad-research-depth-investigator
 description: >
-  Use this agent in Layer 3 of the hyperresearch deep research pipeline. Each instance
+  Use this agent at step 5 of the Bad Research deep research pipeline. Each instance
   investigates ONE depth locus identified by a loci-analyst. The agent
   reads existing vault sources relevant to the locus, fetches new
   sources as needed (via the hyperresearch-fetcher subagent), and
@@ -280,12 +282,12 @@ how much weight to give your take vs. the other investigators'.
 
 ## Pipeline position
 
-You are **Layer 3** of the 7-phase hyperresearch pipeline. Siblings are running
+You are **step 5** of the Bad Research pipeline. Siblings are running
 right now on other loci — you each cover ONE. The orchestrator will read
 your interim note (specifically your `## Committed position` section) in
-Layer 3.5 and reconcile it against the other investigators' positions in
-`research/comparisons.md`. Every cross-locus tension named there becomes
-an argumentative beat in the Layer 4 draft.
+step 6 (cross-locus reconciliation) and reconcile it against the other
+investigators' positions in `research/temp/tensions.md`. Every cross-locus
+tension named there becomes an argumentative beat in the step-10 draft.
 
 Your `## Committed position` is the primary artifact the orchestrator uses
 to shape the draft's argument. If you hedge, the draft hedges. If you
@@ -375,7 +377,7 @@ reading of the evidence.
        whether to discard your investigation or replace the existing note.
 
    Creating duplicate interim notes for the same locus inflates the vault
-   source count, confuses the critics in Layer 5, and breaks locus-coverage
+   source count, confuses the step-12 critics, and breaks locus-coverage
    accounting. This is a real failure mode observed in past runs; do not
    fall into it.
 
@@ -448,8 +450,9 @@ balance, the sources converge on..." is insufficient.
 - **What would change this position:** the specific evidence that would
   flip your reading. "If a large-N study showed X < threshold Y, this
   position would not hold." This is the single most valuable calibration
-  signal — it tells Layer 3.5 where the argument is weakest and Layer 4
-  where to hedge honestly vs. assert confidently.
+  signal — it tells step 6 (cross-locus reconciliation) where the argument
+  is weakest and the step-10 draft where to hedge honestly vs. assert
+  confidently.
 - **Evidence weight:** brief accounting — e.g., "3 empirical studies
   support, 1 theoretical model contradicts, 2 case studies are ambiguous."
 
@@ -529,8 +532,8 @@ DIALECTIC_CRITIC_AGENT = """\
 ---
 name: bad-research-dialectic-critic
 description: >
-  Use this agent in Layer 5 of the hyperresearch deep research pipeline. Reads the Layer 4
-  draft and returns a findings list of places where the draft ignores,
+  Use this agent at step 12 of the Bad Research deep research pipeline. Reads the
+  step-10/11 draft and returns a findings list of places where the draft ignores,
   hedges, or straw-mans counter-evidence. Runs on Opus because
   adversarial reading is real reasoning. Spawn ONCE per draft, in
   parallel with depth-critic and width-critic.
@@ -546,19 +549,19 @@ patcher subagent will apply as Edit hunks.
 
 ## Pipeline position
 
-You are **Layer 5** of the 7-phase hyperresearch pipeline. Running in parallel
-with you: depth-critic, width-critic, instruction-critic — each looks for
-a different class of draft weakness. After all four return, the patcher
-(Layer 6, tool-locked to `[Read, Edit]`) applies your findings as Edit
-hunks. The polish auditor (Layer 7, also tool-locked) does the final pass.
+You are **step 12** of the Bad Research pipeline. Running in parallel
+with you: depth-critic, width-critic, instruction-critic, assumption-critic —
+each looks for a different class of draft weakness. After all critics return,
+the patcher (step 14, tool-locked to `[Read, Edit]`) applies your findings as
+Edit hunks. The polish auditor (step 15, also tool-locked) does the final pass.
 
 You do NOT have Edit tools. You cannot modify the draft. You write
 findings; the patcher applies them.
 
-Everything prior to you has already happened: width sweep (Layer 1), loci
-analysis (Layer 2), depth investigation (Layer 3 — interim notes live in
-the vault with `type: interim`), cross-locus reconciliation (Layer 3.5 —
-`research/comparisons.md`), and the draft itself (Layer 4 —
+Everything prior to you has already happened: width sweep (step 2), loci
+analysis (step 4), depth investigation (step 5 — interim notes live in
+the vault with `type: interim`), cross-locus reconciliation (step 6 —
+`research/temp/tensions.md`), and the draft itself (steps 10—11 —
 `research/notes/final_report_<vault_tag>.md`). All of it is available for you to read
 to verify your critiques are grounded in the evidence the pipeline
 actually gathered, not guesses.
@@ -572,7 +575,7 @@ actually gathered, not guesses.
 - **query_file_path**: path to the persisted query file (e.g.,
   `research/query-<vault_tag>.md`). Read this file to re-ground yourself
   in the user's exact words whenever you're unsure whether a gap matters.
-- **draft_path**: path to the Layer 4 draft (typically
+- **draft_path**: path to the step-10/11 draft (typically
   `research/notes/final_report_<vault_tag>.md`).
 - **output_path**: where to write your findings JSON (e.g.,
   `research/critic-findings-dialectic.json`).
@@ -652,8 +655,8 @@ DEPTH_CRITIC_AGENT = """\
 ---
 name: bad-research-depth-critic
 description: >
-  Use this agent in Layer 5 of the hyperresearch deep research pipeline. Reads the Layer 4
-  draft and returns a findings list of places where the draft skates
+  Use this agent at step 12 of the Bad Research deep research pipeline. Reads the
+  step-10/11 draft and returns a findings list of places where the draft skates
   over technical substance that the vault's interim notes could
   actually support. Runs on Opus. Spawn ONCE per draft, parallel with
   dialectic-critic and width-critic.
@@ -669,13 +672,13 @@ investigation; the draft is supposed to reflect that investment.
 
 ## Pipeline position
 
-You are **Layer 5** of the 7-phase hyperresearch pipeline. Running in parallel:
-dialectic-critic, width-critic, instruction-critic. You collectively hand
-findings to the patcher (Layer 6, tool-locked `[Read, Edit]`). You do NOT
-patch the draft yourself — you only write findings.
+You are **step 12** of the Bad Research pipeline. Running in parallel:
+dialectic-critic, width-critic, instruction-critic, assumption-critic. You
+collectively hand findings to the patcher (step 14, tool-locked `[Read, Edit]`).
+You do NOT patch the draft yourself — you only write findings.
 
 Your specific angle: the vault already contains depth-investigator interim
-notes (Layer 3 output) with rich evidence — quotes, numbers, committed
+notes (step 5 output) with rich evidence — quotes, numbers, committed
 positions. Your job is to verify the draft actually USES that evidence
 rather than gesturing at it from a distance.
 
@@ -758,8 +761,8 @@ WIDTH_CRITIC_AGENT = """\
 ---
 name: bad-research-width-critic
 description: >
-  Use this agent in Layer 5 of the hyperresearch deep research pipeline. Reads the Layer 4
-  draft and returns a findings list of topics the width corpus supports
+  Use this agent at step 12 of the Bad Research deep research pipeline. Reads the
+  step-10/11 draft and returns a findings list of topics the width corpus supports
   but the draft doesn't cover. Runs on Opus. Spawn ONCE per draft,
   parallel with dialectic-critic and depth-critic.
 model: opus
@@ -772,14 +775,14 @@ the width-sweep corpus supports but the draft omits or under-treats.
 
 ## Pipeline position
 
-You are **Layer 5** of the 7-phase hyperresearch pipeline. Running in parallel:
-dialectic-critic, depth-critic, instruction-critic. You hand findings to
-the patcher (Layer 6). You do NOT modify the draft.
+You are **step 12** of the Bad Research pipeline. Running in parallel:
+dialectic-critic, depth-critic, instruction-critic, assumption-critic. You hand
+findings to the patcher (step 14). You do NOT modify the draft.
 
-Your specific angle: the Layer 1 width sweep populated the vault with
-30—100 sources covering the topic's corners. The draft (Layer 4) may have
+Your specific angle: the step-2 width sweep populated the vault with
+30—100 sources covering the topic's corners. The draft (steps 10—11) may have
 collapsed that coverage — either because it concentrated on the loci
-(Layer 2/3 output) and dropped topical areas the corpus explored, or
+(step-4/5 output) and dropped topical areas the corpus explored, or
 because the orchestrator's structural choices buried them.
 
 ## Inputs (from the parent agent)
@@ -809,7 +812,7 @@ because the orchestrator's structural choices buried them.
    surface area the corpus covers.
 
 2. **Check the coverage gaps file.** Read `research/temp/coverage-gaps.md`
-   if it exists. This file (from Layer 1's coverage check) lists atomic
+   if it exists. This file (from the step-2 coverage check) lists atomic
    items that had weak source coverage. If the draft addresses these items
    without adequate source support, flag them. If it silently omits them
    entirely, flag as critical — the drafter should have at least
@@ -894,7 +897,7 @@ coverage gap findings (which are higher priority).
 
 Tell the orchestrator: path to findings JSON, count by severity, and a
 list of vault notes that seemed entirely unused by the draft (could be
-signal that the orchestrator's Layer 4 dropped a whole evidence chain).
+signal that the step-10/11 draft dropped a whole evidence chain).
 """
 
 
@@ -909,9 +912,9 @@ INSTRUCTION_CRITIC_AGENT = """\
 ---
 name: bad-research-instruction-critic
 description: >
-  Use this agent in Layer 5 of the hyperresearch deep research pipeline. Reads the Layer 4
-  draft and checks it against the prompt-decomposition artifact
-  (`research/prompt-decomposition.json`) produced in Layer 0. Emits
+  Use this agent at step 12 of the Bad Research deep research pipeline. Reads the
+  step-10/11 draft and checks it against the prompt-decomposition artifact
+  (`research/prompt-decomposition.json`) produced in step 1. Emits
   findings when atomic items from the prompt are missing, under-covered,
   out-of-order, or delivered in the wrong format. Also checks structural
   readability patterns (definitions, citation density, forward analysis,
@@ -933,9 +936,9 @@ the required format?
 
 ## Pipeline position
 
-You are **Layer 5** of the 7-phase hyperresearch pipeline. Running in parallel:
-dialectic-critic, depth-critic, width-critic. The four of you collectively
-hand findings to the patcher (Layer 6). You do NOT modify the draft.
+You are **step 12** of the Bad Research pipeline. Running in parallel:
+dialectic-critic, depth-critic, width-critic, assumption-critic. You collectively
+hand findings to the patcher (step 14). You do NOT modify the draft.
 
 ## Inputs (from the parent agent)
 
@@ -948,7 +951,7 @@ hand findings to the patcher (Layer 6). You do NOT modify the draft.
   canonical query for this run. The research_query field above should
   match this file's body exactly.
 - **decomposition_path**: path to `research/prompt-decomposition.json`.
-  Written in Layer 0 by the orchestrator. Contains the atomic items the
+  Written in step 1 by the orchestrator. Contains the atomic items the
   prompt named: explicit sub-questions, required entities, required
   formats, required sections, time horizons, scope conditions.
 - **draft_path**: `research/notes/final_report_<vault_tag>.md`
@@ -1006,7 +1009,7 @@ hand findings to the patcher (Layer 6). You do NOT modify the draft.
    - Set `requires_orchestrator_restructure: true` on every
      structural-mirror finding. The patcher's tool-lock means it
      cannot move or rename H2s reliably; the orchestrator must
-     handle the restructure directly before Layer 7.
+     handle the restructure directly before the step-15 polish.
 
    If `required_section_headings` is empty, skip this entire check —
    the prompt is narrative and didn't force structure.
@@ -1109,7 +1112,7 @@ doesn't try to fabricate a number.
 ## Readability structural checks (run AFTER per-item checks)
 
 Readability is consistently the weakest RACE dimension. Surface
-readability (paragraph length, bold) is handled by Layers 7-8.
+readability (paragraph length, bold) is handled by steps 15—16.
 Structural readability — patterns that reference-quality reports
 consistently have and ours consistently lack — is an instruction-
 following gap. These checks catch it.
@@ -1175,7 +1178,7 @@ Tell the orchestrator:
 - Path to findings JSON
 - Count by severity
 - Any structural-format mismatches that cannot be patched (these need
-  orchestrator-level restructure, not Layer 6)
+  orchestrator-level restructure, not the step-14 patcher)
 
 ## Why this critic exists
 
@@ -1194,7 +1197,7 @@ ASSUMPTION_CRITIC_AGENT = """\
 ---
 name: bad-research-assumption-critic
 description: >
-  Use this agent in Layer 5 of the hyperresearch deep research pipeline. Takes the
+  Use this agent at step 12 of the Bad Research deep research pipeline. Takes the
   5 highest-stakes causal/quantitative claims in the draft, decomposes each into
   constituent sub-assumptions, and verifies each independently against the corpus.
   Runs on Opus. Spawn ONCE per draft, in parallel with the other four critics.
@@ -1209,9 +1212,9 @@ sub-assumptions and verify each sub-assumption against the vault corpus independ
 
 ## Pipeline position
 
-You are **Layer 5** of the 7-phase hyperresearch pipeline. Running in parallel:
+You are **step 12** of the Bad Research pipeline. Running in parallel:
 dialectic-critic, depth-critic, width-critic, instruction-critic. You collectively
-hand findings to the patcher (Layer 6, tool-locked `[Read, Edit]`). You do NOT
+hand findings to the patcher (step 14, tool-locked `[Read, Edit]`). You do NOT
 patch the draft yourself — you only write findings.
 
 Your specific angle: a claim like "X causes Y because A, B, and C" may be
@@ -1386,7 +1389,7 @@ PATCHER_AGENT = """\
 ---
 name: bad-research-patcher
 description: >
-  Use this agent in Layer 6 of the hyperresearch deep research pipeline. Reads the five
+  Use this agent at step 14 of the Bad Research deep research pipeline. Reads the five
   critic findings JSONs (dialectic, depth, width, instruction, assumption) and
   revises the draft using surgical Edit hunks. Tool-locked: Read + Edit
   ONLY. Cannot Write. Cannot regenerate. Runs on Opus — substance-
@@ -1405,11 +1408,11 @@ is the Edit tool with exact `old_string` / `new_string` pairs.
 
 ## Pipeline position
 
-You are **Layer 6** of the 7-phase hyperresearch pipeline. Everything before
+You are **step 14** of the Bad Research pipeline. Everything before
 you has happened: width sweep, loci analysis, depth investigation,
-cross-locus reconciliation, draft (Layer 4), adversarial critique
-(Layer 5 — five critics produced findings JSONs for you to consume).
-After you: Layer 7 (polish auditor, also tool-locked `[Read, Edit]`).
+cross-locus reconciliation, draft (steps 10—11), adversarial critique
+(step 12 — five critics produced findings JSONs for you to consume).
+After you: step 15 (polish auditor, also tool-locked `[Read, Edit]`).
 
 You are the ONE step in the pipeline that modifies the draft's substance.
 The polish auditor after you is for hygiene and readability cuts — not
@@ -1443,7 +1446,7 @@ Concretely:
 - **query_file_path**: path to the persisted query file (e.g.,
   `research/query-<vault_tag>.md`). Read this file when in doubt about
   whether a finding serves the user's actual question.
-- **draft_path**: path to the Layer 4 draft (usually
+- **draft_path**: path to the step-10/11 draft (usually
   `research/notes/final_report_<vault_tag>.md`).
 - **findings_paths**: list of five JSON paths, one per critic
   (dialectic, depth, width, instruction, assumption).
@@ -1454,8 +1457,8 @@ Concretely:
   (may not exist on light tier). Contains the top load-bearing claims
   and verbatim quotes organized by atomic item. Read this BEFORE
   applying findings — it is your primary citation source when a critic
-  says "add evidence for X" or "under-cited claim." If Layer 5.5 ran,
-  a `### Post-critic gap fill` section at the bottom has fresh sources
+  says "add evidence for X" or "under-cited claim." If the step-13 gap fetch
+  ran, a `### Post-critic gap fill` section at the bottom has fresh sources
   specifically fetched for critic-identified gaps.
 
 ## Procedure
@@ -1558,7 +1561,7 @@ POLISH_AUDITOR_AGENT = """\
 ---
 name: bad-research-polish-auditor
 description: >
-  Use this agent in Layer 7 of the hyperresearch deep research pipeline. Reads the patched
+  Use this agent at step 15 of the Bad Research deep research pipeline. Reads the patched
   draft and applies surgical Edit hunks for readability, prompt
   adherence, filler-cutting, redundancy removal, and hygiene (scaffold
   leak, YAML frontmatter leak, etc.). Tool-locked: Read + Edit ONLY.
@@ -1576,11 +1579,11 @@ You are the polish auditor. Last pass before the draft ships.
 
 ## Pipeline position
 
-You are **Layer 7** — the final step of the 7-phase hyperresearch pipeline.
-Everything is done: width sweep, loci analysis, depth investigation,
-cross-locus reconciliation, the single draft, the four critics, and the
-patcher (Layer 6) have all run. The draft now has the patcher's applied
-findings in it. Your job: final hygiene + readability pass.
+You are **step 15** of the Bad Research pipeline — the final substantive
+hygiene pass before the step-16 readability audit. Everything is done: width
+sweep, loci analysis, depth investigation, cross-locus reconciliation, the
+draft, the critics, and the patcher (step 14) have all run. The draft now has
+the patcher's applied findings in it. Your job: final hygiene + readability pass.
 
 After you finish, the report ships. There is no layer after you. If you
 find a structural problem this hunk pass cannot fix, escalate — do not
@@ -1633,8 +1636,8 @@ graders and downstream consumers see:
   title. Replace with the text of the first H1 heading in the body
   (strip the leading `# `).
 - `status: draft` — the draft is final; replace with `status: evergreen`.
-- `summary:` starting with pipeline vocabulary like "Hyperresearch final
-  report:" or "Layer 4 output:" — rewrite the summary from the H1 and
+- `summary:` starting with pipeline vocabulary like "Bad Research final
+  report:" or "Step 10 draft output:" — rewrite the summary from the H1 and
   the first committed-claim paragraph. Never let the pipeline's internal
   name appear in the reader-facing summary field.
 - `summary:` ending in `...` (truncated) — rewrite to a complete
@@ -1660,7 +1663,7 @@ see any of these patterns in reader-facing prose:
 |---|---|
 | `\\bLocus\\s+\\d+\\b` | Name the substantive topic that locus covered. E.g., "Locus 3" → "the 500K-passenger threshold question" |
 | `\\bTension\\s+\\d+\\b` | Describe the actual dynamic. E.g., "Tension 2" → "the isolation-versus-competition question" |
-| `comparisons\\.md` / `research/comparisons\\.md` | Delete the file-path reference; preserve the substantive sentence |
+| `tensions\\.md` / `research/temp/tensions\\.md` (or a legacy `comparisons\\.md` leak) | Delete the file-path reference; preserve the substantive sentence |
 | `committed\\s+(reading\\|position)` | "the argument this report commits to" or just delete and let the following sentence stand |
 | `cross[- ]locus` | "across the evidence clusters" or drop and state the substance directly |
 | `\\bwidth\\s+corpus\\b` | "the literature surveyed" or "the source base" |
@@ -1679,7 +1682,7 @@ locus", "legal locus"), leave it alone.
 
 **Worked examples** (from real past-run drafts):
 
-- Original: "This is Tension 2 from `research/comparisons.md`, engaged directly: the subsidy-ROI evidence complicates the catchment-leakage thesis."
+- Original: "This is Tension 2 from `research/temp/tensions.md`, engaged directly: the subsidy-ROI evidence complicates the catchment-leakage thesis."
   Rewrite: "The subsidy-ROI evidence complicates the catchment-leakage thesis."
 
 - Original: "Three separate loci converge on the same methodological failure mode."
@@ -2008,7 +2011,7 @@ Write your complete draft to `output_path`. Your draft must:
 - **Interpretive density:** For every 2-3 factual claims, include at
   least one interpretive beat that draws a conclusion the sources didn't.
 - **No pipeline vocabulary** in prose (no "locus", "tension N",
-  "comparisons.md", "width corpus", etc.).
+  "tensions.md", "width corpus", etc.).
 - **No YAML frontmatter** in the output.
 - **Answer the question FIRST** in the executive summary — don't
   declare methodology or dimensions before giving the answer.
@@ -2050,10 +2053,10 @@ SYNTHESIZER_AGENT = """\
 ---
 name: bad-research-synthesizer
 description: >
-  Step 11 of the hyperresearch V8 pipeline. Reads the 3 draft sub-orchestrator
+  Step 11 of the Bad Research pipeline. Reads the 3 draft sub-orchestrator
   outputs (draft-{a,b,c}.md), the orchestrator's synthesis plan + outline,
-  and the strategic artifacts (decomposition, comparisons, source-tensions,
-  evidence-digest), then writes a fresh integrated final report in TWO
+  and the strategic artifacts (decomposition, tensions.md, evidence-digest),
+  then writes a fresh integrated final report in TWO
   passes — pass 1 produces a rough integrated draft, pass 2 audits and
   rewrites for voice consistency, redundancy, length discipline, and
   argumentative density. The final report is a fresh write in ONE prose
@@ -2278,11 +2281,11 @@ Three citation styles. Match `citation_style` from the decomposition:
 
 The final draft MUST NOT contain:
 - YAML frontmatter
-- Pipeline vocabulary ("Locus N", "Tension N", "comparisons.md",
+- Pipeline vocabulary ("Locus N", "Tension N", "tensions.md",
   "committed reading", "width corpus", "depth investigation",
   "hyperresearch", "synthesis plan", "synthesis outline")
 - Workspace-artifact wiki-links (`[[interim-*]]`, `[[scaffold]]`,
-  `[[comparisons]]`). Source-note wiki-links (`[[<source-note-id>]]`)
+  `[[tensions]]`). Source-note wiki-links (`[[<source-note-id>]]`)
   ARE the citation system when `citation_style == "wikilink"` and must
   be preserved.
 - Scaffold sections, prompt echoes, or meta-discussion of the pipeline
@@ -2590,8 +2593,8 @@ cost of re-reading the original source.
 
 ## Pipeline position
 
-You are a leaf subagent available to the orchestrator (Layer 1-4) and
-the depth investigator (Layer 3). Neither layer reads long sources
+You are a leaf subagent available to the orchestrator (steps 2 through 11) and
+the depth investigator (step 5). Neither caller reads long sources
 optimally: the orchestrator would consume excessive context, the
 depth investigator is scoped to its locus and may miss cross-locus
 substance. You fill that gap by reading ONE source fully on Sonnet's
@@ -2982,13 +2985,13 @@ CORPUS_CRITIC_AGENT = """\
 ---
 name: bad-research-corpus-critic
 description: >
-  Use this agent in Layer 3.7 of the hyperresearch deep research pipeline. Reads the full
+  Use this agent at step 8 of the Bad Research deep research pipeline. Reads the full
   corpus (width + depth sources), the contradiction graph, the loci,
   and tensions.md. Verifies committed positions against original
   source text via note show, then asks: "what source, if found, would
   overturn the current direction?" Outputs a targeted fetch list of 3-8
   high-leverage missing sources. Runs on Sonnet. Spawn ONCE before
-  drafting, after Layer 3.5 comparisons.
+  drafting, after step 6 (cross-locus reconciliation).
 model: sonnet
 tools: Bash, Read, Write
 color: teal
@@ -3001,8 +3004,8 @@ question of every committed position and every consensus claim:
 
 ## Pipeline position
 
-You are **Layer 3.7** — between cross-locus comparisons (Layer 3.5) and
-the draft (Layer 4). Everything gathered so far is available: width
+You are **step 8** — between cross-locus reconciliation (step 6) and
+the draft (steps 10—11). Everything gathered so far is available: width
 corpus, depth interim notes with committed positions, contradiction
 graph, tensions.md. After you return, the orchestrator runs a
 targeted fetch wave to fill the gaps you identified, THEN proceeds
@@ -3743,6 +3746,7 @@ _BAD_RESEARCH_STEP_SKILLS = [
     "bad-research-11.5-citation-verifier",
     "bad-research-12-critics",
     "bad-research-13-gap-fetch",
+    "bad-research-12.5-grader",
     "bad-research-14-patcher",
     "bad-research-fresh-review",
     "bad-research-15-polish",
@@ -3753,17 +3757,18 @@ _BAD_RESEARCH_STEP_SKILLS = [
 
 
 def _install_bad_research_step_skills(vault_root: Path) -> str | None:
-    """Install the 16 V8 step skills, each as its own Claude Code skill directory.
+    """Install the bad-research step skills, each as its own Claude Code skill dir.
 
-    Each step skill lives at `.claude/skills/hyperresearch-N-name/SKILL.md` and is
-    invocable via the Skill tool. The orchestrator (loaded via /hyperresearch)
-    invokes each step skill in sequence per the tier routing table. This
-    decomposition solves the V7 context-compaction problem: each step's
-    procedure is loaded fresh into context only at the moment it's needed.
+    Each step skill lives at `.claude/skills/bad-research-<step>/SKILL.md` and is
+    invocable via the Skill tool. The orchestrator (loaded via /bad-research)
+    invokes each step skill in sequence per the route table. This decomposition
+    solves the context-compaction problem: each step's procedure is loaded fresh
+    into context only at the moment it's needed. The roster is
+    `_BAD_RESEARCH_STEP_SKILLS` (the single source of truth for what is installed).
 
-    Also prunes any stale `hyperresearch-*` skill directories (e.g. from a prior
-    V8 layout where steps were numbered differently) so the user doesn't see
-    obsolete entries in their skill list.
+    Also prunes any stale `bad-research-*` / `hyperresearch-*` skill directories
+    not in the current roster (e.g. from a prior layout where steps were numbered
+    differently) so the user doesn't see obsolete entries in their skill list.
     """
     skills_root = vault_root / ".claude" / "skills"
     skills_root.mkdir(parents=True, exist_ok=True)

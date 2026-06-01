@@ -28,6 +28,10 @@ def install(
     steps_only: bool = typer.Option(
         False, "--steps-only", help="(internal) lazy step-skill install into a project .claude/.",
     ),
+    codex: bool = typer.Option(
+        False, "--codex",
+        help="Install into Codex (~/.codex/skills/) instead of Claude Code (~/.claude/).",
+    ),
     json_output: bool = typer.Option(False, "--json", "-j"),
 ) -> None:
     from bad_research.core.agent_docs import _resolve_executable
@@ -39,7 +43,12 @@ def install(
 
     hpr = _resolve_executable()
 
-    if steps_only:
+    if codex:
+        from bad_research.core.codex_install import install_codex
+
+        actions = install_codex(Path.home(), hpr_path=hpr)
+        msg = "Ready. bad-research available as a Codex skill (~/.codex/skills/bad-research/)."
+    elif steps_only:
         root = Path(path).resolve()
         result = _install_bad_research_step_skills(root)
         actions = [result] if result else []

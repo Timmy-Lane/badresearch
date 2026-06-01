@@ -25,6 +25,14 @@ A golden case is a JSON fixture (drop a file in `golden/` to extend it):
 
 The seed set is built to PASS — it is the baseline the gate defends. Real runs
 expand it; nothing here needs a live API call.
+
+IMPORTANT — what this is and is NOT. This is a **regression smoke gate**: it answers
+"did a change break a known-good baseline?", NOT "is the output good?". The default
+keyless `RubricJudge` does deterministic presence/overlap checks (a citation regex per
+line, word-overlap with the corpus, a banned-overclaim wordlist), not quality scoring
+and not semantic entailment; the adversarial `requires_llm` fixtures are SKIPPED unless
+you pass a real `--llm` judge. So a `pass_rate` of 1.0 here is the expected floor, not
+evidence of quality and not a competitive benchmark — do not cite it as one.
 """
 
 from __future__ import annotations
@@ -239,6 +247,10 @@ class CorpusEvalReport:
     cases: list[CaseResult]
     pass_rate: float
     components: dict[str, float]  # per-component pass-rate over applicable cases
+    # audit 2026-06-01: count of requires_llm (adversarial) fixtures skipped on the
+    # keyless RubricJudge path — surfaced so pass_rate can't read as "all passed" when
+    # the hard cases were never scored. 0 on the --llm path (nothing skipped).
+    skipped: int = 0
 
     @property
     def total(self) -> int:
@@ -253,8 +265,16 @@ class CorpusEvalReport:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "gate_type": "regression-smoke-gate",
+            "disclaimer": (
+                "Self-graded by the keyless deterministic RubricJudge (presence/overlap "
+                "checks), NOT a quality benchmark or competitive measure. Adversarial "
+                "(requires_llm) fixtures are skipped unless run with --llm. A pass_rate "
+                "of 1.0 is the expected baseline floor, not evidence of quality."
+            ),
             "pass_rate": self.pass_rate,
             "total": self.total,
+            "skipped": self.skipped,
             "components": self.components,
             "cases": [
                 {
@@ -281,12 +301,15 @@ def evaluate_corpus(
     j = judge if judge is not None else RubricJudge()
     results: list[CaseResult] = []
     comp_tally: dict[str, list[bool]] = {c: [] for c in COMPONENTS}
+    skipped = 0
 
     for case in cases:
         # E1-2: skip requires_llm fixtures on the keyless RubricJudge path — the
         # deterministic lexical judge cannot score semantic entailment, so these
         # adversarial fixtures are scored only on the opt-in --llm (LLMJudge) path.
+        # Counted (not silently dropped) so the report shows the hard cases weren't run.
         if getattr(case, "requires_llm", False) and isinstance(j, RubricJudge):
+            skipped += 1
             continue
 
         verdict = j.judge(case.query, case.report, case.corpus)
@@ -318,7 +341,9 @@ def evaluate_corpus(
         name: round(sum(vals) / len(vals), 9) if vals else 1.0
         for name, vals in comp_tally.items()
     }
-    return CorpusEvalReport(cases=results, pass_rate=pass_rate, components=components)
+    return CorpusEvalReport(
+        cases=results, pass_rate=pass_rate, components=components, skipped=skipped
+    )
 
 
 __all__ = [

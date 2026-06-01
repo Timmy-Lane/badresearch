@@ -65,19 +65,27 @@ class HostJudgeNLI:
     itself (the batched judge runs in the verifier). It carries `llm` only so a caller
     can confirm a host judge is wired (default_nli gates on its presence)."""
 
-    def __init__(self, llm: LLMProvider) -> None:
+    def __init__(self, llm: LLMProvider | None) -> None:
         self.llm = llm
 
     def predict(self, premise: str, hypothesis: str) -> dict[str, float]:
         # premise = quoted_support (the cited span); hypothesis = report sentence (claim).
-        from .gate import CLAIM_QUOTE_OVERLAP_SKIP, claim_quote_overlap
+        from .gate import (
+            CLAIM_QUOTE_OVERLAP_SKIP,
+            claim_quote_overlap,
+            numeric_or_negation_mismatch,
+        )
 
-        if claim_quote_overlap(hypothesis, premise) >= CLAIM_QUOTE_OVERLAP_SKIP:
-            # claim ≈ quote (near-verbatim) -> accept to bound host-token cost; the
-            # number-flip residual here is the keyless gap closed by the [local]/keyed
-            # lane, not Tier-A (Tier-A only checks span-vs-body integrity). Skip judge.
+        if (
+            claim_quote_overlap(hypothesis, premise) >= CLAIM_QUOTE_OVERLAP_SKIP
+            and not numeric_or_negation_mismatch(hypothesis, premise)
+        ):
+            # claim ≈ quote (near-verbatim) AND numbers/negation agree -> accept to
+            # bound host-token cost. A near-verbatim claim that flips a number/negation
+            # is denied here and escalated to the batched judge (audit 2026-06-01).
             return {"entailment": 1.0, "neutral": 0.0, "contradiction": 0.0}
-        # genuine paraphrase -> NEUTRAL so the verifier escalates it to the batched judge.
+        # genuine paraphrase / number-or-negation flip -> NEUTRAL so the verifier
+        # escalates it to the batched judge.
         return {"entailment": 0.0, "neutral": 1.0, "contradiction": 0.0}
 
 
@@ -100,15 +108,24 @@ class LineSpanJudge:
     verifier). CitationPresentNLI stays as the absolute fallback when llm is
     None."""
 
-    def __init__(self, llm: LLMProvider) -> None:
+    def __init__(self, llm: LLMProvider | None) -> None:
         self.llm = llm
 
     def predict(self, premise: str, hypothesis: str) -> dict[str, float]:
-        # Same routing logic as HostJudgeNLI: lexical overlap decides the tier.
+        # Same routing logic as HostJudgeNLI: lexical overlap decides the tier, but a
+        # number/date/negation flip in the near-verbatim band is denied the shortcut
+        # and escalated to the batched judge (audit 2026-06-01, row 6).
         # premise = cited line span (or quoted_support fallback); hypothesis = claim.
-        from .gate import CLAIM_QUOTE_OVERLAP_SKIP, claim_quote_overlap
+        from .gate import (
+            CLAIM_QUOTE_OVERLAP_SKIP,
+            claim_quote_overlap,
+            numeric_or_negation_mismatch,
+        )
 
-        if claim_quote_overlap(hypothesis, premise) >= CLAIM_QUOTE_OVERLAP_SKIP:
+        if (
+            claim_quote_overlap(hypothesis, premise) >= CLAIM_QUOTE_OVERLAP_SKIP
+            and not numeric_or_negation_mismatch(hypothesis, premise)
+        ):
             return {"entailment": 1.0, "neutral": 0.0, "contradiction": 0.0}
         return {"entailment": 0.0, "neutral": 1.0, "contradiction": 0.0}
 
@@ -284,6 +301,11 @@ class CitationFinding:
     verdict: VerifyVerdict
     score: float
     confidence_band: str | None = None
+    # audit 2026-06-01 (row 7): set on the keyless path when no host judge is wired
+    # into the CLI. The pair passed Tier-A but lands in the Tier-B NEUTRAL band, so
+    # the orchestrator (host model) must judge it inline (the fast/ultrafast/11.5
+    # skills already apply ACCEPT/TIGHTEN/FLAG/DROP-CITE dispositions by hand).
+    needs_host_judgment: bool = False
 
 
 @dataclass
@@ -340,7 +362,7 @@ class CitationVerifier:
     Keyless either way (same LLMProvider seam)."""
 
     def __init__(
-        self, *, nli: NLIModel, llm: LLMProvider, effort: str | None = None
+        self, *, nli: NLIModel, llm: LLMProvider | None, effort: str | None = None
     ) -> None:
         self.nli = nli
         self.llm = llm
@@ -393,7 +415,22 @@ class CitationVerifier:
                     pending.append((stub, hypothesis, premise))
 
         # Pass 2: Tier C -- judge the neutral band only.
+        if pending and self.llm is None:
+            # Keyless, no host provider wired into the CLI (audit 2026-06-01, row 7).
+            # Don't crash and don't rubber-stamp: leave the NEUTRAL band as a worklist
+            # for the orchestrator (host model) to judge inline. Medium-confidence +
+            # needs_host_judgment so the gate doesn't ship-block but the skill flags it.
+            for stub, _claim, _quote in pending:
+                stub.verdict = VerifyVerdict.PARTIAL
+                stub.score = 0.5
+                stub.needs_host_judgment = True
+                findings.append(stub)
+            pending = []
         if pending:
+            # self.llm is non-None here: the keyless branch above drained `pending`
+            # whenever self.llm is None, so Tier-C always has a host judge.
+            llm = self.llm
+            assert llm is not None
             from bad_research.quality.consistency import (
                 consistency_enabled,
                 self_consistency_vote,
@@ -410,12 +447,12 @@ class CitationVerifier:
 
                 voted, overflow = pending[:SELF_CONSISTENCY_MAX_PAIRS], pending[SELF_CONSISTENCY_MAX_PAIRS:]
                 for stub, claim, quote in voted:
-                    verdict, score, _votes = self_consistency_vote(claim, quote, self.llm)
+                    verdict, score, _votes = self_consistency_vote(claim, quote, llm)
                     stub.verdict = verdict
                     stub.score = score
                     findings.append(stub)
                 if overflow:
-                    judged = tier_c_judge([(c, q) for _, c, q in overflow], self.llm)
+                    judged = tier_c_judge([(c, q) for _, c, q in overflow], llm)
                     for (stub, _, _), (verdict, score) in zip(overflow, judged, strict=True):
                         stub.verdict = verdict
                         stub.score = score
@@ -423,7 +460,7 @@ class CitationVerifier:
             else:
                 # Default path: the SINGLE batched judge (one call). Unchanged.
                 pairs = [(claim, quote) for _, claim, quote in pending]
-                judged = tier_c_judge(pairs, self.llm)
+                judged = tier_c_judge(pairs, llm)
                 for (stub, _, _), (verdict, score) in zip(pending, judged, strict=True):
                     stub.verdict = verdict
                     stub.score = score

@@ -67,6 +67,11 @@ from bad_research.cli.doctor import doctor as _doctor_cmd
 app.command("doctor")(_doctor_cmd)
 app.command("calibrate")(_calibrate_cmd)
 
+# ── head-to-head benchmark (honesty-audit row 11) ────────────────────────────
+from bad_research.cli.headtohead import headtohead as _headtohead_cmd
+
+app.command("headtohead")(_headtohead_cmd)
+
 # ── vault lifecycle + corpus inspection (wire-missing-cli-commands) ───────────
 from bad_research.cli.vault_cmds import (
     archive_run_cmd,

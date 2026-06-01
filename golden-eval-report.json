@@ -1,6 +1,9 @@
 {
+  "gate_type": "regression-smoke-gate",
+  "disclaimer": "Self-graded by the keyless deterministic RubricJudge (presence/overlap checks), NOT a quality benchmark or competitive measure. Adversarial (requires_llm) fixtures are skipped unless run with --llm. A pass_rate of 1.0 is the expected baseline floor, not evidence of quality.",
   "pass_rate": 1.0,
   "total": 8,
+  "skipped": 2,
   "components": {
     "decompose": 1.0,
     "retrieval": 1.0,
