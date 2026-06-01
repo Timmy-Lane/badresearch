@@ -427,6 +427,10 @@ class CitationVerifier:
                 findings.append(stub)
             pending = []
         if pending:
+            # self.llm is non-None here: the keyless branch above drained `pending`
+            # whenever self.llm is None, so Tier-C always has a host judge.
+            llm = self.llm
+            assert llm is not None
             from bad_research.quality.consistency import (
                 consistency_enabled,
                 self_consistency_vote,
@@ -443,12 +447,12 @@ class CitationVerifier:
 
                 voted, overflow = pending[:SELF_CONSISTENCY_MAX_PAIRS], pending[SELF_CONSISTENCY_MAX_PAIRS:]
                 for stub, claim, quote in voted:
-                    verdict, score, _votes = self_consistency_vote(claim, quote, self.llm)
+                    verdict, score, _votes = self_consistency_vote(claim, quote, llm)
                     stub.verdict = verdict
                     stub.score = score
                     findings.append(stub)
                 if overflow:
-                    judged = tier_c_judge([(c, q) for _, c, q in overflow], self.llm)
+                    judged = tier_c_judge([(c, q) for _, c, q in overflow], llm)
                     for (stub, _, _), (verdict, score) in zip(overflow, judged, strict=True):
                         stub.verdict = verdict
                         stub.score = score
@@ -456,7 +460,7 @@ class CitationVerifier:
             else:
                 # Default path: the SINGLE batched judge (one call). Unchanged.
                 pairs = [(claim, quote) for _, claim, quote in pending]
-                judged = tier_c_judge(pairs, self.llm)
+                judged = tier_c_judge(pairs, llm)
                 for (stub, _, _), (verdict, score) in zip(pending, judged, strict=True):
                     stub.verdict = verdict
                     stub.score = score

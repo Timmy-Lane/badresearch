@@ -38,11 +38,15 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import typer
 
 from bad_research.cli._output import console, output
 from bad_research.models.output import error, success
+
+if TYPE_CHECKING:
+    from bad_research.calibrate.judge import LLMJudge
 
 
 def headtohead(
@@ -182,7 +186,7 @@ def _read_text(base: Path, ref: str) -> str:
     return p.read_text(encoding="utf-8")
 
 
-def _read_corpus(base: Path, ref: str | None) -> list[dict]:
+def _read_corpus(base: Path, ref: str | None) -> list[dict[str, Any]]:
     """Read an optional corpus file (JSON list of note dicts). None/missing → []."""
     if not ref:
         return []
@@ -195,7 +199,7 @@ def _read_corpus(base: Path, ref: str | None) -> list[dict]:
     return list(data)
 
 
-def _load_manifest(manifest: str) -> tuple[str | None, str | None, dict[str, list[dict]]]:
+def _load_manifest(manifest: str) -> tuple[str | None, str | None, dict[str, list[dict[str, Any]]]]:
     """Resolve a per-query entrant manifest into entrant dicts (reports inlined).
     Returns (bad_name, competitor_name, {qid: [entrant_dict, ...]})."""
     man_path = Path(manifest).resolve()
@@ -206,9 +210,9 @@ def _load_manifest(manifest: str) -> tuple[str | None, str | None, dict[str, lis
     raw = data.get("entrants", {})
     if not isinstance(raw, dict):
         raise ValueError("manifest 'entrants' must be a {query_id: [entrant, ...]} object")
-    by_qid: dict[str, list[dict]] = {}
+    by_qid: dict[str, list[dict[str, Any]]] = {}
     for qid, ents in raw.items():
-        resolved: list[dict] = []
+        resolved: list[dict[str, Any]] = []
         for e in ents:
             report = e.get("report") or _read_text(base, e["report_file"])
             corpus = e.get("corpus") or _read_corpus(base, e.get("corpus_file"))
@@ -233,7 +237,7 @@ def _single_pair_entrants(
     bad_name: str,
     competitor_name: str,
     qset: list[dict[str, str]],
-) -> dict[str, list[dict]]:
+) -> dict[str, list[dict[str, Any]]]:
     """Build a one-query entrant map from the --bad-report/--competitor-report pair."""
     if not (bad_report and competitor_report and query_id):
         raise ValueError(
@@ -252,7 +256,7 @@ def _single_pair_entrants(
     }
 
 
-def _make_llm_judge():
+def _make_llm_judge() -> LLMJudge | None:
     """Construct an LLMJudge for the --llm path. Returns None if no host model is
     available (the caller then fails clean instead of crashing)."""
     try:

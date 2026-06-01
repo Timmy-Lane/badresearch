@@ -69,7 +69,7 @@ _NAME_RE = re.compile(r"^name:\s*(\S+)\s*$", re.MULTILINE)
 
 def _render_agent(const_name: str, strategy: str, hpr_path: str) -> str:
     """Render one agent constant exactly as the Claude installer would."""
-    raw = getattr(hooks, const_name)
+    raw: str = getattr(hooks, const_name)
     hpr_posix = hpr_path.replace("\\", "/")
     if strategy == "format":
         return raw.format(hpr_path=hpr_posix)
