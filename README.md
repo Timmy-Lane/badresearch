@@ -56,6 +56,25 @@ It scales to the question: a simple lookup gets a fast cited answer in minutes; 
 contested one runs the full adversarially-reviewed pipeline (~1.5–2.5 h). The final report
 and every fetched source land in a vault under `./research/` that compounds across sessions.
 
+### Pick the depth (it auto-scales, or force it)
+
+By default the skill **auto-routes** — a simple, bounded question takes the **fast** route
+(a quick cited answer, minutes); a broad or contested one takes the **full**
+adversarially-reviewed pipeline (~1.5–2.5 h). You can steer it:
+
+- **Want a thorough report without the multi-hour wait?** Say *"ultrafast mode"* in your
+  request (or run `bad route --apply --ultrafast`). The **ultrafast** tier is the keyless
+  take on the commercial "Deep Research" button — plan → wide parallel multi-source browse →
+  a long, sectioned, fully-cited report in **5–15 minutes**. If you're just trying Bad
+  Research out, this is the sweet spot.
+- **Dial the effort** with `--effort minimal|low|medium|high` to nudge the route and per-step
+  fan-out (`minimal`/`low` bias toward fast; `medium`/`high` toward full).
+
+On an interactive run the skill announces the chosen route and its rough ETA before it
+commits to a long job (and for `full` it shows the editable plan first), so you're never
+surprised by a 2-hour job you didn't want. `bad route <your question> --json` also reports,
+up front, which route a query would take.
+
 > Want the latest unreleased build? Install from source: `pipx install git+https://github.com/LeventySeven/badresearch.git`
 
 ## What it does
@@ -68,7 +87,7 @@ sessions. Keyless by design:
 - **Content** — a native fetch-and-clean pipeline (readability → markdown → optional LLM clean), SSRF-guarded.
 - **Browse** — an agentic observe → act → extract loop driven by a local, keyless headless browser.
 - **Retrieve** — SQLite FTS5/BM25 by default (no model required), with an optional local neural lane.
-- **Ground** — every report sentence is checked against its source; uncited claims are blocked.
+- **Ground** — every factual sentence must carry a source citation, and a deterministic ship-gate **blocks** any uncited claim. Fabricated quotes are caught for free by a byte-identity check; the harder paraphrase-faithfulness cases are judged by the host model (an optional `[local]` cross-encoder upgrades this to NLI).
 
 ## How it works & where the patterns came from
 

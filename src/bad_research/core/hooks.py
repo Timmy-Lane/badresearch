@@ -3743,6 +3743,7 @@ _BAD_RESEARCH_STEP_SKILLS = [
     "bad-research-11.5-citation-verifier",
     "bad-research-12-critics",
     "bad-research-13-gap-fetch",
+    "bad-research-12.5-grader",
     "bad-research-14-patcher",
     "bad-research-fresh-review",
     "bad-research-15-polish",
@@ -3753,17 +3754,18 @@ _BAD_RESEARCH_STEP_SKILLS = [
 
 
 def _install_bad_research_step_skills(vault_root: Path) -> str | None:
-    """Install the 16 V8 step skills, each as its own Claude Code skill directory.
+    """Install the bad-research step skills, each as its own Claude Code skill dir.
 
-    Each step skill lives at `.claude/skills/hyperresearch-N-name/SKILL.md` and is
-    invocable via the Skill tool. The orchestrator (loaded via /hyperresearch)
-    invokes each step skill in sequence per the tier routing table. This
-    decomposition solves the V7 context-compaction problem: each step's
-    procedure is loaded fresh into context only at the moment it's needed.
+    Each step skill lives at `.claude/skills/bad-research-<step>/SKILL.md` and is
+    invocable via the Skill tool. The orchestrator (loaded via /bad-research)
+    invokes each step skill in sequence per the route table. This decomposition
+    solves the context-compaction problem: each step's procedure is loaded fresh
+    into context only at the moment it's needed. The roster is
+    `_BAD_RESEARCH_STEP_SKILLS` (the single source of truth for what is installed).
 
-    Also prunes any stale `hyperresearch-*` skill directories (e.g. from a prior
-    V8 layout where steps were numbered differently) so the user doesn't see
-    obsolete entries in their skill list.
+    Also prunes any stale `bad-research-*` / `hyperresearch-*` skill directories
+    not in the current roster (e.g. from a prior layout where steps were numbered
+    differently) so the user doesn't see obsolete entries in their skill list.
     """
     skills_root = vault_root / ".claude" / "skills"
     skills_root.mkdir(parents=True, exist_ok=True)

@@ -25,6 +25,14 @@ A golden case is a JSON fixture (drop a file in `golden/` to extend it):
 
 The seed set is built to PASS — it is the baseline the gate defends. Real runs
 expand it; nothing here needs a live API call.
+
+IMPORTANT — what this is and is NOT. This is a **regression smoke gate**: it answers
+"did a change break a known-good baseline?", NOT "is the output good?". The default
+keyless `RubricJudge` does deterministic presence/overlap checks (a citation regex per
+line, word-overlap with the corpus, a banned-overclaim wordlist), not quality scoring
+and not semantic entailment; the adversarial `requires_llm` fixtures are SKIPPED unless
+you pass a real `--llm` judge. So a `pass_rate` of 1.0 here is the expected floor, not
+evidence of quality and not a competitive benchmark — do not cite it as one.
 """
 
 from __future__ import annotations
@@ -253,6 +261,13 @@ class CorpusEvalReport:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "gate_type": "regression-smoke-gate",
+            "disclaimer": (
+                "Self-graded by the keyless deterministic RubricJudge (presence/overlap "
+                "checks), NOT a quality benchmark or competitive measure. Adversarial "
+                "(requires_llm) fixtures are skipped unless run with --llm. A pass_rate "
+                "of 1.0 is the expected baseline floor, not evidence of quality."
+            ),
             "pass_rate": self.pass_rate,
             "total": self.total,
             "components": self.components,

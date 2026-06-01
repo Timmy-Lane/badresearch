@@ -19,14 +19,16 @@ def test_step_list_has_new_stages():
         _BAD_RESEARCH_STEP_SKILLS.index("bad-research-query-router")
 
 
-def test_step_list_has_20_entries():
+def test_step_list_has_21_entries():
     # 16 kept + 5 prior new + 1 E11 plan-gate = 22, MINUS the 3 Workstream-C
     # stage merges (C-1 step 3→4, C-2 step 7→6, C-3 step 9→10) = 19, PLUS the
-    # ultrafast route skill = 20.
-    assert len(_BAD_RESEARCH_STEP_SKILLS) == 20
-    assert len(set(_BAD_RESEARCH_STEP_SKILLS)) == 20  # no dupes
+    # ultrafast route skill = 20, PLUS bad-research-12.5-grader (audit 2026-06-01:
+    # it was invoked by the entry skill but missing from the roster) = 21.
+    assert len(_BAD_RESEARCH_STEP_SKILLS) == 21
+    assert len(set(_BAD_RESEARCH_STEP_SKILLS)) == 21  # no dupes
     assert "bad-research-1.6-plan-gate" in _BAD_RESEARCH_STEP_SKILLS
     assert "bad-research-ultrafast" in _BAD_RESEARCH_STEP_SKILLS
+    assert "bad-research-12.5-grader" in _BAD_RESEARCH_STEP_SKILLS
     # the 3 merged-away stages are gone from the roster
     assert "bad-research-3-contradiction-graph" not in _BAD_RESEARCH_STEP_SKILLS
     assert "bad-research-7-source-tensions" not in _BAD_RESEARCH_STEP_SKILLS

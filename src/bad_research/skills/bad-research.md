@@ -46,7 +46,7 @@ When you invoke a Skill, that skill's full procedure is loaded into your context
 | 8 | `bad-research-8-corpus-critic` | "What source would overturn this?" + targeted gap-fill fetch | full |
 | 9→10* (merged) | `bad-research-10-triple-draft` | Step 10.0b Part 2 builds the evidence digest inline (top claims + verbatim quotes → evidence-digest.md, formerly step 9); then per-angle source curation + 3 parallel draft-orchestrators (3 angle-specific drafts) | all |
 | 11 | `bad-research-11-synthesize` | Synthesis plan + outline + spawn synthesizer subagent (two-pass write) → final_report.md | full |
-| 12 | `bad-research-12-critics` | 4 adversarial critics in parallel → findings JSONs | full |
+| 12 | `bad-research-12-critics` | 5 adversarial critics in parallel (dialectic, depth, width, instruction, assumption) → findings JSONs | full |
 | 13 | `bad-research-13-gap-fetch` | Fetch sources for critic-identified vault gaps | full |
 | 14 | `bad-research-14-patcher` | Surgical Edit hunks applied to draft | full |
 | 15 | `bad-research-15-polish` | Hygiene + filler pass (Edit-based subagent) | all |
@@ -72,7 +72,7 @@ When you invoke a Skill, that skill's full procedure is loaded into your context
     → 12 → 13 → 12.5 → 14 → 14.5 → 15 → 16(+gate)
 ```
 
-`fast` runs `0.5 → 1 → 1.5 → bad-research-fast → slim citation-grounding → 12(slim critic) → 15 → 16(+gate)`. Step 1.6 (plan-gate) is present in the interactive full-route-or-broad-survey path and is a no-op (skipped) on every non-interactive / `--auto` / wrapped / small bounded run; it is not in the `fast` path. Step 12 on the `fast` route is the **slim single adversarial critic** (E3) — one dialectic+instruction pass, no 4-critic fan-out, no patcher — NOT the full-tier critique. See the per-route table below for each route's depth.
+`fast` runs `0.5 → 1 → 1.5 → bad-research-fast → slim citation-grounding → 12(slim critic) → 15 → 16(+gate)`. Step 1.6 (plan-gate) is present in the interactive full-route-or-broad-survey path and is a no-op (skipped) on every non-interactive / `--auto` / wrapped / small bounded run; it is not in the `fast` path. Step 12 on the `fast` route is the **slim single adversarial critic** (E3) — one dialectic+instruction pass, no 5-critic fan-out, no patcher — NOT the full-tier critique. See the per-route table below for each route's depth.
 
 ---
 
@@ -256,8 +256,13 @@ Before you invoke any step skill, do this:
     design). This step never changes the route.
 
 After step 1.5 (and the 1.6 plan-gate where it applies) returns, read
-`research/prompt-decomposition.json` for the `route`, then continue invoking step
-skills per the mode table above. For `fast`, invoke
+`research/prompt-decomposition.json` for the `route`. **Announce the chosen route and its
+rough ETA to the user in one line before you continue** — e.g. `Route: ultrafast (~5–15 min).`
+/ `Route: fast (a few min).` / `Route: full (~1.5–2.5 h).` — so a long job is never a
+surprise. (On a non-interactive / `-p` / wrapped run, write this line to
+`research/temp/orchestrator-notes.md` instead of emitting bare text — invariant 14 — and the
+1.6 plan-gate already surfaces the route on interactive `full` runs.) Then continue invoking
+step skills per the mode table above. For `fast`, invoke
 `Skill(skill: "bad-research-fast")` then run the slim citation-grounding pass and
 slim critic before step 15 polish + step 16 gate. After each step's exit criterion is met, mark its todo complete and move to
 the next.
@@ -306,7 +311,7 @@ Context compaction may eat parts of this conversation. If you're unsure what ste
    - Step 10: `research/temp/evidence-digest.md` (built inline in Step 10.0b Part 2, full only — formerly step 9), then `research/temp/draft-{a,b,c}.md` (full only; the `fast` route writes `research/notes/final_report_<vault_tag>.md` directly via the bad-research-fast writer)
    - Step 11: `research/temp/synthesis-plan.md`, `research/temp/synthesis-outline.md`, `research/temp/synthesis-evidence.md`, `research/temp/synthesis-pass1.md`, `research/notes/final_report_<vault_tag>.md`
    - Step 11.5: `research/temp/citation-verify-actions.json` (citation-verifier dispositions; full only)
-   - Step 12: `research/critic-findings-{dialectic,depth,width,instruction}.json`
+   - Step 12: `research/critic-findings-{dialectic,depth,width,instruction,assumption}.json`
    - Step 13: `research/temp/post-critic-fetch-log.md`
    - Step 12.5: `research/grader-log.json` (grader-loop convergence; full only) + `research/critic-findings-grader.json`
    - Step 14: `research/patch-log.json` (and edited final_report.md)
@@ -329,13 +334,15 @@ for f in research/critic-findings-dialectic.json \
          research/critic-findings-depth.json \
          research/critic-findings-width.json \
          research/critic-findings-instruction.json \
+         research/critic-findings-assumption.json \
+         research/grader-log.json \
          research/patch-log.json \
          research/polish-log.json; do
   test -f "$f" || echo "MISSING: $f"
 done
 ```
 
-(The `fast` route skips the full 4-critic fan-out + patcher entirely — those critic-findings and patch-log files won't exist. That's expected; only `polish-log.json` is required for `fast`.)
+(The `fast` route skips the full 5-critic fan-out + patcher entirely — those critic-findings and patch-log files won't exist. That's expected; only `polish-log.json` is required for `fast`.)
 
 Then run lint:
 ```bash
@@ -370,7 +377,7 @@ If any rule returns `error` severity issues, address them before declaring compl
 
 ## Why the multi-skill chain
 
-One monolithic skill loaded once gets compacted away mid-run, and the orchestrator silently degrades (drops the corpus critic, replaces the triple-draft ensemble with a single draft, ships a flat report). The chain makes re-reading structural: each step skill loads fresh via the `Skill` tool at the moment it's needed, is self-contained, and reads its inputs from disk — so compaction can evict an old step's procedure without harm. The cost is 13 extra `Skill` invocations per run; the reliability gain is the difference between the full pipeline (55.9) and the single-draft fallback (52.6).
+One monolithic skill loaded once gets compacted away mid-run, and the orchestrator silently degrades (drops the corpus critic, replaces the triple-draft ensemble with a single draft, ships a flat report). The chain makes re-reading structural: each step skill loads fresh via the `Skill` tool at the moment it's needed, is self-contained, and reads its inputs from disk — so compaction can evict an old step's procedure without harm. The cost is one extra `Skill` invocation per step; the gain is structural — a long `full` run cannot silently collapse into its single-draft fallback when an early step's procedure gets compacted out of context mid-run.
 
 ---
 
