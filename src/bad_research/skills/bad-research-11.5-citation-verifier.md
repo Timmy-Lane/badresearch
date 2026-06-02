@@ -66,6 +66,21 @@ This step is tool-locked to `[Read]`. Read:
       "verify_score": 0.0, "quoted_support": "..."}]}
    ```
 
+   On the keyless path, the neutral band (paraphrases the local NLI could neither
+   entail nor contradict) is NOT auto-dispositioned — the verifier emits those
+   findings with **`needs_host_judgment: true`** and a default `verify_score` of
+   0.5. **These have a consumer here, you (the orchestrator).** Do NOT let a
+   `needs_host_judgment` finding ride on the bare 0.5 default — that silently hedges
+   a paraphrase that was never actually judged.
+
+   **For every finding with `needs_host_judgment: true`: re-judge it yourself.**
+   You are the host model — the same class of judge the keyless CLI could not call.
+   Read the cited note span (the premise) and the report sentence (the claim), then
+   decide entailment yourself and assign the ACCEPT / TIGHTEN / FLAG / DROP-CITE
+   disposition from YOUR judgment (using the same support-score bands below), not
+   from the 0.5 placeholder. Write the re-judged disposition into the routed actions
+   so the patcher applies a real action, not a default hedge.
+
 2. Route dispositions to the patcher (step 14 applies them as surgical Edits):
    - **supported** → keep as-is.
    - **partial** → hedge the claim (the patcher softens the assertion).
@@ -73,6 +88,8 @@ This step is tool-locked to `[Read]`. Read:
      the patcher flags it for removal or re-grounding via gap-fetch (step 13).
    - **contradicted** → feed into `research/temp/contradiction-graph.json` (the
      report must engage the contradiction, not assert one side).
+   - **needs_host_judgment** → already re-judged by you in step 1 above; route the
+     re-judged disposition (ACCEPT/TIGHTEN/FLAG/DROP-CITE), never the 0.5 default.
 
    Write the routed actions to `research/temp/citation-verify-actions.json` —
    the patcher reads this alongside the critic findings.
@@ -102,6 +119,13 @@ bad verify-citations --report research/notes/final_report_<vault_tag>.md \
   narrow the claim to what the span supports (Edit) · FLAG ≥0.35 soften/hedge (Edit) · DROP-CITE
   <0.35 remove the `[N]`; if load-bearing, `bad fetch --tier-max 3` and re-cite · DROP-SENTENCE: a
   MUST-verify claim with no supporting span is struck.
+- **`needs_host_judgment: true` (keyless neutral band):** the local NLI could not
+  judge this paraphrase, so the CLI parked it at the bare 0.5 default. Do NOT apply
+  a disposition off that 0.5 — that silently hedges a claim that was never judged.
+  **You are the host model: re-judge that (claim, cited-span) pair yourself** — read
+  the cited line span and the sentence, decide entailment, and apply the
+  ACCEPT/TIGHTEN/FLAG/DROP-CITE disposition from YOUR judgment via Edit. This is the
+  consumer for the verifier's `needs_host_judgment` worklist on the fast route.
 - **Placement (Claude `citations_agent.md`, verbatim R5.1):** key facts only (not common knowledge),
   one citation per (source, sentence) placed AFTER the period, never mid-fragment.
 

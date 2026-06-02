@@ -3,7 +3,7 @@
 The hook reminds Claude Code to check the research base before doing raw web
 searches. The `/hyperresearch` skill drives the research
 protocol. The hyperresearch subagents (fetcher, loci-analyst, depth-investigator,
-four critics, patcher, polish-auditor) are Claude Code registered agents
+five critics, patcher, polish-auditor) are Claude Code registered agents
 spawned via the Task tool.
 """
 
@@ -919,7 +919,8 @@ description: >
   out-of-order, or delivered in the wrong format. Also checks structural
   readability patterns (definitions, citation density, forward analysis,
   comparison tables) that reference reports consistently include. Runs
-  on Opus. Spawn ONCE per draft, in parallel with the other three critics.
+  on Opus. Spawn ONCE per draft, in parallel with the four other critics
+  (dialectic, depth, width, assumption) — five critics total.
 model: opus
 tools: Bash, Read, Write
 color: red
@@ -928,8 +929,8 @@ color: red
 You are the instruction critic. Your only job: check whether the draft
 delivers what the user's prompt asked for — in the shape it was asked for.
 
-The insight, comprehensiveness, and readability dimensions are covered by
-the other three critics. Your dimension is **instruction-following**:
+The insight, comprehensiveness, readability, and assumption dimensions are covered
+by the four other critics. Your dimension is **instruction-following**:
 did the draft honor the prompt's structural requests, enumerate the
 entities the prompt named, answer the specific sub-questions, and use
 the required format?
@@ -1200,7 +1201,8 @@ description: >
   Use this agent at step 12 of the Bad Research deep research pipeline. Takes the
   5 highest-stakes causal/quantitative claims in the draft, decomposes each into
   constituent sub-assumptions, and verifies each independently against the corpus.
-  Runs on Opus. Spawn ONCE per draft, in parallel with the other four critics.
+  Runs on Opus. Spawn ONCE per draft, in parallel with the four other critics
+  (dialectic, depth, width, instruction) — five critics total.
 model: opus
 tools: Bash, Read, Write
 color: red
@@ -1266,12 +1268,12 @@ Limit total output to sub-assumptions of the top-5 claims only (cost ceiling).
 
 # ---------------------------------------------------------------------------
 # E3 — SLIM light-tier critic. The fast route skips the
-# full-tier 4-critic fan-out (and the patcher loop) and goes straight to polish,
+# full-tier 5-critic fan-out (and the patcher loop) and goes straight to polish,
 # so they get NO adversarial pass today. This single critic gives them ONE
 # adversarial review before polish: it merges the dialectic angle (ignored /
 # straw-manned counter-evidence) and the instruction angle (atomic items the
 # prompt named that the draft missed / reordered / reformatted) into one pass.
-# No 4-critic fan-out, no patcher — its findings are applied INLINE by the
+# No 5-critic fan-out, no patcher — its findings are applied INLINE by the
 # light orchestrator (light has no patcher) or surfaced. Read+Write tool-locked
 # (writes findings JSON only — it never edits the draft itself).
 # ---------------------------------------------------------------------------
@@ -1280,7 +1282,7 @@ LIGHT_CRITIC_AGENT = """\
 name: bad-research-light-critic
 description: >
   Use this agent on the fast route of the bad-research pipeline —
-  the route that skips the full-tier 4-critic fan-out. It is ONE slim adversarial
+  the route that skips the full-tier 5-critic fan-out. It is ONE slim adversarial
   critic over the final report, merging the dialectic angle (ignored or straw-manned
   counter-evidence) and the instruction angle (atomic items the prompt named that the
   draft missed, under-covered, reordered, or reformatted). Runs on Sonnet (cheaper than
@@ -1291,16 +1293,16 @@ color: red
 ---
 
 You are the LIGHT critic — the single adversarial pass on the fast
-route. The full pipeline runs four separate Opus critics (dialectic, depth, width,
-instruction); the cheap route can't afford that, so YOU cover the two highest-leverage
-angles in one pass. You do NOT rewrite the draft. You emit a findings list. There is no
+route. The full pipeline runs five separate Opus critics (dialectic, depth, width,
+instruction, assumption); the cheap route can't afford that, so YOU cover the two
+highest-leverage angles in one pass. You do NOT rewrite the draft. You emit a findings list. There is no
 patcher on the light path: the orchestrator applies your CRITICAL findings inline (one
 surgical pass) or surfaces them.
 
 ## Pipeline position
 
 You run as the light-tier step 12, AFTER the draft (the fast
-ReAct loop) and BEFORE polish (step 15). The full-tier 4-critic fan-out and
+ReAct loop) and BEFORE polish (step 15). The full-tier 5-critic fan-out and
 the patcher loop are NOT in your path — you are the entire adversarial layer for these
 routes. Everything before you is on disk: the vault (search it for counter-evidence) and
 the draft at `research/notes/final_report_<vault_tag>.md`.
@@ -2082,7 +2084,7 @@ main orchestrator wrote a synthesis plan and outline (steps 11.3 and
 11.4). You consume all of that and produce the final report at
 `research/notes/final_report_<vault_tag>.md`.
 
-After you: step 12 (4 adversarial critics) reads your final report and
+After you: step 12 (5 adversarial critics) reads your final report and
 produces findings. The patcher (step 14) applies findings as Edit hunks.
 Your output is the INPUT to that adversarial gauntlet — make it strong.
 
@@ -3360,7 +3362,7 @@ they watched the report grow over a long context.
 
 You are **step 14.5** of the Bad Research pipeline. Everything before you has
 happened: width sweep, loci/depth investigation, triple-draft, synthesis,
-citation verification, the four step-12 critics, gap-fetch, and the patcher
+citation verification, the five step-12 critics, gap-fetch, and the patcher
 (step 14). After you return, the orchestrator applies surgical Edits for your
 critical/major findings (PATCH NEVER REGENERATE), then step 15 polishes and
 step 16 runs the deterministic uncited-claim gate.

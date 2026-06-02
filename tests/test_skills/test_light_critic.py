@@ -81,6 +81,45 @@ def test_critics_skill_keeps_full_tier_four_critic_path():
     assert "5 critics" in body or "all 5" in body.lower()
 
 
+# ── Critic-count guard: no shipped agent string says "four critic" ───────────
+# Re-audit 2026-06: the full tier runs FIVE critics (dialectic/depth/width/
+# instruction/assumption). Stale "four critic"/"four separate"/"4 critic" prose
+# in the SHIPPED agent-prompt constants (the strings install_hooks writes into
+# .claude/agents/) silently misrepresents the fan-out to the spawned critics.
+
+
+def _shipped_agent_strings() -> dict[str, str]:
+    """Every `*_AGENT` string constant in hooks — the prompts that ship to disk."""
+    from bad_research.core import hooks
+
+    return {
+        name: getattr(hooks, name)
+        for name in dir(hooks)
+        if name.endswith("_AGENT") and isinstance(getattr(hooks, name), str)
+    }
+
+
+@pytest.mark.parametrize("banned", ["four critic", "4 critic", "four separate"])
+def test_no_shipped_agent_string_says_four_critic(banned):
+    offenders = [
+        name
+        for name, body in _shipped_agent_strings().items()
+        if banned.lower() in body.lower()
+    ]
+    assert not offenders, (
+        f"shipped agent constant(s) {offenders} contain stale '{banned}' — the full "
+        "tier runs FIVE critics (dialectic/depth/width/instruction/assumption)"
+    )
+
+
+def test_hooks_module_docstring_says_five_critics():
+    from bad_research.core import hooks
+
+    doc = (hooks.__doc__ or "").lower()
+    assert "four critic" not in doc and "four separate" not in doc
+    assert "five critic" in doc
+
+
 # ── The light/agentic-fast routes are wired through the critic before polish ──
 
 

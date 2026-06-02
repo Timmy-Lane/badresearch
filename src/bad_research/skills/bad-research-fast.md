@@ -173,6 +173,13 @@ Return to the entry skill (`bad-research`). After the writer, sequence:
    (its **Slim mode (fast route)** section): backward-ground the cited sentences with
    `bad verify-citations`, applying ACCEPT/TIGHTEN/FLAG/DROP-CITE dispositions INLINE (Read+Edit,
    no patcher). This sits upstream of the step-16.6 `bad uncited-gate` ship-block.
+   **Keyless neutral band:** for any finding `bad verify-citations` emits with
+   `needs_host_judgment: true` (a paraphrase the local NLI could not judge, parked at
+   the 0.5 default), do NOT disposition off the bare 0.5 — that silently hedges a
+   claim that was never judged. You ARE the host model: re-judge that (claim,
+   cited-span) pair yourself — read the cited span and the sentence, decide
+   entailment, and apply the ACCEPT/TIGHTEN/FLAG/DROP-CITE disposition from your own
+   judgment.
 2. **Slim single critic** — `Skill(skill: "bad-research-12-critics")` (its **Light-tier slim
    critic** section): one adversarial dialectic+instruction pass, findings applied inline; no
    fan-out, no patcher.
