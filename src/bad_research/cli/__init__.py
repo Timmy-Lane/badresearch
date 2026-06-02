@@ -91,4 +91,9 @@ app.command("fetch")(fetch_cmd)
 app.command("lint")(lint_cmd)
 app.add_typer(note_app, name="note")
 
+# ── assets subcommand (host-vision multimodal path) ──────────────────────────
+from bad_research.cli.assets import assets_app
+
+app.add_typer(assets_app, name="assets")
+
 __all__ = ["app"]

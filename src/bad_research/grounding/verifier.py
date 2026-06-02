@@ -176,21 +176,38 @@ def _support_premise(anchor: ClaimAnchor, body: str) -> str:
     this is what the citation token's `:L42-L58` points the reader at, and the
     G4 fix: the judge now sees the cited span as it reads TODAY, not the opaque
     quoted_support captured at fetch time. Falls back to anchor.quoted_support
-    for legacy anchors (line_start is None) or when the body has no lines."""
-    if anchor.line_start is None:
-        return anchor.quoted_support
-    from bad_research.grounding.extract import body_to_lines
+    for legacy anchors (line_start is None) or when the body has no lines.
 
-    bl = body_to_lines(body) if body else []
-    if not bl:
-        return anchor.quoted_support
-    start = anchor.line_start - 1  # 0-indexed slice into bl
-    end = anchor.line_end  # exclusive (line_end is 1-based inclusive)
-    line_texts = [
-        body[bl[i][0]:bl[i][1]]
-        for i in range(max(0, start), min(len(bl), end if end is not None else start + 1))
-    ]
-    return " ".join(line_texts).strip() or anchor.quoted_support
+    Vision rung: for a figure-derived anchor (asset_path set) the premise is the
+    host's transcription PLUS an explicit pointer to the saved PNG, so when this
+    pair lands in the Tier-C neutral band the host judge knows to Read the figure
+    again (`bad assets path`) rather than trust the transcription blind — the
+    figure-derived number is judged against the pixels, not waved through."""
+    if anchor.line_start is None:
+        premise = anchor.quoted_support
+    else:
+        from bad_research.grounding.extract import body_to_lines
+
+        bl = body_to_lines(body) if body else []
+        if not bl:
+            premise = anchor.quoted_support
+        else:
+            start = anchor.line_start - 1  # 0-indexed slice into bl
+            end = anchor.line_end  # exclusive (line_end is 1-based inclusive)
+            line_texts = [
+                body[bl[i][0]:bl[i][1]]
+                for i in range(max(0, start), min(len(bl), end if end is not None else start + 1))
+            ]
+            premise = " ".join(line_texts).strip() or anchor.quoted_support
+    if anchor.asset_path:
+        # Re-show the figure to the host judge on the neutral band (#6): the
+        # premise carries the saved PNG path so a figure-derived claim is judged
+        # against the image, not an unverifiable transcription.
+        premise = (
+            f"{premise}\n[figure evidence — re-read this image to confirm the "
+            f"transcribed numbers: {anchor.asset_path}]"
+        )
+    return premise
 
 
 JUDGE_BATCH_SIZE = 20  # dossier §2.2: batch ~20 (claim, quote) pairs per call

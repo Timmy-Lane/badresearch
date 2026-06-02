@@ -30,6 +30,13 @@ class ClaimAnchor:
     anchor_id: str = field(default="")
     line_start: int | None = None   # 1-based line number of span start (nullable for legacy)
     line_end: int | None = None     # 1-based line number of span end (nullable for legacy)
+    # Vision-grounding rung: when a claim's evidence is a figure/chart/scanned page,
+    # `quoted_support` holds the host's VERBATIM transcription (written into the note
+    # body so Tier-A byte-identity still round-trips) and `asset_path` points at the
+    # saved PNG. The Tier-C judge re-shows that PNG to the host on the neutral band,
+    # so a figure-derived number stays inside the uncited + recitation + verify gates
+    # — NOT an ungrounded escape hatch. NULL for ordinary text anchors.
+    asset_path: str | None = None
 
     def __post_init__(self) -> None:
         if not self.anchor_id:
@@ -47,7 +54,8 @@ CREATE TABLE IF NOT EXISTS claim_anchors (
     verified       INTEGER NOT NULL DEFAULT 0,
     verify_score   REAL,
     line_start     INTEGER,            -- 1-based; NULL for legacy anchors
-    line_end       INTEGER             -- 1-based; NULL for legacy anchors
+    line_end       INTEGER,            -- 1-based; NULL for legacy anchors
+    asset_path     TEXT                -- vision rung: saved PNG for figure-derived claims; NULL otherwise
 );
 CREATE INDEX IF NOT EXISTS idx_claim_anchors_note ON claim_anchors(note_id);
 """
@@ -62,26 +70,50 @@ class AnchorStore:
 
     def init_schema(self) -> None:
         self.conn.executescript(CLAIM_ANCHORS_DDL)
+        # Forward-compat: a pre-existing claim_anchors table (created before the
+        # vision rung) lacks asset_path. CREATE TABLE IF NOT EXISTS won't add it,
+        # so ALTER it in (idempotent — ignore "duplicate column").
+        cols = {r[1] for r in self.conn.execute("PRAGMA table_info(claim_anchors)")}
+        if "asset_path" not in cols:
+            try:
+                self.conn.execute("ALTER TABLE claim_anchors ADD COLUMN asset_path TEXT")
+            except sqlite3.OperationalError:
+                pass
         self.conn.commit()
 
     def upsert(self, anchor: ClaimAnchor) -> None:
         self.conn.execute(
             "INSERT INTO claim_anchors "
             "(anchor_id, note_id, char_start, char_end, claim, quoted_support, "
-            " verified, verify_score, line_start, line_end) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            " verified, verify_score, line_start, line_end, asset_path) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(anchor_id) DO UPDATE SET "
             "  note_id=excluded.note_id, char_start=excluded.char_start, "
             "  char_end=excluded.char_end, claim=excluded.claim, "
             "  quoted_support=excluded.quoted_support, "
-            "  line_start=excluded.line_start, line_end=excluded.line_end",
+            "  line_start=excluded.line_start, line_end=excluded.line_end, "
+            "  asset_path=excluded.asset_path",
             (
                 anchor.anchor_id, anchor.note_id, anchor.char_start, anchor.char_end,
                 anchor.claim, anchor.quoted_support, anchor.verified, anchor.verify_score,
-                anchor.line_start, anchor.line_end,
+                anchor.line_start, anchor.line_end, anchor.asset_path,
             ),
         )
         self.conn.commit()
+
+    def _row_to_anchor(self, row: sqlite3.Row) -> ClaimAnchor:
+        # asset_path is absent on legacy rows whose table predates the ALTER — guard
+        # on the row's column names (sqlite3.Row `in` matches VALUES, not keys, so we
+        # must inspect keys() explicitly) so get/all work against such tables.
+        asset_path = row["asset_path"] if "asset_path" in set(row.keys()) else None
+        return ClaimAnchor(
+            note_id=row["note_id"], char_start=row["char_start"], char_end=row["char_end"],
+            claim=row["claim"], quoted_support=row["quoted_support"],
+            verified=row["verified"], verify_score=row["verify_score"],
+            anchor_id=row["anchor_id"],
+            line_start=row["line_start"], line_end=row["line_end"],
+            asset_path=asset_path,
+        )
 
     def get(self, anchor_id: str) -> ClaimAnchor | None:
         row = self.conn.execute(
@@ -89,23 +121,11 @@ class AnchorStore:
         ).fetchone()
         if row is None:
             return None
-        return ClaimAnchor(
-            note_id=row["note_id"], char_start=row["char_start"], char_end=row["char_end"],
-            claim=row["claim"], quoted_support=row["quoted_support"],
-            verified=row["verified"], verify_score=row["verify_score"],
-            anchor_id=row["anchor_id"],
-            line_start=row["line_start"], line_end=row["line_end"],
-        )
+        return self._row_to_anchor(row)
 
     def all(self) -> Iterable[ClaimAnchor]:
         for row in self.conn.execute("SELECT * FROM claim_anchors"):
-            yield ClaimAnchor(
-                note_id=row["note_id"], char_start=row["char_start"], char_end=row["char_end"],
-                claim=row["claim"], quoted_support=row["quoted_support"],
-                verified=row["verified"], verify_score=row["verify_score"],
-                anchor_id=row["anchor_id"],
-                line_start=row["line_start"], line_end=row["line_end"],
-            )
+            yield self._row_to_anchor(row)
 
     def set_verified(self, anchor_id: str, *, verified: int, score: float | None) -> None:
         self.conn.execute(
@@ -150,9 +170,52 @@ def build_from_claims(
         # fail -> the rescued anchor would be permanently unverifiable. Anchoring
         # to the body slice guarantees the Tier-A round-trip holds (dossier §1.1).
         located = body[start:end]
+        # Vision rung: a claim carrying an `asset_path` is figure-derived. The quote
+        # is the host's transcription — it MUST already be in the note body (the
+        # figure-reading skill writes the transcription verbatim into the note before
+        # this binding), so the SAME locate-or-drop discipline applies: an asset_path
+        # does NOT bypass the body locate. That keeps figure numbers inside the gates.
+        asset_path = _as_str(c.get("asset_path")) or None
         store.upsert(ClaimAnchor(
             note_id=note_id, char_start=start, char_end=end,
-            claim=claim_text, quoted_support=located,
+            claim=claim_text, quoted_support=located, asset_path=asset_path,
         ))
         count += 1
     return count
+
+
+def build_figure_anchor(
+    store: AnchorStore,
+    *,
+    note_id: str,
+    claim: str,
+    transcription: str,
+    note_body: str,
+    asset_path: str,
+) -> ClaimAnchor | None:
+    """Bind a figure-derived claim to its host transcription + saved asset (#6).
+
+    The host model (Read on `bad assets path <id>`) transcribes a figure/chart/
+    scanned page VERBATIM into the note body; this stores that transcription as the
+    anchor's `quoted_support` and records the PNG as `asset_path`. Because the
+    transcription must locate inside the live note body (extract_spans, same
+    discipline as build_from_claims), the figure-derived number is NOT an
+    ungrounded escape hatch: Tier-A byte-identity round-trips, the uncited gate
+    sees a real anchor, the recitation gate sees a real quoted span, and the
+    Tier-C judge can re-show the PNG. Returns the anchor, or None if the
+    transcription is not in the body (a transcription that isn't in the note is a
+    hallucinated quote, dossier §1.1)."""
+    transcription = (transcription or "").strip()
+    if not transcription or not note_id or not asset_path:
+        return None
+    span = extract_spans(claim, transcription, note_body)
+    if span is None:
+        return None  # drop: transcription not located in the note body
+    start, end = span
+    located = note_body[start:end]
+    anchor = ClaimAnchor(
+        note_id=note_id, char_start=start, char_end=end,
+        claim=claim, quoted_support=located, asset_path=asset_path,
+    )
+    store.upsert(anchor)
+    return anchor

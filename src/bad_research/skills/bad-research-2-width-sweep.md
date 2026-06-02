@@ -220,6 +220,16 @@ prompt: |
   peer-reviewed paper is almost never flagged; a vendor "X is the best" listicle on a
   good domain SHOULD be flagged `marketing_spin` even though its domain tier is high.
 
+  READ FIGURES (you are natively multimodal): if a source's substance is in a
+  figure/chart/table-image, or in a scanned (text-layerless) PDF, the text layer is
+  empty and the fetch path has already saved the rendered pixels as a PNG asset bound
+  to the note. Resolve it with `bad assets list --note-id <note-id> --json`, then
+  `bad assets path <asset-id>`, and use the `Read` tool on that PNG to transcribe the
+  data into the note VERBATIM (the numbers exactly as plotted/printed), citing it as a
+  figure. The transcription you write into the note body becomes the claim's
+  `quoted_support`, so the figure-derived number is grounded and verifiable like any
+  text claim — NEVER eyeball a number you did not Read off the saved image.
+
   OUTPUT_SHAPE: for each note, emit the claims JSON the binding consumes —
   a JSON array of {claim, note_id, quoted_support, char_start, char_end,
   source_quality_flags}. `source_quality_flags` is a (possibly empty) JSON array of
@@ -231,7 +241,7 @@ prompt: |
   lead) — flag, don't suppress. There is NO deterministic penalty; this is the
   worker-flags / lead-reconciles discipline, applied in prose at draft+synthesis time.
 
-  TOOLS_ALLOWED: ["fetch_url", "web_search", "execute_python"]
+  TOOLS_ALLOWED: ["fetch_url", "web_search", "execute_python", "Read"]
 
   STOP_CONDITIONS: halt when every assigned URL is fetched OR you reach the
   fetcher tool-call cap (FETCHER_TOOLCALL_CAP: 10 light / 20 full tool calls)
