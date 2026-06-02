@@ -235,21 +235,88 @@ def claim_quote_overlap(claim: str, quote: str) -> float:
     return len(c & q) / len(c)
 
 
-# ── Numeric / negation divergence guard (audit 2026-06-01, row 6) ──────────────
+# ── Numeric / negation / directional divergence guard (audit 2026-06-01 row 6;
+#    extended 2026-06-02 with the antonym axis) ──────────────────────────────────
 # The >=0.8-overlap "near-verbatim -> ENTAILMENT, skip the judge" shortcut above used
-# to admit a claim that FLIPPED a number, date, or negation while keeping high lexical
-# overlap ("grew 12%" vs a span saying "grew 21%"; "does not cause" vs "causes"). That
-# was the keyless number-flip gap the docstring above deferred to the [local] lane.
-# This deterministic, keyless guard closes it: when the claim carries a number/date or
-# a negation polarity the span does not, the near-verbatim shortcut is DENIED so the
-# pair escalates to the batched host-model judge (JUDGE_SYSTEM already mandates exact
-# number matching and flags opposites). Conservative by design — it only ever *adds*
-# an escalation (one host call), never silences one, so it cannot mask a real support.
+# to admit a claim that FLIPPED a number, date, negation, OR direction while keeping
+# high lexical overlap ("grew 12%" vs a span saying "grew 21%"; "does not cause" vs
+# "causes"; "grew 2.1%" vs "declined 2.1%"). That was the keyless flip gap the docstring
+# above deferred to the [local] lane. This deterministic, keyless guard closes all three
+# axes: when the claim carries a number/date the span lacks, a different negation
+# polarity, OR a directional/antonym flip relative to the span, the near-verbatim
+# shortcut is DENIED so the pair escalates to the batched host-model judge (JUDGE_SYSTEM
+# already mandates exact number matching and flags opposites). Conservative by design —
+# it only ever *adds* an escalation (one host call), never silences one, so it cannot
+# mask a real support.
 _NUM_RE = re.compile(r"\d[\d,]*\.?\d*")
 _NEGATION = frozenset({
     "not", "no", "never", "none", "cannot", "without", "neither", "nor",
     "fails", "fail", "failed", "lacks", "lack", "absent", "unable",
 })
+
+# ── Directional / antonym divergence guard (audit 2026-06-02) ──────────────────
+# The numeric+negation guard above misses a same-number, same-polarity DIRECTIONAL
+# flip: "GDP grew 2.1%" vs a span saying "GDP declined 2.1%" (the digit 2.1 sits on
+# both sides; neither negates) used to slip through the >=0.8-overlap near-verbatim
+# shortcut and be rubber-stamped as ENTAILMENT — WRONG. Likewise "ratified by all" vs
+# "rejected by all". This deterministic, keyless lexicon of OPPOSED terms closes that
+# hole: if one side contains a term whose opposite appears on the OTHER side (and that
+# opposite is NOT also present on the first side), the pair is flagged and escalated to
+# the batched host-model judge. Conservative + symmetric, exactly like the existing
+# guard — it only ever ADDS an escalation; it can never silence a real support. The
+# "opposite not also present on the first side" rule is the false-positive guard: a
+# pair with the SAME antonym on both sides (both say "rose") never flags.
+_ANTONYM_PAIRS: tuple[tuple[str, str], ...] = (
+    ("grew", "declined"),
+    ("grew", "shrank"),
+    ("rose", "fell"),
+    ("increased", "decreased"),
+    ("gained", "lost"),
+    ("up", "down"),
+    ("higher", "lower"),
+    ("more", "less"),
+    ("ratified", "rejected"),
+    ("approved", "denied"),
+    ("accepted", "rejected"),
+    ("confirmed", "denied"),
+    ("positive", "negative"),
+    ("supports", "opposes"),
+    ("improved", "worsened"),
+    ("expanded", "contracted"),
+    ("surplus", "deficit"),
+)
+# Flattened lookup: term -> frozenset of its opposite terms. A term may oppose more
+# than one word (e.g. "rejected" opposes both "ratified" and "accepted"), so the value
+# is a set, populated symmetrically from _ANTONYM_PAIRS.
+_ANTONYMS: dict[str, frozenset[str]] = {}
+for _a, _b in _ANTONYM_PAIRS:
+    _ANTONYMS[_a] = _ANTONYMS.get(_a, frozenset()) | {_b}
+    _ANTONYMS[_b] = _ANTONYMS.get(_b, frozenset()) | {_a}
+del _a, _b
+
+
+def directional_antonym_mismatch(claim: str, quote: str) -> bool:
+    """True when CLAIM and QUOTE disagree on a DIRECTIONAL/ANTONYM term: one side
+    contains a term (e.g. "grew") whose opposite (e.g. "declined") appears on the OTHER
+    side and is NOT also present on the first side. Catches same-number, same-polarity
+    flips the numeric/negation guard misses ("grew 2.1%" vs "declined 2.1%", "ratified
+    by all" vs "rejected by all"). Keyless + deterministic + conservative: it only ever
+    signals an escalation, never a support.
+
+    The "opposite not also on the first side" rule is the false-positive guard — when
+    the SAME antonym sits on both sides (both say "rose") or one sentence names both
+    poles, no flip is signalled; only a genuine cross-side flip flags."""
+    c_tokens = frozenset(_WORD_RE.findall((claim or "").lower()))
+    q_tokens = frozenset(_WORD_RE.findall((quote or "").lower()))
+    for term in c_tokens:
+        opposites = _ANTONYMS.get(term)
+        if opposites and (opposites & q_tokens) and not (opposites & c_tokens):
+            return True
+    for term in q_tokens:
+        opposites = _ANTONYMS.get(term)
+        if opposites and (opposites & c_tokens) and not (opposites & q_tokens):
+            return True
+    return False
 
 
 def _numbers(text: str) -> set[str]:
@@ -271,11 +338,22 @@ def _has_negation(text: str) -> bool:
 
 
 def numeric_or_negation_mismatch(claim: str, quote: str) -> bool:
-    """True when the CLAIM carries a number/date the QUOTE does not contain, OR the
-    two differ in negation polarity (one negates, the other doesn't). Used to DENY the
-    near-verbatim ENTAILMENT shortcut so such a pair is escalated to the host judge
-    instead of rubber-stamped. Keyless + deterministic + conservative."""
+    """True when the CLAIM and QUOTE diverge on any of three deterministic axes, all
+    of which DENY the near-verbatim ENTAILMENT shortcut so the pair is escalated to the
+    host judge instead of rubber-stamped:
+
+      1. NUMBER/DATE: the claim carries a number the quote does not contain.
+      2. NEGATION: the two differ in negation polarity (one negates, the other doesn't).
+      3. DIRECTION/ANTONYM: one side flips a directional/antonym term relative to the
+         other (e.g. "grew" vs "declined", "ratified" vs "rejected") — a same-number,
+         same-polarity contradiction the first two axes miss (see
+         `directional_antonym_mismatch`).
+
+    Keyless + deterministic + conservative: it only ever ADDS an escalation, never
+    silences a real support, so callers in verifier.py need no change."""
     cn = _numbers(claim)
     if cn and not cn <= _numbers(quote):
         return True
-    return _has_negation(claim) != _has_negation(quote)
+    if _has_negation(claim) != _has_negation(quote):
+        return True
+    return directional_antonym_mismatch(claim, quote)

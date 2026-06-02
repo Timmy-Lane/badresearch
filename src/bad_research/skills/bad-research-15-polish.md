@@ -83,13 +83,15 @@ If the escalation names a structural issue (e.g., "user asked for a ranked list;
 Before declaring the run complete, verify every expected pipeline artifact exists. **The required set depends on the tier:**
 
 - **light tier:** only `research/polish-log.json` is required (steps 12–14 are skipped, so no critic findings or patch log).
-- **full tier:** require all four critic findings + patch-log + polish-log:
+- **full tier:** require all five critic findings (incl. assumption) + grader-log + patch-log + polish-log:
 
 ```bash
 for f in research/critic-findings-dialectic.json \
          research/critic-findings-depth.json \
          research/critic-findings-width.json \
          research/critic-findings-instruction.json \
+         research/critic-findings-assumption.json \
+         research/grader-log.json \
          research/patch-log.json \
          research/polish-log.json; do
   test -f "$f" || echo "MISSING: $f"

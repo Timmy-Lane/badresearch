@@ -1,5 +1,7 @@
 """Unit tests for the Codex translation layer (codex_translate.py)."""
 
+import yaml
+
 from bad_research.core.codex_translate import (
     agentref_path,
     skillref_path,
@@ -53,6 +55,52 @@ def test_translate_rewrites_claude_paths():
     assert "references/" in out
 
 
+def test_translate_routes_claude_skill_path_through_skillref():
+    # The `.claude/skills/bad-research-<step>/SKILL.md` install path must land on
+    # the REAL rendered reference (`references/<step>.md`), NOT the dangling
+    # `references/bad-research-<step>/SKILL.md` the bare literal would yield.
+    src = "If `.claude/skills/bad-research-1-decompose/SKILL.md` doesn't exist, run X."
+    out = translate_tool_vocabulary(src)
+    assert "references/1-decompose.md" in out
+    assert "references/bad-research-1-decompose" not in out
+    assert "/SKILL.md" not in out  # no leftover dangling dir/file path
+
+
+def test_translate_entry_self_reinvoke_points_at_skill_md():
+    # `Skill(skill: "bad-research")` (no step segment) is the entry skill itself
+    # -> this skill's own SKILL.md, never a dangling references/bad-research.md.
+    src = 'Re-invoke entirely: Skill(skill: "bad-research").'
+    out = translate_tool_vocabulary(src)
+    assert "Skill(" not in out
+    assert "references/bad-research.md" not in out
+    assert "SKILL.md" in out
+
+
+def test_translate_strips_pretooluse_and_slash_command_and_steps_only():
+    src = (
+        "ships the entry skill + agents + PreToolUse hook; materialize on first "
+        "`/bad-research` invocation, run `bad install --steps-only . --json`."
+    )
+    out = translate_tool_vocabulary(src)
+    assert "PreToolUse" not in out
+    assert "/bad-research" not in out
+    assert "--steps-only" not in out
+
+
+def test_translate_no_dangling_bad_research_ref_paths():
+    # The exact line that leaked all three before the fix.
+    src = (
+        "If `.claude/skills/bad-research-1-decompose/SKILL.md` doesn't exist, run "
+        "`bad install --steps-only . --json`. Ships entry + agents + PreToolUse "
+        "hook; first `/bad-research` invocation. Re-invoke: "
+        'Skill(skill: "bad-research").'
+    )
+    out = translate_tool_vocabulary(src)
+    assert "references/bad-research" not in out  # no dangling step or self path
+    for tok in ("PreToolUse", "/bad-research", "--steps-only", ".claude/", "Skill("):
+        assert tok not in out, tok
+
+
 def test_translate_is_idempotent():
     src = (
         'Skill(skill: "bad-research-1-decompose"); TodoWrite; the Task tool;\n'
@@ -89,6 +137,37 @@ def test_to_codex_skill_frontmatter_keeps_only_name_and_description():
     assert "color: green" not in out
     assert "model: opus" not in out
     assert "# Body" in out
+
+
+def _parse_frontmatter(rendered: str) -> dict:
+    block = rendered.split("---\n")[1]
+    data = yaml.safe_load(block)
+    assert isinstance(data, dict), f"not a YAML mapping: {data!r}"
+    return data
+
+
+def test_to_codex_skill_frontmatter_is_valid_yaml_with_embedded_colon():
+    # The real entry-skill description contains `tier-adaptive: a simple ...`;
+    # the embedded `: ` made the hand-formatted scalar invalid YAML. The dumped
+    # frontmatter must round-trip the colon, quotes, and `#` intact.
+    src = (
+        "---\nname: bad-research\ndescription: >\n"
+        "  Behavior is tier-adaptive: a simple question gets a fast answer.\n"
+        '  It uses "quotes" and a # hash and a trailing colon:\n'
+        "color: green\n---\n\n# Body\n"
+    )
+    out = to_codex_skill_frontmatter(src)
+    data = _parse_frontmatter(out)  # must not raise
+    assert set(data.keys()) <= {"name", "description"}
+    assert data["name"] == "bad-research"
+    assert "tier-adaptive: a simple" in data["description"]
+    assert '"quotes"' in data["description"]
+    assert "# hash" in data["description"]
+
+
+def test_to_codex_skill_frontmatter_only_name_and_description_keys():
+    data = _parse_frontmatter(to_codex_skill_frontmatter(_SRC))
+    assert set(data.keys()) <= {"name", "description"}
 
 
 def test_strip_frontmatter_removes_yaml_block():

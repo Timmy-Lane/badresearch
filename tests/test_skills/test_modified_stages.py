@@ -1,3 +1,5 @@
+import pytest
+
 from tests.test_skills.validate import validate_skill
 
 STAGES = [
@@ -328,6 +330,85 @@ def test_patcher_skill_findings_paths_includes_assumption(skills_dir):
     assert "critic-findings-assumption.json" in body
 
 
+# ── Re-audit 2026-06: polish step-15.4 integrity gate must match the entry skill ──
+# The full-tier gate must require all FIVE critic findings (incl. assumption) AND
+# the grader-log — not just the original four critics.
+
+
+def test_polish_integrity_gate_includes_assumption_and_grader(skills_dir):
+    body = (skills_dir / "bad-research-15-polish.md").read_text()
+    # the full-tier integrity gate (step 15.4) loops over the required artifacts
+    for required in (
+        "critic-findings-dialectic.json",
+        "critic-findings-depth.json",
+        "critic-findings-width.json",
+        "critic-findings-instruction.json",
+        "critic-findings-assumption.json",  # the 5th critic — was OMITTED
+        "grader-log.json",                  # the grader convergence log — was OMITTED
+        "patch-log.json",
+        "polish-log.json",
+    ):
+        assert required in body, f"polish integrity gate must require {required}"
+    # the stale "four critic findings" prose must be gone
+    assert "all four critic" not in body.lower(), \
+        "polish gate prose must not say 'all four critic' — the full tier has five"
+
+
+def test_polish_gate_matches_entry_skill_gate(skills_dir):
+    """The polish step-15.4 gate and the entry skill's final integrity gate must
+    require the same full-tier artifact set (assumption + grader included)."""
+    polish = (skills_dir / "bad-research-15-polish.md").read_text()
+    entry = (skills_dir / "bad-research.md").read_text()
+    for required in ("critic-findings-assumption.json", "grader-log.json"):
+        assert required in entry, f"entry-skill gate must require {required}"
+        assert required in polish, f"polish gate must require {required} to match entry"
+
+
+# ── Re-audit 2026-06: grader skill handles the keyless-skip / passed:null verdict ──
+# `bad grade-report` returns {"status":"keyless-skip","passed":null} on a keyless
+# box. The grader loop must NOT treat that as `false` and spawn the patcher with
+# empty findings — it must branch explicitly (host grades inline, or clean skip).
+
+
+def test_grader_skill_handles_keyless_null_verdict(skills_dir):
+    body = (skills_dir / "bad-research-12.5-grader.md").read_text()
+    low = body.lower()
+    assert "keyless-skip" in body, "grader must reference the keyless-skip verdict"
+    # an explicit null/keyless branch, distinct from passed==false
+    assert "passed is none" in low or "passed: null" in low or "passed == null" in low \
+        or "passed:null" in low, "grader must branch on passed==null explicitly"
+    # must say grade inline (host is the model) and must NOT fall through to the
+    # empty-findings patcher spawn
+    assert "inline" in low, "keyless branch must grade inline via the host model"
+    assert "empty findings" in low or "empty findings list" in low, \
+        "grader must explicitly forbid the empty-findings false-path patcher spawn"
+
+
+# ── Re-audit 2026-06: needs_host_judgment worklist has a consumer in the 3 grounders ──
+# `bad verify-citations` emits keyless neutral-band findings with
+# needs_host_judgment:true. The grounding-disposition steps must instruct the host
+# model to RE-JUDGE those pairs, not ride the bare 0.5 default.
+
+
+@pytest.mark.parametrize(
+    "skill_file",
+    [
+        "bad-research-11.5-citation-verifier.md",
+        "bad-research-fast.md",
+        "bad-research-ultrafast.md",
+    ],
+)
+def test_grounding_skills_consume_needs_host_judgment(skills_dir, skill_file):
+    body = (skills_dir / skill_file).read_text()
+    assert "needs_host_judgment" in body, (
+        f"{skill_file} must reference the needs_host_judgment worklist field"
+    )
+    low = body.lower()
+    assert "re-judge" in low or "rejudge" in low or "judge that" in low, (
+        f"{skill_file} must instruct the host to re-judge needs_host_judgment findings"
+    )
+
+
 # ── B-5: query expansion (width-sweep) + direction-switch pivot (depth) ──
 
 
@@ -337,7 +418,7 @@ def test_width_sweep_query_expansion_instruction(skills_dir):
     # explicit per-sub-question paraphrase/synonym instruction
     assert "synonym/paraphrase" in low or "paraphrase alternative" in low
     # minimum count: 3-5 alternatives generated per sub-question
-    assert "3–5" in body or "3-5" in body
+    assert "3–5" in body or "3-5" in body  # noqa: RUF001 (en dash matches skill prose)
     # the reformulation rows are tagged in the search-plan table Type column
     assert "reformulation" in low
     # scoped to Step 2.1 (multi-perspective search planning)

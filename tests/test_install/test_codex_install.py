@@ -9,6 +9,8 @@ passes an explicit tmp home.
 import re
 from pathlib import Path
 
+import yaml
+
 from bad_research.core import hooks
 from bad_research.core.codex_install import (
     AGENT_FILES,
@@ -114,8 +116,16 @@ def test_skill_md_frontmatter_is_codex_valid(tmp_path):
     write_codex_skill(home, hpr_path="bad")
     fm = (home / ".codex" / "skills" / "bad-research" / "SKILL.md").read_text(encoding="utf-8")
     head = fm.split("---\n")[1]  # first frontmatter block
-    keys = [ln.split(":")[0].strip() for ln in head.splitlines() if ":" in ln]
-    assert set(keys) <= {"name", "description"}
+    # MUST actually parse as YAML — a `str.split(":")` key-name check is falsely
+    # green for a folded description whose embedded `: ` breaks the scalar
+    # ("mapping values are not allowed here"). Parse it for real.
+    data = yaml.safe_load(head)
+    assert isinstance(data, dict), f"frontmatter is not a YAML mapping: {data!r}"
+    assert set(data.keys()) <= {"name", "description"}, data.keys()
+    assert data["name"] == "bad-research"
+    # the load-blocking `: ` is exactly the description the entry skill ships,
+    # so guard that the description round-trips intact (the literal `: ` survives).
+    assert "tier-adaptive: a simple" in data["description"]
     assert "Execution model on Codex" in fm  # preamble prepended
 
 
@@ -241,7 +251,24 @@ def test_install_codex_via_home_default(tmp_path, monkeypatch):
     assert (home / ".codex" / "skills" / "bad-research" / "SKILL.md").exists()
 
 
-_FORBIDDEN = ("Skill(", "Task(", "TodoWrite", "subagent_type", ".claude/")
+_FORBIDDEN = (
+    "Skill(",
+    "Task(",
+    "TodoWrite",
+    "subagent_type",
+    ".claude/",
+    # Claude-only hook + slash-command vocabulary with no Codex equivalent — the
+    # AGENTS.md prefer-the-vault section carries the PreToolUse intent.
+    "PreToolUse",
+    "/bad-research",
+    # The lazy step-skill bootstrap flag does not exist on Codex.
+    "--steps-only",
+)
+
+# Any `references/bad-research-*` path is DANGLING: the real rendered step refs
+# are `references/<step>.md` (prefix stripped), and the entry self-reinvoke must
+# point at `SKILL.md`, never `references/bad-research.md`.
+_DANGLING_REF_RE = re.compile(r"references/bad-research[\w./-]*")
 
 
 def test_no_claude_tokens_leak_into_codex_render(tmp_path):
@@ -255,4 +282,6 @@ def test_no_claude_tokens_leak_into_codex_render(tmp_path):
         for tok in _FORBIDDEN:
             if tok in text:
                 offenders.append(f"{f.relative_to(root)}: {tok}")
+        for m in _DANGLING_REF_RE.findall(text):
+            offenders.append(f"{f.relative_to(root)}: dangling {m}")
     assert not offenders, "Claude tokens leaked:\n" + "\n".join(offenders)
