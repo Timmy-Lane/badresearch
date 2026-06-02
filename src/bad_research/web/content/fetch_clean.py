@@ -397,7 +397,9 @@ def pdf_to_markdown(pdf_bytes: bytes) -> str:
     pymupdf4llm.to_markdown does column-aware reflow, heading detection, GFM tables.
     On unparseable bytes returns "" (the caller's junk gate handles it). For scanned
     PDFs (no text layer) the host-model Read-tool vision path is the escape hatch
-    (§5) — wired by the orchestrator, not here.
+    (§5) — the page is rendered to a PNG asset (render_pdf_pages) and the
+    orchestrator Reads it; the rendering is wired here, the persistence in the
+    caller (core/fetcher / cli/assets).
     """
     import pymupdf  # fitz
     import pymupdf4llm  # type: ignore[import-untyped]
@@ -415,6 +417,81 @@ def pdf_to_markdown(pdf_bytes: bytes) -> str:
             doc.close()  # type: ignore[no-untyped-call]
         except Exception:
             pass
+
+
+# A page with < this many extractable text chars is treated as text-layerless
+# (scanned) or figure-dense — its substance is in the rendered pixels, not a text
+# layer, so it MUST be rendered to a PNG for the host-vision Read path (§5).
+PDF_PAGE_TEXT_FLOOR = 80
+PDF_RENDER_DPI = 200            # render DPI for the host-vision PNG (legible figures)
+PDF_RENDER_MAX_PAGES = 20       # cap pages rendered so a 400-page scan can't blow up IO
+
+
+def page_is_figure_dense(page: Any) -> bool:
+    """True iff a PDF page carries little/no extractable text (scanned or figure-dense).
+
+    The signal for "the substance is in the pixels, not a text layer": a scanned
+    page has ~0 text chars; a figure/chart page (a full-bleed plot, a table rendered
+    as an image) likewise yields < PDF_PAGE_TEXT_FLOOR chars while occupying the page.
+    Either way pymupdf4llm produced no usable markdown for it and the host model must
+    SEE the page. Robust to a page object that lacks get_text (returns False)."""
+    try:
+        text = str(page.get_text("text"))
+    except Exception:
+        return False
+    return len(text.strip()) < PDF_PAGE_TEXT_FLOOR
+
+
+def render_pdf_pages(
+    pdf_bytes: bytes,
+    *,
+    dpi: int = PDF_RENDER_DPI,
+    only_figure_dense: bool = True,
+    max_pages: int = PDF_RENDER_MAX_PAGES,
+) -> list[dict[str, Any]]:
+    """Render PDF pages to PNG bytes for the host-model Read-tool vision path (§5).
+
+    Returns a list of ``{page: <0-based int>, png: <bytes>, text_chars: <int>}``
+    for every page that needs the vision path. With ``only_figure_dense=True``
+    (the default) ONLY text-layerless / figure-dense pages (page_is_figure_dense)
+    are rendered — the common case is a scanned or chart-heavy PDF where
+    pdf_to_markdown yielded nothing usable. With ``only_figure_dense=False`` every
+    page is rendered (the whole-doc has no text layer). Capped at ``max_pages``.
+    Unparseable bytes -> ``[]`` (the caller treats it as junk, never crashes).
+    """
+    import pymupdf  # fitz
+
+    doc: Any
+    try:
+        doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")  # type: ignore[no-untyped-call]
+    except Exception:
+        return []
+    out: list[dict[str, Any]] = []
+    try:
+        zoom = dpi / 72.0  # PDF user space is 72 dpi; scale the rasterizer matrix
+        matrix = pymupdf.Matrix(zoom, zoom)  # type: ignore[no-untyped-call]
+        page: Any
+        for page_no, page in enumerate(doc):
+            if len(out) >= max_pages:
+                break
+            try:
+                text_chars = len(str(page.get_text("text")).strip())
+            except Exception:
+                text_chars = 0
+            if only_figure_dense and text_chars >= PDF_PAGE_TEXT_FLOOR:
+                continue
+            try:
+                pix = page.get_pixmap(matrix=matrix)
+                png = pix.tobytes("png")
+            except Exception:
+                continue
+            out.append({"page": page_no, "png": bytes(png), "text_chars": text_chars})
+    finally:
+        try:
+            doc.close()
+        except Exception:
+            pass
+    return out
 
 
 def _host_model(system: str, user: str) -> str:

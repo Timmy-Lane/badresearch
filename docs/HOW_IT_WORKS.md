@@ -103,11 +103,26 @@ binding generated claims back to retrieved evidence and guarding against verbati
 recitation. Every factual sentence must carry a source citation, and a deterministic
 ship-gate **blocks** any uncited claim. Fabricated quotes are caught for free by a
 byte-identity check; the harder paraphrase-faithfulness cases are judged by the host
-model (an optional `[local]` cross-encoder upgrades this to NLI — keyless, that lane is
-a no-op, and the verifier instead emits a `needs_host_judgment` worklist the host model
-resolves inline). A recitation gate flags any sentence that copies a source too closely
-(a 12-word verbatim run or >50% overlap) — with a carve-out only for genuine, attributed
-direct quotes.
+model (an optional `[local]` cross-encoder upgrades this to NLI).
+
+Being honest about what the *keyless* layer decides on its own versus what it defers:
+the deterministic guards **affirmatively catch** the mechanical contradictions — a
+flipped number/date, a flipped negation, and a flipped directional/antonym term (and
+an unsupported appended fact, whose new number trips the same numeric check). A pure
+**paraphrase-contradiction** that keeps the numbers, negation, and direction intact is
+*not* decided keyless — it carries no deterministic signal, so the verifier escalates
+it to the host-model judge (or, with no host wired, emits a `needs_host_judgment`
+worklist the host model resolves inline). That escalation is a deferral, not a catch.
+A reproducible harness measures exactly this: `bad grounding-recall` mutates
+known-grounded claims and reports a **100% keyless affirmative catch-rate on the
+number / negation / antonym / unsupported-append bands and an explicitly-disclosed 0%
+on the paraphrase-contradiction band** (which is escalated to the host judge), so the
+published figure is a per-mutation rate, never a "we catch everything" absolute. A
+recitation gate flags any sentence that copies a source too closely (a 12-word verbatim
+run or >50% overlap) — with a carve-out only for genuine, attributed direct quotes. The
+per-claim grounding ledger (verdict, confidence band, score, deciding tier) is itself
+surfaceable as a shareable sidecar via `bad grounding-surface` — a per-claim
+auditability surface no hosted deep-research tool exposes.
 
 ### Reasoning-effort dial — spend compute where it matters
 *Pattern from: OpenAI's reasoning-effort control.* We expose a `--reasoning-effort`

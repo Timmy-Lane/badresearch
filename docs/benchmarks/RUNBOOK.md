@@ -69,8 +69,41 @@ bad headtohead \
 then:
 ```
 bad headtohead -m manifest.json --out results/        # keyless RubricJudge (proxy)
-bad headtohead -m manifest.json --out results/ --llm  # host-model judge (semantic; needs the host model)
+bad headtohead -m manifest.json --out results/ --llm  # API host-model judge (semantic; needs ANTHROPIC_API_KEY)
 ```
+
+**4c — KEYLESS semantic judge (the orchestrating Claude IS the judge — no API key):**
+
+This is the **recommended quotable path on a keyless box**. Instead of calling the model
+through `ANTHROPIC_API_KEY` (the `--llm` path), you (the host model in Claude Code) read the
+blinded reports and write the verdicts yourself. Same categorical rails, same scorecard, same
+blinding — **zero key, zero network**. Two commands, one human-judging step in between:
+
+```
+# 1. EMIT — write one blinded judge-task file per entrant + a manifest:
+bad headtohead -m manifest.json --emit-judge-tasks tasks/
+#   (or single-pair: --bad-report ... --competitor-report ... --query-id ... --emit-judge-tasks tasks/)
+```
+
+Each `tasks/<id>.task.md` contains the rubric + the **already-blinded** report + corpus + an
+instruction to write that entrant's rails. The entrant identity (which side is bad-research)
+lives ONLY in `tasks/manifest.json`, never in the task file — the task ids are opaque
+(`<query>__entrant-01`, `…-02`), so you grade the text on its merits and **cannot self-grade**.
+
+```
+# 2. JUDGE — as the host model, read each tasks/<id>.task.md and write its verdict:
+#    tasks/<id>.verdict.json  →  {"factual":"pass|borderline|fail", "citation":..., "completeness":...,
+#                                 "source_quality":..., "efficiency":..., "rationale":"<=2 sentences"}
+#    One rail per axis, no numbers, no prose outside the JSON.
+
+# 3. INGEST — turn your verdicts into the scorecard (keyless):
+bad headtohead --verdicts tasks/ --out results/
+```
+
+The scorecard reads `judge: host-model LLMJudge` (the semantic path, not the RubricJudge proxy).
+Rails ingest through the exact same `AxisRails.from_raw → JudgeVerdict.from_rails` path as the
+`--llm` route; a missing/garbage verdict degrades to a conservative all-`fail` (never a crash,
+never a silent pass). Re-run any verdict file and re-`--verdicts` to update.
 
 ## 5. Read the scorecard
 
@@ -82,7 +115,9 @@ win; a missing report is counted a tie, never a silent win.
 
 - **The default keyless `RubricJudge` is a proxy** — citation-presence + word-overlap, NOT semantic
   entailment. It will pass a well-cited report that contradicts its sources. For a quotable result,
-  run `--llm` (host-model judge) so content quality is actually assessed.
+  use a semantic judge: either `--llm` (API host-model judge, needs `ANTHROPIC_API_KEY`) **or the
+  keyless host-judge flow in Step 4c** (`--emit-judge-tasks` → you judge the blinded files →
+  `--verdicts`), where the orchestrating Claude is the judge and no key is required.
 - **Competitor runs are manual**, so the comparison is only as fair as your runs (same query string,
   same day, no cherry-picking).
 - **This measures the apparatus; the tally is whatever the real runs produced.** No win is claimed

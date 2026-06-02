@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 SCHEMA_VERSION = 10
@@ -201,3 +203,104 @@ def store_body_lines(
         (json.dumps(body_lines), note_id),
     )
     conn.commit()
+
+
+# --- assets write/read path (multimodal host-vision rung) ---------------------
+# The `assets` table existed in the schema since v-early but had ZERO writers:
+# crawl4ai screenshots and rendered PDF pages were captured then dropped, so the
+# host model (natively multimodal) was never pointed at a figure. These helpers
+# are the real INSERT path + thin accessors the `bad assets` CLI and the figure-
+# reading skill instruction depend on. `filename` is stored RELATIVE to the vault
+# root (e.g. `research/assets/<note_id>/<sha>.png`) so the resolved path is
+# portable across machines; the CLI joins it back to the live vault root.
+
+_ASSET_TYPES = ("image", "screenshot", "pdf", "other")
+
+
+@dataclass
+class Asset:
+    """One persisted asset row. `id` is None until inserted (AUTOINCREMENT)."""
+
+    note_id: str
+    type: str
+    filename: str
+    url: str | None = None
+    alt_text: str | None = None
+    content_type: str | None = None
+    size_bytes: int | None = None
+    created_at: str | None = None
+    id: int | None = None
+
+
+def insert_asset(
+    conn: sqlite3.Connection,
+    *,
+    note_id: str,
+    filename: str,
+    type: str = "image",
+    url: str | None = None,
+    alt_text: str | None = None,
+    content_type: str | None = None,
+    size_bytes: int | None = None,
+    created_at: str | None = None,
+) -> int:
+    """INSERT one row into `assets`, returning the new rowid.
+
+    `type` must be one of {'image','screenshot','pdf','other'} (the schema CHECK).
+    `created_at` defaults to an ISO-8601 UTC timestamp. This is the single real
+    write path for the assets table — used by the screenshot persister and the
+    PDF-page renderer so a figure becomes a Read-able PNG bound to its note.
+    """
+    if type not in _ASSET_TYPES:
+        raise ValueError(f"asset type {type!r} not in {_ASSET_TYPES}")
+    ts = created_at or datetime.now(UTC).isoformat()
+    cur = conn.execute(
+        "INSERT INTO assets "
+        "(note_id, type, filename, url, alt_text, content_type, size_bytes, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (note_id, type, filename, url, alt_text, content_type, size_bytes, ts),
+    )
+    conn.commit()
+    return int(cur.lastrowid or 0)
+
+
+def _row_to_asset(row: sqlite3.Row) -> Asset:
+    return Asset(
+        id=row["id"],
+        note_id=row["note_id"],
+        type=row["type"],
+        filename=row["filename"],
+        url=row["url"],
+        alt_text=row["alt_text"],
+        content_type=row["content_type"],
+        size_bytes=row["size_bytes"],
+        created_at=row["created_at"],
+    )
+
+
+def list_assets(
+    conn: sqlite3.Connection,
+    *,
+    note_id: str | None = None,
+    type: str | None = None,
+) -> list[Asset]:
+    """Return assets, optionally filtered by note_id and/or type, newest-id first."""
+    sql = "SELECT * FROM assets"
+    clauses: list[str] = []
+    params: list[object] = []
+    if note_id is not None:
+        clauses.append("note_id = ?")
+        params.append(note_id)
+    if type is not None:
+        clauses.append("type = ?")
+        params.append(type)
+    if clauses:
+        sql += " WHERE " + " AND ".join(clauses)
+    sql += " ORDER BY id DESC"
+    return [_row_to_asset(r) for r in conn.execute(sql, params).fetchall()]
+
+
+def get_asset(conn: sqlite3.Connection, asset_id: int) -> Asset | None:
+    """Return one asset by its integer id, or None."""
+    row = conn.execute("SELECT * FROM assets WHERE id = ?", (asset_id,)).fetchone()
+    return _row_to_asset(row) if row is not None else None

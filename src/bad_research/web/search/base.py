@@ -17,7 +17,19 @@ from typing import Any
 
 import httpx
 
-from bad_research.web.base import SearchQuery, WebResult
+from bad_research.web.base import SearchQuery, WebResult, recency_cutoff_date
+
+
+def with_after_operator(query: str, recency_days: int | None) -> str:
+    """Append a Google-style `after:YYYY-MM-DD` date operator when a recency
+    window is set. The host WebSearch tool, ddgs, and SearXNG all consume a
+    Google-style query string, so a date operator is the keyless way to bias
+    these providers toward fresh results. No-op when recency_days is unset, or
+    when an `after:` operator is already present (idempotent)."""
+    cutoff = recency_cutoff_date(recency_days)
+    if cutoff is None or "after:" in query:
+        return query
+    return f"{query} after:{cutoff.isoformat()}"
 
 
 @dataclass
@@ -100,7 +112,7 @@ class WebSearchToolProvider:
 
     def search_ex(self, q: SearchQuery) -> list[WebResult]:
         return self.search(
-            q.query, max_results=q.max_results,
+            with_after_operator(q.query, q.recency_days), max_results=q.max_results,
             allowed=q.include_domains, blocked=q.exclude_domains,
         )
 
@@ -182,7 +194,8 @@ class DdgsProvider:
         return out
 
     def search_ex(self, q: SearchQuery) -> list[WebResult]:
-        return self.search(q.query, max_results=q.max_results)
+        return self.search(with_after_operator(q.query, q.recency_days),
+                           max_results=q.max_results)
 
     def fetch(self, url: str) -> WebResult:
         return _fetch_clean_bridge(url)
@@ -243,7 +256,8 @@ class SearxngProvider:
         return out
 
     def search_ex(self, q: SearchQuery) -> list[WebResult]:
-        return self.search(q.query, max_results=q.max_results)
+        return self.search(with_after_operator(q.query, q.recency_days),
+                           max_results=q.max_results)
 
     def fetch(self, url: str) -> WebResult:
         return _fetch_clean_bridge(url)
