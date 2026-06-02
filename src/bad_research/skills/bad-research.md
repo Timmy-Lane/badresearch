@@ -34,7 +34,7 @@ When you invoke a Skill, that skill's full procedure is loaded into your context
 
 **Why this design?** It is compaction-resistant: each step's procedure is loaded into context **only at the moment it's needed**, fresh, so a long run can't evict the procedure before the step that needs it.
 
-**The 13 step skills** (all prefixed `bad-research-`):
+**The integer-numbered step skills** (all prefixed `bad-research-`; the half-steps and route skills follow in the next two tables, and the full route runs the full-tier stage sequence in "Complete pipeline order" below — more stages than this integer-only list):
 
 | # | Skill name | What it does | Tiers |
 |---|---|---|---|
@@ -127,7 +127,7 @@ Where the half-step numbers map to:
 - 14.5 → `Skill(skill: "bad-research-fresh-review")` (one fresh-context pass; full only)
 
 **RESPECT THE ROUTE.** `fast` is the cheap bounded ReAct loop, not a
-degraded full run; do NOT add the 13 steps "to be thorough." `full` ALWAYS runs
+degraded full run; do NOT add the full-tier stages "to be thorough." `full` ALWAYS runs
 11.5 (citation verifier) and 14.5 (fresh-review). The deterministic
 no-uncited-claim gate in step 16 is a **ship-block for ALL routes**. If
 uncertain, route up — but never silently upgrade every query to `full`.
@@ -226,7 +226,7 @@ Before you invoke any step skill, do this:
    - `Step 1 — Skill: bad-research-1-decompose`
    - `Step 1.5 — Skill: bad-research-query-router`
 
-   **Then**, after step 1.5 returns the `route`, seed the remaining todos from the matching row of the route table above (the `fast` / `full` step sequence). Do NOT seed all 13 steps up front and prune — you don't know the route yet, and a `fast` run never has most of them.
+   **Then**, after step 1.5 returns the `route`, seed the remaining todos from the matching row of the route table above (the `fast` / `full` step sequence). Do NOT seed the full-tier stage sequence up front and prune — you don't know the route yet, and a `fast` run never has most of them.
 
    The todo list survives context compaction; it's your durable memory of where you are in the chain.
 
@@ -366,7 +366,7 @@ If any rule returns `error` severity issues, address them before declaring compl
 6. **Steps are sequential at the outermost level, parallel within.** You cannot start step N+1 before step N completes. Within a step, parallelism is mandatory when there are multiple subagents.
 7. **Canonical research query is gospel everywhere.** Every subagent gets the verbatim query.
 8. **Hygiene rules apply to the final report only.** Workspace artifacts (scaffold, loci JSONs, interim notes, comparisons.md, patch log) can look however they need to look.
-9. **RESPECT THE TIER GATE — never skip or add a step.** For `full`, ALL 13 steps run; for `fast`, the prescribed bounded-loop sequence runs (loop → slim grounding → slim critic → polish → gate). Don't add steps "for thoroughness"; don't drop steps "for budget." The route is a binding contract.
+9. **RESPECT THE TIER GATE — never skip or add a step.** For `full`, the entire full-tier stage sequence runs (the "Complete pipeline order (full tier)" block above, half-steps included); for `fast`, the prescribed bounded-loop sequence runs (loop → slim grounding → slim critic → polish → gate). Don't add steps "for thoroughness"; don't drop steps "for budget." The route is a binding contract.
 10. **Step 10 triple-draft ensemble is MANDATORY for `full` tier.** You MUST spawn 3 `bad-research-draft-orchestrator` subagents. Writing `research/notes/final_report_<vault_tag>.md` directly in step 10 (instead of going through the synthesizer in step 11) is a PIPELINE VIOLATION for these tiers.
 11. **Step 11 synthesis is MANDATORY for `full` tier.** The synthesizer subagent (Read+Write tool-locked) writes the final report from the 3 drafts. The orchestrator does NOT write the final report itself for these tiers.
 12. **Subagents read full source text.** Draft sub-orchestrators MUST batch-read every note in their `must_read_note_ids` list before writing. Fetchers MUST chase 3-8 primary sources via citation chains.

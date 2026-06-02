@@ -46,7 +46,7 @@ this step does not run.
 files, collect their `findings` arrays into a single list, and ask the judge to
 score the five axes against those findings rather than independently re-scanning
 the corpus. This drops round-1 cost from a full Opus-tier corpus scan to a cheap
-verdict-aggregation — the 4 critics in step 12 already did the corpus read, so
+verdict-aggregation — the 5 critics in step 12 already did the corpus read, so
 round 1 is just a verdict over their findings, not a fresh scan.
 
 **For rounds 2 and 3 only:** run the full corpus JSON build specified below,
@@ -90,6 +90,16 @@ while revisions < MAX_GRADER_REVISIONS:   # 3
         verdict = bad grade-report --report research/notes/final_report_<vault_tag>.md \
                     --corpus research/temp/grader-corpus.json --json
     #   -> {passed, scores{5 axes}, overall, findings:[{failure_mode,severity,location,recommendation}]}
+    #   KEYLESS run -> {"status":"keyless-skip","passed":null,"scores":{},"overall":null,"findings":[]}
+    if verdict.get("status") == "keyless-skip" or verdict.get("passed") is None:
+        # KEYLESS NULL BRANCH (see Step 12.5.2b). The CLI grader could not run
+        # (no host key). Do NOT fall through to the `false` patcher spawn with an
+        # empty findings list — that would burn a round patching nothing. Instead:
+        # YOU (the orchestrator host model) GRADE INLINE against the evidence-digest
+        # — you ARE the judge model — and either emit real findings to patch, or,
+        # if you judge the report already passing, cleanly exit the loop.
+        handle_keyless_skip()   # see Step 12.5.2b; break out of the loop after
+        break
     if verdict.passed:  break             # every axis >= 0.70 AND mean >= 0.75
     # write the failing-axis findings as a patcher-shaped findings file:
     write verdict.findings -> research/critic-findings-grader.json  (shape: {"findings":[...]})
@@ -122,8 +132,14 @@ Concretely, each round:
    bad grade-report --report research/notes/final_report_<vault_tag>.md \
        --corpus research/temp/grader-corpus.json --json > research/temp/grade-round-<N>.json
    ```
-2. Parse `passed`. If `true`, the loop is done — record it in
-   `research/temp/orchestrator-notes.md` and proceed to "Exit criterion."
+2. Parse `passed`.
+   - **`status == "keyless-skip"` or `passed is null`:** the CLI grader could not
+     run (keyless box, no host key). Go to **Step 12.5.2b** — do NOT treat this as
+     `false` and do NOT spawn the patcher with an empty findings list. Record the
+     keyless verdict in `research/temp/orchestrator-notes.md` and break the loop.
+   - **`passed == true`:** the loop is done — record it in
+     `research/temp/orchestrator-notes.md` and proceed to "Exit criterion."
+   - **`passed == false`:** continue to step 3 (extract findings, patch, re-judge).
 3. If `false`, extract the `findings` array and write the grader findings file:
    ```bash
    python -c "
@@ -192,19 +208,68 @@ round. The cap of 3 is the cost ceiling — never run a 4th round.
 
 ---
 
+## Step 12.5.2b — Keyless-skip branch (`bad grade-report` returned `passed: null`)
+
+On a keyless box (no host provider key wired into the CLI), `bad grade-report`
+cannot run its LLM-judge loop, so it emits the benign keyless-skip verdict:
+
+```json
+{"status": "keyless-skip", "passed": null, "scores": {}, "overall": null, "findings": []}
+```
+
+This is **NOT** a `false` verdict. A `false` verdict means "the grader judged the
+report and it failed an axis" — it carries real `findings` for the patcher. A
+keyless-skip carries `findings: []` and `passed: null`, meaning "the grader never
+ran." Treating it as `false` would spawn the patcher (step 14) with an empty
+findings list — a wasted round that patches nothing. Do not do that.
+
+**You (the orchestrator) ARE the host judge model.** When you get a keyless-skip,
+pick exactly ONE of these two and record which in `research/temp/orchestrator-notes.md`:
+
+1. **Grade inline (preferred when you have the evidence-digest in context).** Read
+   `research/temp/evidence-digest.md` and the report, then score the report
+   yourself on the 5 axes (factual, completeness, source_quality, efficiency,
+   readability) — you are the same class of model `grade-report` would have called.
+   - If, by your own judgment, every axis ≥ 0.70 and the mean ≥ 0.75: the report
+     PASSES. Write `research/temp/grade-round-<N>.json` with
+     `{"passed": true, "scores": {...your scores...}, "overall": <mean>, "findings": []}`
+     and break the loop.
+   - If you find real defects: write those as `findings` in the same shape
+     (`{failure_mode, severity, location, recommendation}`) to
+     `research/temp/grade-round-<N>.json` with `"passed": false`, then proceed to
+     step 3 (write `critic-findings-grader.json`, spawn the patcher, re-judge). Your
+     inline re-judge on the next round is again the host-model grade, not the CLI.
+2. **Cleanly skip the grader loop** (if you cannot grade inline — e.g. the
+   evidence-digest is unavailable). Record `grader-loop: keyless-skip, host-grade
+   unavailable, loop skipped` in the notes and break the loop. The report still
+   ships; the deterministic uncited gate at step 16 remains the hard ship-block.
+
+In **both** cases you then write `research/grader-log.json` in Step 12.5.3 with
+the keyless status recorded, and proceed to step 14.5. **Never** fall through to
+the `false`-path patcher spawn with an empty findings list.
+
+---
+
 ## Step 12.5.3 — Convergence note
 
-When the loop exits (PASS or cap reached), write `research/grader-log.json`:
+When the loop exits (PASS, cap reached, or keyless-skip), write
+`research/grader-log.json`. Always write this file — even on the keyless "cleanly
+skip" sub-case where no `grade-round-<N>.json` was produced — so the integrity
+gate (entry skill + step 15.4) finds it:
 
 ```bash
 python -c "
 import json, pathlib
 rounds = sorted(pathlib.Path('research/temp').glob('grade-round-*.json'))
-log = {'rounds': len(rounds), 'final_passed': False, 'overall': None}
+log = {'rounds': len(rounds), 'final_passed': False, 'overall': None, 'status': 'graded'}
 if rounds:
     v = json.loads(rounds[-1].read_text())
     log['final_passed'] = bool(v.get('passed'))
     log['overall'] = v.get('overall')
+    if v.get('status') == 'keyless-skip':
+        log['status'] = 'keyless-skip'   # host graded inline or loop cleanly skipped
+elif <keyless-skip-with-no-inline-grade>:   # Step 12.5.2b sub-case 2
+    log['status'] = 'keyless-skip'
 pathlib.Path('research/grader-log.json').write_text(json.dumps(log))
 print(log)
 "
@@ -212,7 +277,8 @@ print(log)
 
 If the cap was reached without a PASS, that is acceptable — the report still ships
 (the deterministic uncited gate at step 16 is the hard ship-block, not the grader).
-Record the non-PASS in the log for the audit trail; do NOT loop a 4th time.
+Record the non-PASS (or `keyless-skip`) in the log for the audit trail; do NOT
+loop a 4th time.
 
 ---
 
