@@ -23,7 +23,14 @@ from __future__ import annotations
 
 import re
 
+import yaml
+
 _SKILL_PREFIX = "bad-research-"
+
+# The entry skill's own slug (no trailing ``-<step>`` segment). A self-reinvoke
+# ``Skill(skill: "bad-research")`` must point back at THIS skill's ``SKILL.md``,
+# NOT at a nonexistent ``references/bad-research.md``.
+_ENTRY_SKILL = "bad-research"
 
 
 def skillref_path(skill_name: str) -> str:
@@ -52,12 +59,38 @@ def agentref_path(agent_name: str) -> str:
 
 # --- tool-vocabulary substitution ------------------------------------------
 
-# Run FIRST: the structured Skill(...) call. Tolerates `skill:` / `skill =`
+
+def _skillref_for(skill_name: str) -> str:
+    """Codex target for a `Skill(skill: "...")` call or `.claude/skills/...` path.
+
+    The entry skill (``bad-research``, no step segment) is its OWN ``SKILL.md``,
+    so a self-reinvoke points back at this file rather than a dangling
+    ``references/bad-research.md``. Every other (step) skill goes through
+    ``skillref_path``.
+    """
+    if skill_name == _ENTRY_SKILL:
+        return "SKILL.md"
+    return skillref_path(skill_name)
+
+
+# Run FIRST: the explicit `.claude/skills/bad-research-<step>/SKILL.md` install
+# path. Routed through `skillref_path` so it lands on the REAL rendered
+# reference filename (`references/<step>.md`) — NOT the dangling
+# `references/bad-research-<step>/SKILL.md` the bare `.claude/skills/` literal
+# would have produced. Must precede that literal (below) and the bare-path
+# fallbacks. The entry-skill path (`.claude/skills/bad-research/SKILL.md`, no
+# step segment) maps to this skill's own `SKILL.md`.
+_CLAUDE_SKILL_PATH_RE = re.compile(
+    r'\.claude/skills/(' + re.escape(_SKILL_PREFIX[:-1]) + r'[\w.-]*)/SKILL\.md'
+)
+
+# Run NEXT: the structured Skill(...) call. Tolerates `skill:` / `skill =`
 # spacing and single/double quotes. Consumes the whole call into a file-read
-# instruction.
+# instruction. The entry self-reinvoke `Skill(skill: "bad-research")` resolves
+# to this skill's own SKILL.md.
 _SKILL_CALL_RE = re.compile(r'Skill\(\s*skill\s*[:=]\s*["\']([^"\']+)["\']\s*\)')
 
-# Run SECOND: a `subagent_type: bad-research-X` line (the multi-line Task(...)
+# Run NEXT: a `subagent_type: bad-research-X` line (the multi-line Task(...)
 # form the skills use). Rewrites to `agent: references/agents/X.md`. Tolerates
 # `:` or `=` and surrounding whitespace; captures the agent slug.
 _SUBAGENT_TYPE_RE = re.compile(r'subagent_type\s*[:=]\s*(' + re.escape(_SKILL_PREFIX) + r'[\w.-]+)')
@@ -72,10 +105,19 @@ _LITERAL_SUBS: tuple[tuple[str, str], ...] = (
     (".claude/settings.json", ".codex/config.toml"),
     (".claude/", ".codex/"),
     # The lazy step-skill bootstrap does not exist on Codex (procedures are
-    # bundled). Neutralise the command so the orchestrator doesn't try it.
+    # bundled). Neutralise the command AND the `--steps-only` token so the
+    # orchestrator doesn't try it (and the leak-lint stays clean of the flag).
     ("bad install --steps-only . --json", "(no-op on Codex — step procedures are bundled here)"),
     ("bad install --steps-only .", "(no-op on Codex — step procedures are bundled here)"),
     ("bad install --steps-only", "(no-op on Codex — step procedures are bundled here)"),
+    ("--steps-only", "(no-op on Codex — step procedures are bundled here)"),
+    # Claude-only hook / slash-command vocabulary with no Codex equivalent. The
+    # PreToolUse vault-check is carried by the AGENTS.md "prefer the vault"
+    # section; the `/bad-research` slash command is just "this skill" on Codex.
+    ("PreToolUse hook", "prefer-the-vault guidance in AGENTS.md"),
+    ("PreToolUse", "prefer-the-vault guidance in AGENTS.md"),
+    ("`/bad-research`", "this `bad-research` skill"),
+    ("/bad-research", "this bad-research skill"),
     # Subagent dispatch tool.
     ("the Task tool", "the spawn_agent tool"),
     ("Task tool", "spawn_agent tool"),
@@ -100,8 +142,14 @@ def translate_tool_vocabulary(text: str) -> str:
     Idempotent: the output contains none of the source tokens, so a second
     pass is a no-op.
     """
+    # .claude/skills/bad-research-<step>/SKILL.md -> the REAL rendered ref path.
+    # MUST precede the `.claude/skills/` literal so the path is routed through
+    # `skillref_path` instead of becoming a dangling `references/<dir>/SKILL.md`.
+    # Emits the bare path (any surrounding `backticks` in the source are kept).
+    text = _CLAUDE_SKILL_PATH_RE.sub(lambda m: _skillref_for(m.group(1)), text)
     # Skill(skill: "bad-research-N-...") -> read `references/N-....md`
-    text = _SKILL_CALL_RE.sub(lambda m: f"read `{skillref_path(m.group(1))}`", text)
+    # (entry self-reinvoke `bad-research` -> this skill's own SKILL.md).
+    text = _SKILL_CALL_RE.sub(lambda m: f"read `{_skillref_for(m.group(1))}`", text)
     # subagent_type: bad-research-X -> agent: references/agents/X.md
     text = _SUBAGENT_TYPE_RE.sub(lambda m: f"agent: {agentref_path(m.group(1))}", text)
     # Literal token substitutions.
@@ -162,14 +210,27 @@ def to_codex_skill_frontmatter(text: str) -> str:
 
     Strips every other field (``user-invocable``, ``color``, ``model``,
     ``tools``, ...). If the text has no frontmatter, it is returned unchanged.
+
+    The two retained scalars are emitted via ``yaml.safe_dump`` so the result is
+    ALWAYS valid YAML for ANY value — including descriptions that contain ``: ``
+    (the folded entry-skill description does), quotes, ``#``, or newlines.
+    Hand-formatting ``key: value`` broke on the embedded ``: `` and produced a
+    frontmatter that ``yaml.safe_load`` rejected with "mapping values are not
+    allowed here".
     """
     fm, body = _split_frontmatter(text)
     if fm is None:
         return text
     name = _extract_field(fm, "name") or "bad-research"
     description = _extract_field(fm, "description") or ""
-    new_fm = f"---\nname: {name}\ndescription: {description}\n---\n"
-    return new_fm + body
+    dumped = yaml.safe_dump(
+        {"name": name, "description": description},
+        sort_keys=False,
+        allow_unicode=True,
+        default_flow_style=False,
+        width=10**9,  # keep each scalar on a single line (no wrap-folding)
+    )
+    return f"---\n{dumped}---\n" + body
 
 
 def strip_frontmatter(text: str) -> str:

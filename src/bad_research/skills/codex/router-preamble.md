@@ -8,8 +8,8 @@ override any Claude-Code-specific phrasing in the sections that follow.
   (e.g. `references/5-depth-investigation.md`). To "run a step," READ that
   reference file with your native file-read tool at the moment the step runs.
   There is no separate `Skill` tool and no `.codex/skills` lazy install on
-  Codex — ignore any bootstrap step that tells you to run a `--steps-only`
-  install; the procedures are already here.
+  Codex — ignore any bootstrap step that tells you to materialize step skills
+  per-project; the procedures are already here.
 - **Subagents are dispatched with `spawn_agent`.** Each subagent's prompt lives
   in `references/agents/<name>.md`. To dispatch one: read that file, append the
   per-call inputs (verbatim `research_query`, pipeline position, file paths),
