@@ -14,6 +14,7 @@ funnel._async.acall inside fan_out / read_top_k.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, datetime
 from typing import Any, Literal
 
 from bad_research.funnel.config import FunnelConfig
@@ -22,6 +23,7 @@ from bad_research.funnel.fanout import fan_out, plan_queries
 from bad_research.funnel.filter import filter_and_store
 from bad_research.funnel.rank import rank_candidates
 from bad_research.funnel.read import read_top_k
+from bad_research.quality.prefilter import domain_tier, passes_recency_gate
 
 
 @dataclass
@@ -42,18 +44,46 @@ class FunnelDeps:
     retrieval: object         # RetrievalEngine: .index(notes), .search(q, *, mode, top_k)
 
 
+def recency_gate(candidates: list[Any], *, max_age_days: int | None) -> list[Any]:
+    """Stage B.5 — drop candidates staler than the query's recency window.
+
+    Wires the previously-orphaned quality/prefilter recency machinery into the
+    funnel: each funnel Candidate's `published_days_ago` (stamped at dedup) is
+    tested against `max_age_days` via the existing `passes_recency_gate`, which
+    honors RECENCY_MAX_AGE_DAYS' tiers — primaries are exempt, undatable hits
+    pass, evergreen (max_age_days is None) is a no-op. Stale sources are dropped
+    here so they never even reach the read budget.
+    """
+    if max_age_days is None:
+        return candidates              # evergreen / no recency window → no-op
+    kept: list[Any] = []
+    for c in candidates:
+        tier = domain_tier(c.url)
+        age = getattr(c, "published_days_ago", None)
+        if passes_recency_gate(age, tier.name, max_age_days):
+            kept.append(c)
+    return kept
+
+
 async def gather(
     query: str,
     *,
     mode: Literal["light", "full"],
     deps: FunnelDeps,
     queries: list[Any] | None = None,
+    recency_max_age_days: int | None = None,
+    today: date | datetime | None = None,
 ) -> list[Any]:
     """Run the six-stage funnel and return reranked Chunk[] (never raw pages).
 
     `queries` (optional): a caller-supplied lens-driven SearchQuery plan
     (the width-sweep skill passes its 3-lens A/B/C/D plan). When omitted we fall
     back to plan_queries (deterministic expansion).
+
+    `recency_max_age_days` (optional): the query's freshness window (one of the
+    RECENCY_MAX_AGE_DAYS tiers, e.g. 7 breaking / 180 current / None evergreen).
+    When set, Stage B.5 drops candidates older than the window (primaries exempt).
+    `today` is injected into dedup's age computation for deterministic dating.
     """
     cfg = FunnelConfig.for_mode(mode)
 
@@ -64,7 +94,11 @@ async def gather(
     raw_hits = await fan_out(queries, active_providers)
 
     # ── Stage B — DEDUP (URL-canonical + content-hash, free) ───────────────
-    candidates = dedup(raw_hits)
+    # dedup also DATES each survivor (metadata['age_days'] + published_days_ago).
+    candidates = dedup(raw_hits, today=today)
+
+    # ── Stage B.5 — RECENCY GATE (drop stale sources per the query window) ──
+    candidates = recency_gate(candidates, max_age_days=recency_max_age_days)
     candidates = candidates[: cfg.candidate_pool]   # cap the pool
 
     # ── Stage C — RANK un-read candidates (RRF k=60 + utility) ─────────────

@@ -13,7 +13,7 @@ from typing import Any
 
 import httpx
 
-from bad_research.web.base import SearchQuery, WebResult
+from bad_research.web.base import SearchQuery, WebResult, recency_cutoff_date
 
 _UA = "bad-research/keyless (research tool; mailto:{mailto})"
 _ATOM = {"a": "http://www.w3.org/2005/Atom"}
@@ -44,8 +44,16 @@ class ArxivProvider:
     def __init__(self, client: httpx.Client | None = None) -> None:
         self._client = client
 
-    def search(self, query: str, max_results: int = 10) -> list[WebResult]:
-        params: dict[str, str | int] = {"search_query": f"all:{query}", "start": 0,
+    def search(self, query: str, max_results: int = 10,
+               recency_days: int | None = None) -> list[WebResult]:
+        # arXiv supports a submittedDate range filter (keyless, in search_query).
+        # When a recency window is set, bound submissions to [cutoff TO now].
+        search_query = f"all:{query}"
+        cutoff = recency_cutoff_date(recency_days)
+        if cutoff is not None:
+            lo = cutoff.strftime("%Y%m%d") + "0000"
+            search_query = f"{search_query} AND submittedDate:[{lo} TO 99991231235959]"
+        params: dict[str, str | int] = {"search_query": search_query, "start": 0,
                                          "max_results": max_results, "sortBy": "relevance"}
         try:
             resp = _client(self._client).get(self.BASE, params=params,
@@ -75,7 +83,8 @@ class ArxivProvider:
         return out
 
     def search_ex(self, q: SearchQuery) -> list[WebResult]:
-        return self.search(q.query, max_results=q.max_results)
+        return self.search(q.query, max_results=q.max_results,
+                           recency_days=q.recency_days)
 
     def fetch(self, url: str) -> WebResult:  # pragma: no cover - bridges to KR-3
         from bad_research.web.search.base import _fetch_clean_bridge
@@ -97,8 +106,13 @@ class OpenAlexProvider:
         self._mailto = mailto
         self._client = client
 
-    def search(self, query: str, max_results: int = 10) -> list[WebResult]:
+    def search(self, query: str, max_results: int = 10,
+               recency_days: int | None = None) -> list[WebResult]:
         params: dict[str, str | int] = {"search": query, "per_page": max_results, "mailto": self._mailto}
+        # OpenAlex keyless date filter: filter=from_publication_date:YYYY-MM-DD.
+        cutoff = recency_cutoff_date(recency_days)
+        if cutoff is not None:
+            params["filter"] = f"from_publication_date:{cutoff.isoformat()}"
         try:
             resp = _client(self._client).get(self.BASE, params=params,
                                              headers={"User-Agent": _UA.format(mailto=self._mailto)})
@@ -124,7 +138,8 @@ class OpenAlexProvider:
         return out
 
     def search_ex(self, q: SearchQuery) -> list[WebResult]:
-        return self.search(q.query, max_results=q.max_results)
+        return self.search(q.query, max_results=q.max_results,
+                           recency_days=q.recency_days)
 
     def fetch(self, url: str) -> WebResult:  # pragma: no cover
         from bad_research.web.search.base import _fetch_clean_bridge
@@ -146,8 +161,13 @@ class CrossrefProvider:
         self._mailto = mailto
         self._client = client
 
-    def search(self, query: str, max_results: int = 10) -> list[WebResult]:
+    def search(self, query: str, max_results: int = 10,
+               recency_days: int | None = None) -> list[WebResult]:
         params: dict[str, str | int] = {"query": query, "rows": max_results, "sort": "relevance"}
+        # Crossref keyless date filter: filter=from-pub-date:YYYY-MM-DD.
+        cutoff = recency_cutoff_date(recency_days)
+        if cutoff is not None:
+            params["filter"] = f"from-pub-date:{cutoff.isoformat()}"
         try:
             resp = _client(self._client).get(self.BASE, params=params,
                                              headers={"User-Agent": _UA.format(mailto=self._mailto)})
@@ -174,7 +194,8 @@ class CrossrefProvider:
         return out
 
     def search_ex(self, q: SearchQuery) -> list[WebResult]:
-        return self.search(q.query, max_results=q.max_results)
+        return self.search(q.query, max_results=q.max_results,
+                           recency_days=q.recency_days)
 
     def fetch(self, url: str) -> WebResult:  # pragma: no cover
         from bad_research.web.search.base import _fetch_clean_bridge
