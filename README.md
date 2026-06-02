@@ -72,8 +72,9 @@ adversarially-reviewed pipeline (~1.5–2.5 h). You can steer it:
 
 On an interactive run the skill announces the chosen route and its rough ETA before it
 commits to a long job (and for `full` it shows the editable plan first), so you're never
-surprised by a 2-hour job you didn't want. `bad route <your question> --json` also reports,
-up front, which route a query would take.
+surprised by a 2-hour job you didn't want. The route is decided from the step-1
+decomposition and shown by that up-front in-skill route announcement — so you see which
+route a query takes before any long work starts.
 
 > Want the latest unreleased build? Install from source: `pipx install git+https://github.com/LeventySeven/badresearch.git`
 

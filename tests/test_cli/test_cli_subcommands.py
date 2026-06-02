@@ -227,6 +227,35 @@ def test_uncited_gate_missing_db_is_clean_zero_anchors_not_traceback(tmp_path, m
     assert json.loads(res.stdout)["uncited"] == []
 
 
+def test_verify_citations_standalone_keyless_no_vault_degrades(tmp_path, monkeypatch):
+    # Standalone keyless, NO vault: _verify_report must mirror _uncited_gate —
+    # catch VaultError and fall back to an empty in-memory store rather than
+    # crashing with VaultError before the keyless degrade can run.
+    monkeypatch.chdir(tmp_path)
+    report = tmp_path / "r.md"
+    report.write_text("# Report\n\nThe sky is blue [1].\n", encoding="utf-8")
+    res = runner.invoke(app, ["verify-citations", "--report", str(report),
+                              "--vault-tag", "t", "--json"])
+    assert res.exception is None, res.exception
+    assert res.exit_code == 0
+    assert "results" in json.loads(res.stdout)
+
+
+def test_verify_citations_standalone_keyless_fresh_db_no_table_degrades(tmp_path, monkeypatch):
+    # Vault present but a fresh anchors.db with no claim_anchors table: the
+    # command must auto-init the schema (idempotent) so it degrades instead of
+    # raising OperationalError: no such table: claim_anchors.
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".hyperresearch").mkdir()
+    report = tmp_path / "r.md"
+    report.write_text("# Report\n\nThe sky is blue [1].\n", encoding="utf-8")
+    res = runner.invoke(app, ["verify-citations", "--report", str(report),
+                              "--vault-tag", "t", "--json"])
+    assert res.exception is None, res.exception
+    assert res.exit_code == 0
+    assert "results" in json.loads(res.stdout)
+
+
 def test_all_research_subcommands_registered():
     for cmd in ("route", "funnel-gather", "retrieve", "verify-citations", "uncited-gate"):
         res = runner.invoke(app, [cmd, "--help"])

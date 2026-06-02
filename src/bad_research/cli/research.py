@@ -34,7 +34,7 @@ def route_cmd(
     ),
     json_output: bool = typer.Option(False, "--json", "-j"),
 ) -> None:
-    """Classify a Step-1 decomposition into a pipeline route (fast|full).
+    """Classify a Step-1 decomposition into a pipeline route (fast|full|ultrafast).
 
     Also emits `query_shape` (E12, Claude Research) — the fan-out SHAPE
     (straightforward|breadth_first|depth_first), ORTHOGONAL to the route. The
@@ -360,24 +360,34 @@ def _verify_report(
     from dataclasses import asdict, is_dataclass
 
     from bad_research.config import BadResearchConfig
-    from bad_research.core.vault import Vault
+    from bad_research.core.vault import Vault, VaultError
     from bad_research.grounding.anchors import AnchorStore
     from bad_research.grounding.verifier import CitationVerifier, default_nli
 
     cfg = BadResearchConfig.load()
-    vault = Vault.discover()
     report_md = Path(report_path).read_text(encoding="utf-8")
-    db_path = Path(vault.root) / ".bad-research" / "anchors.db"
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path))
+
+    # Standalone-safe (mirrors _uncited_gate): a missing vault degrades to an
+    # empty in-memory store instead of crashing, and the schema is always
+    # auto-initialized so a vault DB that predates the grounding tables (or a
+    # fresh in-memory DB) yields "0 anchors" rather than an OperationalError
+    # (no such table: claim_anchors) BEFORE the keyless degrade can run.
+    note_bodies: dict[str, str] = {}
+    try:
+        vault = Vault.discover()
+        db_path = Path(vault.root) / ".bad-research" / "anchors.db"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(db_path))
+        notes_dir = Path(vault.root) / "research" / "notes"
+        if notes_dir.is_dir():
+            for f in notes_dir.glob("*.md"):
+                note_bodies[f.stem] = f.read_text(encoding="utf-8")
+    except VaultError:
+        conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     store = AnchorStore(conn)
-
-    note_bodies: dict[str, str] = {}
-    notes_dir = Path(vault.root) / "research" / "notes"
-    if notes_dir.is_dir():
-        for f in notes_dir.glob("*.md"):
-            note_bodies[f.stem] = f.read_text(encoding="utf-8")
+    # init_schema is idempotent; safe on an existing populated DB.
+    store.init_schema()
 
     from bad_research.grounding.verifier import LineSpanJudge, nli_available
     from bad_research.llm.base import LLMProvider, get_llm_provider
