@@ -136,6 +136,59 @@ JUDGE_SYSTEM = (
 )
 
 
+def build_judge_user_prompt(
+    query: str, report: str, corpus: list[dict[str, object]]
+) -> str:
+    """The user-turn the judge reads: query + corpus + report. Shared verbatim by
+    the API `LLMJudge` (one `provider.complete()`) and the keyless host-judge emit
+    path (`headtohead --emit-judge-tasks`), so the host sees EXACTLY the text the
+    API model would. The report passed in is already blinded by the caller."""
+    corpus_block = "\n".join(
+        f"[{c.get('note_id', i)}] {c.get('url', '')}\n{str(c.get('text', ''))[:1200]}"
+        for i, c in enumerate(corpus)
+    )
+    return (
+        f"QUERY:\n{query}\n\n"
+        f"CORPUS (the evidence the report had access to):\n{corpus_block}\n\n"
+        f"REPORT TO JUDGE:\n{report}\n\n"
+        "Grade now — one rail per axis. JSON only."
+    )
+
+
+@dataclass
+class HostJudge:
+    """A keyless `Judge` whose verdicts are PRE-SUPPLIED by the orchestrating host
+    model (the "emit tasks → host judges → ingest verdicts" flow), NOT computed
+    from an LLMProvider. The host reads each blinded task file and hand-writes the
+    5 categorical rails; `headtohead --verdicts` ingests those rails through the
+    SAME `AxisRails.from_raw` → `JudgeVerdict.from_rails` path the `--llm` route
+    uses. This is the semantic judge WITHOUT a key: the host IS the judge.
+
+    A true drop-in at the `Judge` Protocol boundary — `run_head_to_head` cannot
+    tell it apart from `LLMJudge`/`StubJudge`. `verdicts` is the list of host
+    verdicts in the SAME order the harness will call `judge()` (emission/manifest
+    order); each call consumes the next one. Order-based (not text-keyed) on
+    purpose: two different reports can BLIND to identical text, so a text key would
+    collide — position is the only collision-free identity at the Protocol seam.
+    A `None` entry (or running past the end) degrades to an all-FAIL conservative
+    verdict rather than crashing or silently passing."""
+
+    verdicts: list[JudgeVerdict | None]
+    _cursor: int = 0
+
+    def judge(self, query: str, report: str, corpus: list[dict[str, object]]) -> JudgeVerdict:
+        v = self.verdicts[self._cursor] if self._cursor < len(self.verdicts) else None
+        self._cursor += 1
+        if v is not None:
+            return v
+        # No host verdict at this position — conservative all-fail, never a crash
+        # and never a silent pass.
+        return JudgeVerdict.from_rails(
+            AxisRails.from_raw({a: "fail" for a in JUDGE_AXES}),
+            rationale="no host verdict supplied for this report",
+        )
+
+
 @dataclass
 class LLMJudge:
     """Single-call 5-axis categorical judge over an LLMProvider (Plan 01 seam)."""
@@ -144,16 +197,7 @@ class LLMJudge:
     tier: str = JUDGE_TIER
 
     def judge(self, query: str, report: str, corpus: list[dict[str, object]]) -> JudgeVerdict:
-        corpus_block = "\n".join(
-            f"[{c.get('note_id', i)}] {c.get('url', '')}\n{str(c.get('text', ''))[:1200]}"
-            for i, c in enumerate(corpus)
-        )
-        user = (
-            f"QUERY:\n{query}\n\n"
-            f"CORPUS (the evidence the report had access to):\n{corpus_block}\n\n"
-            f"REPORT TO JUDGE:\n{report}\n\n"
-            "Grade now — one rail per axis. JSON only."
-        )
+        user = build_judge_user_prompt(query, report, corpus)
         resp = self.provider.complete(
             [
                 LLMMessage(role="system", content=JUDGE_SYSTEM),
@@ -195,10 +239,13 @@ def _extract_json(text: str) -> dict[str, object]:
 
 
 __all__ = [
+    "JUDGE_SYSTEM",
     "AxisRails",
+    "HostJudge",
     "Judge",
     "JudgeRail",
     "JudgeVerdict",
     "LLMJudge",
     "StubJudge",
+    "build_judge_user_prompt",
 ]

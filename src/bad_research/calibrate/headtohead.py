@@ -30,7 +30,14 @@ from typing import Any
 
 from bad_research.calibrate.constants import JUDGE_AXES, RAIL_CREDIT
 from bad_research.calibrate.golden import RubricJudge
-from bad_research.calibrate.judge import Judge, JudgeVerdict
+from bad_research.calibrate.judge import (
+    JUDGE_SYSTEM,
+    AxisRails,
+    HostJudge,
+    Judge,
+    JudgeVerdict,
+    build_judge_user_prompt,
+)
 
 # ── blinding: known tool-identifying markers ────────────────────────────────────
 # Lexical substrings (case-insensitive) that name or fingerprint a producing tool.
@@ -416,7 +423,186 @@ def run_head_to_head(
     )
 
 
+# ── keyless host-judge flow: emit tasks → host judges → ingest verdicts ──────────
+# The orchestrating Claude IS the judge — no API key, no provider. `emit_judge_tasks`
+# writes one BLINDED task file per entrant (rubric + blinded report + corpus + a
+# write-`<id>.verdict.json` instruction) plus a manifest; the host reads each task
+# and hand-writes the 5 categorical rails; `load_verdicts` ingests those rails
+# through the EXISTING AxisRails.from_raw → JudgeVerdict.from_rails path and produces
+# the SAME scorecard as the --llm/RubricJudge routes (a `HostJudge` keyed on the
+# blinded report text is the Judge the harness runs).
+JUDGE_MANIFEST_NAME = "manifest.json"
+
+
+def _opaque_id(qid: str, index: int) -> str:
+    """An entrant's opaque task id. Deliberately carries NO entrant identity —
+    'entrant-01', not 'bad-research' — so the host judge cannot tell which entrant
+    (bad-research vs competitor) it is grading. The manifest maps it back."""
+    return f"{qid}__entrant-{index + 1:02d}"
+
+
+def build_judge_task(query: str, blinded_report: str, corpus: list[dict[str, Any]], task_id: str) -> str:
+    """The full task text the host judge reads for ONE blinded entrant report.
+    The rubric (`JUDGE_SYSTEM`) is itself run through `blind_report` defensively;
+    the report is supplied ALREADY blinded by the caller (blinding happens before
+    the task is written, so the host never sees a tool name). Ends with an explicit
+    instruction to write the 5 rails + rationale to `<task_id>.verdict.json`."""
+    blinded_rubric = blind_report(JUDGE_SYSTEM)
+    user_block = build_judge_user_prompt(query, blinded_report, corpus)
+    verdict_schema = (
+        "{\n"
+        '  "factual": "pass|borderline|fail",\n'
+        '  "citation": "pass|borderline|fail",\n'
+        '  "completeness": "pass|borderline|fail",\n'
+        '  "source_quality": "pass|borderline|fail",\n'
+        '  "efficiency": "pass|borderline|fail",\n'
+        '  "rationale": "<=2 sentences"\n'
+        "}"
+    )
+    return (
+        f"# Host judge task: {task_id}\n\n"
+        "You are the HOST JUDGE for a blinded head-to-head. There is NO API key and "
+        "NO model call — YOU read this file and grade it yourself. This report has "
+        "been blinded (tool-identifying markers stripped) so you cannot tell which "
+        "tool produced it; grade the TEXT only, on its merits.\n\n"
+        "## Rubric (how to grade)\n\n"
+        f"{blinded_rubric}\n\n"
+        "## What to grade\n\n"
+        f"{user_block}\n\n"
+        "## Your instruction\n\n"
+        f"Read the rubric and the report above, then write the 5 categorical rails "
+        f"(factual / citation / completeness / source_quality / efficiency, each one "
+        f"of pass / borderline / fail) plus a short rationale to a file named "
+        f"`{task_id}.verdict.json` in this directory, as a single JSON object of "
+        f"exactly this shape:\n\n"
+        f"```json\n{verdict_schema}\n```\n\n"
+        "No numbers, no prose outside the JSON. One rail per axis.\n"
+    )
+
+
+def emit_judge_tasks(
+    query_set: list[dict[str, str]],
+    entrants_by_qid: dict[str, list[Entrant]],
+    out_dir: Path,
+    *,
+    bad_name: str,
+    competitor_name: str,
+    blind: bool = True,
+) -> dict[str, Any]:
+    """Write one BLINDED `<task_id>.task.md` per entrant + a `manifest.json` mapping
+    each task back to its query and entrant, so `load_verdicts` can reassemble.
+
+    Blinding happens HERE, before the task is written — the persisted task file and
+    the manifest's recorded report are the blinded text, so nothing the host reads
+    (and nothing it ingests against) carries a tool name. Returns the manifest dict
+    that was written (handy for callers/tests)."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    by_qid = {q["id"]: q["query"] for q in query_set}
+    tasks: list[dict[str, Any]] = []
+    for qid, ents in entrants_by_qid.items():
+        query = by_qid.get(qid, "")
+        for i, e in enumerate(ents):
+            blinded = blind_report(e.report) if blind else e.report
+            task_id = _opaque_id(qid, i)
+            task_text = build_judge_task(query, blinded, e.corpus, task_id)
+            (out_dir / f"{task_id}.task.md").write_text(task_text, encoding="utf-8")
+            tasks.append(
+                {
+                    "task_id": task_id,
+                    "query_id": qid,
+                    "query": query,
+                    "entrant_name": e.name,
+                    "report": blinded,  # the EXACT (blinded) text load_verdicts judges against
+                    "corpus": e.corpus,
+                    "cost_usd": e.cost_usd,
+                    "latency_s": e.latency_s,
+                    "verdict_file": f"{task_id}.verdict.json",
+                }
+            )
+    manifest = {
+        "benchmark": "head-to-head-judge-tasks",
+        "bad_name": bad_name,
+        "competitor_name": competitor_name,
+        "blinded": blind,
+        "tasks": tasks,
+    }
+    (out_dir / JUDGE_MANIFEST_NAME).write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    return manifest
+
+
+def _verdict_from_rails_file(path: Path) -> JudgeVerdict:
+    """Ingest ONE host-written `*.verdict.json` rails file through the EXISTING
+    AxisRails.from_raw → JudgeVerdict.from_rails path (same coercion the --llm route
+    uses: missing/garbage rails degrade to FAIL, never a crash)."""
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError(f"verdict file {path} must be a JSON object of axis rails")
+    rails = AxisRails.from_raw(raw)
+    return JudgeVerdict.from_rails(rails, rationale=str(raw.get("rationale", "")))
+
+
+def load_verdicts(
+    verdicts_dir: Path,
+) -> tuple[list[dict[str, str]], dict[str, list[Entrant]], HostJudge, str, str, bool]:
+    """Read the manifest + the host-written `*.verdict.json` files and reassemble
+    everything `run_head_to_head` needs for the keyless semantic scorecard.
+
+    Returns (query_set, entrants_by_qid, host_judge, bad_name, competitor_name,
+    blinded). The `HostJudge` is POSITIONAL: its verdict list is built in the same
+    (query order → entrant order) the harness will call `judge()` in, so each
+    entrant gets its own host verdict even when two reports blind to identical text
+    (a text key would collide there). A task whose verdict file is missing leaves a
+    `None` at that position → the HostJudge degrades it to all-FAIL (never a crash,
+    never a silent pass). NOTE: callers must run the harness with `blind=False`
+    here — the manifest's reports are already blinded; re-blinding is a no-op but
+    the positional contract does not depend on the report text at all."""
+    man_path = verdicts_dir / JUDGE_MANIFEST_NAME
+    if not man_path.exists():
+        raise FileNotFoundError(
+            f"judge manifest not found: {man_path} "
+            "(did you run --emit-judge-tasks into this dir first?)"
+        )
+    manifest = json.loads(man_path.read_text(encoding="utf-8"))
+    tasks = manifest.get("tasks", [])
+    if not isinstance(tasks, list) or not tasks:
+        raise ValueError(f"manifest {man_path} has no 'tasks' to ingest")
+
+    query_set: list[dict[str, str]] = []
+    seen_qids: set[str] = set()
+    entrants_by_qid: dict[str, list[Entrant]] = {}
+    verdicts: list[JudgeVerdict | None] = []
+
+    for t in tasks:
+        qid = str(t["query_id"])
+        if qid not in seen_qids:
+            seen_qids.add(qid)
+            query_set.append({"id": qid, "query": str(t.get("query", ""))})
+        report = str(t.get("report", ""))
+        entrants_by_qid.setdefault(qid, []).append(
+            Entrant(
+                name=str(t["entrant_name"]),
+                report=report,
+                corpus=list(t.get("corpus", [])),
+                cost_usd=float(t.get("cost_usd", 0.0) or 0.0),
+                latency_s=float(t.get("latency_s", 0.0) or 0.0),
+            )
+        )
+        vfile = verdicts_dir / str(t.get("verdict_file", f"{t['task_id']}.verdict.json"))
+        verdicts.append(_verdict_from_rails_file(vfile) if vfile.exists() else None)
+
+    host = HostJudge(verdicts=verdicts)
+    return (
+        query_set,
+        entrants_by_qid,
+        host,
+        str(manifest.get("bad_name") or "bad-research"),
+        str(manifest.get("competitor_name") or "competitor"),
+        bool(manifest.get("blinded", True)),
+    )
+
+
 __all__ = [
+    "JUDGE_MANIFEST_NAME",
     "LOSS",
     "TIE",
     "TOOL_MARKERS",
@@ -426,7 +612,10 @@ __all__ = [
     "QueryResult",
     "Scorecard",
     "blind_report",
+    "build_judge_task",
+    "emit_judge_tasks",
     "load_query_set",
+    "load_verdicts",
     "markers_present",
     "run_head_to_head",
     "score_query",
