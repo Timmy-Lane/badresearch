@@ -16,6 +16,7 @@ from bad_research.grounding.anchors import AnchorStore, ClaimAnchor
 from bad_research.grounding.gate import (
     CLAIM_QUOTE_OVERLAP_SKIP,
     claim_quote_overlap,
+    directional_antonym_mismatch,
     numeric_or_negation_mismatch,
 )
 from bad_research.grounding.verifier import (
@@ -119,6 +120,57 @@ def test_line_span_judge_accepts_near_verbatim_when_numbers_agree(fake_llm):
     scores = judge.predict(span, claim)
     assert scores["entailment"] >= 0.70
     assert len(fake_llm.calls) == 0
+
+
+# ── audit 2026-06-02: directional/antonym guard on the near-verbatim band ──────
+# A same-number, same-polarity DIRECTIONAL flip ("grew 2.1%" vs "declined 2.1%",
+# "ratified by all" vs "rejected by all") used to be rubber-stamped — the number
+# matched and neither side negated, so the row-6 guard returned False. The antonym
+# lexicon closes that hole, and it folds into numeric_or_negation_mismatch so the
+# verifier's judges escalate without any caller change.
+
+def test_directional_antonym_mismatch_flags_grew_vs_declined():
+    # same number (2.1) on both sides, no negation — only the verb flips → must flag.
+    assert directional_antonym_mismatch("GDP grew 2.1%", "GDP declined 2.1%")
+
+
+def test_directional_antonym_mismatch_flags_ratified_vs_rejected():
+    assert directional_antonym_mismatch("ratified by all", "rejected by all")
+
+
+def test_directional_antonym_mismatch_false_when_same_term_both_sides():
+    # NO false positive: both sides say "rose" (the same direction) → must NOT flag,
+    # even though "rose"/"fell" is an opposed pair in the lexicon.
+    assert not directional_antonym_mismatch(
+        "Exports rose 3 percent", "Exports rose 3 percent last year"
+    )
+
+
+def test_directional_antonym_mismatch_false_when_no_antonym_present():
+    assert not directional_antonym_mismatch(
+        "The committee met in Geneva", "The committee met in Geneva on Tuesday"
+    )
+
+
+def test_numeric_or_negation_mismatch_now_flags_antonym_flip():
+    # The antonym axis is folded into the verifier-facing guard: a same-number verb
+    # flip the row-6 guard missed now escalates (number + negation both agree).
+    assert numeric_or_negation_mismatch("GDP grew 2.1%", "GDP declined 2.1%")
+    assert numeric_or_negation_mismatch("ratified by all", "rejected by all")
+    # aligned pair (no flip) still passes through — never an escalation.
+    assert not numeric_or_negation_mismatch("GDP grew 2.1%", "GDP grew 2.1%")
+
+
+def test_line_span_judge_denies_near_verbatim_antonym_flip(fake_llm):
+    # A >=0.8-overlap report sentence that flips the DIRECTION must NOT auto-entail —
+    # it returns NEUTRAL so the verifier escalates it to the batched host judge.
+    judge = LineSpanJudge(fake_llm)
+    span = "National output grew 2.1 percent in the third quarter of the year"
+    claim = "National output declined 2.1 percent in the third quarter of the year"
+    assert claim_quote_overlap(claim, span) >= CLAIM_QUOTE_OVERLAP_SKIP  # high overlap
+    scores = judge.predict(span, claim)  # predict(premise=span, hypothesis=claim)
+    assert scores["entailment"] < 0.70  # escalated, not rubber-stamped
+    assert len(fake_llm.calls) == 0  # predict itself never calls the host
 
 
 # ── HostJudgeNLI: pre-filter routes, judge catches drift ─────────────────────
