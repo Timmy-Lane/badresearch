@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Literal, Protocol, runtime_checkable
 
 
@@ -178,6 +178,19 @@ class SearchQuery:
     include_domains: list[str] | None = None
     exclude_domains: list[str] | None = None
     max_results: int = 10
+
+
+def recency_cutoff_date(recency_days: int | None, *, today: date | None = None) -> date | None:
+    """The publication-date floor implied by a recency window: today minus recency_days.
+
+    Returns None when no window is set (recency_days is None / non-positive), so
+    every provider's date-filter injection is a clean no-op for evergreen queries.
+    `today` is injectable for deterministic tests (defaults to UTC today).
+    """
+    if not recency_days or recency_days <= 0:
+        return None
+    ref = today or datetime.now(UTC).date()
+    return ref - timedelta(days=recency_days)
 
 
 @runtime_checkable

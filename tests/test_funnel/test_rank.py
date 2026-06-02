@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from bad_research.funnel.dedup import Candidate
+from datetime import date
+
+from bad_research.funnel.dedup import Candidate, dedup
 from bad_research.funnel.rank import rank_candidates, rrf_fuse, utility_score
 from tests.test_funnel.conftest import FakeWebResult
 
@@ -56,3 +58,35 @@ def test_rank_is_pure_no_network(monkeypatch):
     # Guard: rank must never call fetch_tiered. We patch a sentinel that explodes.
     import bad_research.funnel.rank as rank_mod
     assert not hasattr(rank_mod, "fetch_tiered")  # rank module must not import the reader
+
+
+# ---- Freshness dimension is now ACTIVE (lever #4) -------------------------
+
+def _dated(url, *, year, today):
+    hit = FakeWebResult(url=url, title=url, content="body " * 80,
+                        serp_rank=1, serp_provider="sonar",
+                        metadata={"year": year, "source": "sonar"})
+    return dedup([hit], today=today)[0]
+
+
+def test_freshness_no_longer_maxes_for_a_stale_dated_source():
+    # Before: age_days was never set -> Freshness always scored its band for None.
+    # Now dedup stamps a real age, so a >3yr source scores the LOW Freshness band
+    # while a <1yr source scores the HIGH band. The same URL/title/providers makes
+    # Freshness the only differing dimension.
+    today = date(2026, 6, 2)
+    fresh = _dated("https://x.com/a", year=2026, today=today)   # age ~152d -> band 3
+    stale = _dated("https://x.com/a", year=2018, today=today)   # age ~3074d -> band 1
+    s_fresh = utility_score(fresh, "topic")
+    s_stale = utility_score(stale, "topic")
+    # The fresh source must out-score the stale one purely on Freshness.
+    assert s_fresh - s_stale == 2  # band 3 vs band 1
+
+
+def test_freshness_reads_the_stamped_age_days():
+    # Direct proof rank.py consumes the value dedup stamped: a <1yr source scores
+    # the max Freshness band (3) and out-scores an undatable (neutral band 1) twin.
+    c = _dated("https://x.com/a", year=2026, today=date(2026, 6, 2))  # ~152d -> band 3
+    assert c.result.metadata["age_days"] is not None
+    bare = _cand("https://x.com/a", {"sonar": 1})  # no age_days -> neutral band 1
+    assert utility_score(c, "topic") - utility_score(bare, "topic") == 2  # band 3 vs 1

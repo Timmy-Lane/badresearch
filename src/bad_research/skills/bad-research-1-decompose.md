@@ -112,6 +112,7 @@ the entry skill and invoking the query-router (step 1.5). The router still owns 
     {"period": "March 2024", "type": "event-anchored", "primary_source": "8-K disclosure or press release for March 2024 equity raise", "issuer": "ClearPoint Neuro"}
   ],
   "scope_conditions": ["urban rail specifically, not mainline"],
+  "recency_window": "current",
   "pipeline_tier": "full",
   "response_format": "argumentative",
   "query_shape": "depth_first",
@@ -179,6 +180,18 @@ the entry skill and invoking the query-router (step 1.5). The router still owns 
 
    Set `query_shape` honestly here; the query-router (step 1.5) re-derives it deterministically via `bad route` and writes the authoritative `query_shape` field, exactly as it does for `route`. The two are independent — a `full` route can be any of the three shapes, and a contested `depth_first` thesis can be `full` while a `breadth_first` survey down-routes to `light`.
 
+7c. **Classify `recency_window`.** This is the *freshness tier* the search layer enforces: it both **biases planning** (the fan-out injects a date filter — `after:YYYY-MM-DD` for the host WebSearch/ddgs/SearXNG providers, `from_publication_date:` / `from-pub-date:` / `submittedDate:[…]` for the OpenAlex/Crossref/arXiv verticals) and **gates results** (the funnel's recency gate drops sources older than the window, primaries exempt). It maps 1:1 onto the funnel's frozen `RECENCY_MAX_AGE_DAYS` tiers, so use exactly one of these literal labels:
+
+   | `recency_window` | Max source age | When to use | Signal words |
+   |---|---|---|---|
+   | `"breaking"` | 7 days | The answer turns on the last week's events — live developments, "today/this week", just-announced, ongoing incident. | "latest", "breaking", "just announced", "this week", "right now", "current status of <unfolding event>" |
+   | `"current"` | 180 days | The answer needs recent-but-not-live sources — current state of a fast-moving field, "as of 2026", "recent", "now". | "currently", "recent", "as of <this year>", "state of the art", "latest version" |
+   | `"evergreen"` | none (no gate) | **Default.** Timeless or historical questions where a 2019 source is as valid as a 2026 one — definitions, foundational papers, historical analysis, period-pinned filings. | everything else; any backward-looking `time_periods` entry forces evergreen |
+
+   **Default is `"evergreen"`** (no freshness gate — a recency filter on a timeless question silently drops valid old sources). Only tier up to `"current"`/`"breaking"` when the query's *time_horizon* is forward/now-anchored and the topic is genuinely time-sensitive. A query with period-pinned `time_periods` (a 10-Q, an FY filing) is `"evergreen"` even when phrased "recent", because its primary source is a fixed historical document the gate must NOT drop.
+
+   This `recency_window` threads downstream: step 1.5 / step 2 map the label to its `RECENCY_MAX_AGE_DAYS` value and pass it as `recency_days` on each `SearchQuery` (planning bias) and as the funnel `gather(..., recency_max_age_days=...)` argument (result gate). Set it honestly here; an over-tight window starves the corpus, an absent one lets stale SEO pages survive.
+
 8. **Coverage matrix self-audit.** (The coverage matrix is a table mapping each verbatim query phrase to the atomic item(s) that cover it — the audit that catches dropped or narrowed scope.) Re-read the verbatim query. Walk through it phrase by phrase and extract every **significant noun phrase, proper noun, technical term, and category name**. For each:
    - Does it map to at least one atomic item in the decomposition?
    - Is the decomposition's interpretation **as broad as the phrase's natural scope**? (e.g., "SaaS applications" must not be narrowed to "POS SaaS"; "rugged tablets" must not be collapsed into "payment terminals")
@@ -205,7 +218,7 @@ the entry skill and invoking the query-router (step 1.5). The router still owns 
 ## Exit criterion
 
 - `research/prompt-decomposition.json` exists, is valid JSON, every atomic item traces to the research_query
-- `pipeline_tier` + `response_format` + `query_shape` + `citation_style` are all set
+- `pipeline_tier` + `response_format` + `query_shape` + `citation_style` + `recency_window` are all set
 - `scope_brief` is a one-paragraph framing (subject + in/out-of-scope + boundary conditions) the fast-mode writer can read standalone
 - `research/temp/coverage-matrix.md` exists with **zero `Gap? = YES` rows**
 - `research/scaffold.md` includes a Tier rationale subsection
