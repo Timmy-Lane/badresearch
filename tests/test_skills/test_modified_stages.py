@@ -418,7 +418,7 @@ def test_width_sweep_query_expansion_instruction(skills_dir):
     # explicit per-sub-question paraphrase/synonym instruction
     assert "synonym/paraphrase" in low or "paraphrase alternative" in low
     # minimum count: 3-5 alternatives generated per sub-question
-    assert "3–5" in body or "3-5" in body
+    assert "3–5" in body or "3-5" in body  # noqa: RUF001 (en dash matches skill prose)
     # the reformulation rows are tagged in the search-plan table Type column
     assert "reformulation" in low
     # scoped to Step 2.1 (multi-perspective search planning)

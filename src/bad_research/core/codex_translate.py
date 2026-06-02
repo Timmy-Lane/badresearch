@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import re
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 _SKILL_PREFIX = "bad-research-"
 
