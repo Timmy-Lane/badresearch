@@ -46,6 +46,7 @@ from bad_research.cli._output import console, output
 from bad_research.models.output import error, success
 
 if TYPE_CHECKING:
+    from bad_research.calibrate.headtohead import Scorecard
     from bad_research.calibrate.judge import LLMJudge
 
 
@@ -86,18 +87,69 @@ def headtohead(
     llm: bool = typer.Option(
         False, "--llm", help="Score via the host-model LLMJudge (needs host model; slow)."
     ),
+    emit_judge_tasks: str | None = typer.Option(
+        None,
+        "--emit-judge-tasks",
+        help="KEYLESS host-judge: write blinded judge-task files + manifest to this dir "
+        "(the orchestrating Claude then judges each file). No scorecard yet.",
+    ),
+    verdicts: str | None = typer.Option(
+        None,
+        "--verdicts",
+        help="KEYLESS host-judge: ingest host-written *.verdict.json from this dir "
+        "(an --emit-judge-tasks dir) and emit the scorecard. No key needed.",
+    ),
     json_output: bool = typer.Option(False, "--json", "-j", help="JSON output."),
 ) -> None:
     """Run the head-to-head: blind both sides, score with the categorical judge,
-    emit a scorecard. Keyless + offline unless --llm is passed."""
+    emit a scorecard. Keyless + offline unless --llm is passed.
+
+    Two keyless host-judge subcommands let the orchestrating Claude BE the judge
+    (no API key, no provider): `--emit-judge-tasks <dir>` writes blinded task files
+    + a manifest; the host judges each file by hand; `--verdicts <dir>` ingests the
+    host-written `*.verdict.json` rails and emits the same scorecard."""
     from bad_research.calibrate.headtohead import (
         Entrant,
         load_query_set,
+        load_verdicts,
         run_head_to_head,
+    )
+    from bad_research.calibrate.headtohead import (
+        emit_judge_tasks as emit_judge_tasks_fn,
     )
 
     out_dir = Path(out).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    # ── KEYLESS host-judge ingest: build the scorecard from host-written verdicts ──
+    # Self-contained: reads its own manifest (from --emit-judge-tasks), so it does
+    # NOT need --manifest/--bad-report/etc. No provider, no key.
+    if verdicts is not None:
+        try:
+            v_qset, v_entrants, host, v_bad, v_comp, v_blinded = load_verdicts(
+                Path(verdicts).resolve()
+            )
+        except (FileNotFoundError, ValueError, KeyError, json.JSONDecodeError) as exc:
+            msg = f"headtohead --verdicts error: {exc}"
+            if json_output:
+                output(error(msg, "BAD_INPUT"), json_mode=True)
+            else:
+                console.print(f"[red]Error:[/] {msg}")
+            raise typer.Exit(2)
+        # Reports in the manifest are ALREADY blinded; do not re-blind. The
+        # scorecard's blinded flag is restored from the manifest below.
+        card = run_head_to_head(
+            v_qset,
+            v_entrants,
+            bad_name=v_bad,
+            competitor_name=v_comp,
+            judge=host,
+            blind=False,
+        )
+        card.blinded = v_blinded
+        card.llm_judged = True  # the host model IS the semantic judge (not the RubricJudge proxy)
+        _write_and_report(card, out_dir, v_bad, v_comp, json_output)
+        return
 
     # Resolve the query set + entrants. A bad path is a clean exit(2), not a crash.
     try:
@@ -139,6 +191,41 @@ def headtohead(
             console.print(f"[red]Error:[/] {msg}")
         raise typer.Exit(2)
 
+    entrants = {
+        qid: [Entrant.from_json(e) for e in ents] for qid, ents in entrants_by_qid.items()
+    }
+
+    # ── KEYLESS host-judge emit: write blinded task files + manifest, then stop ──
+    # The orchestrating Claude reads each *.task.md and writes the rails; ingest the
+    # results later with `--verdicts <this dir>`. No scoring happens here.
+    if emit_judge_tasks is not None:
+        tasks_dir = Path(emit_judge_tasks).resolve()
+        man = emit_judge_tasks_fn(
+            qset,
+            entrants,
+            tasks_dir,
+            bad_name=bad_name,
+            competitor_name=competitor_name,
+            blind=not no_blind,
+        )
+        n_tasks = len(man["tasks"])
+        if json_output:
+            output(success(man, count=n_tasks, vault=str(tasks_dir)), json_mode=True)
+            return
+        console.print(
+            f"[bold]Head-to-head:[/] emitted [green]{n_tasks}[/] blinded judge task(s) "
+            f"to {tasks_dir}"
+        )
+        console.print(
+            "  Next: as the host judge, read each [cyan]*.task.md[/] and write its "
+            "[cyan]<id>.verdict.json[/] rails,"
+        )
+        console.print(
+            f"  then run [bold]bad headtohead --verdicts {tasks_dir}[/] for the scorecard. "
+            "No API key needed."
+        )
+        return
+
     judge = _make_llm_judge() if llm else None
 
     # If --llm was requested but the host model is unavailable, fail clean.
@@ -152,13 +239,20 @@ def headtohead(
 
     card = run_head_to_head(
         qset,
-        {qid: [Entrant.from_json(e) for e in ents] for qid, ents in entrants_by_qid.items()},
+        entrants,
         bad_name=bad_name,
         competitor_name=competitor_name,
         judge=judge,
         blind=not no_blind,
     )
+    _write_and_report(card, out_dir, bad_name, competitor_name, json_output)
 
+
+def _write_and_report(
+    card: Scorecard, out_dir: Path, bad_name: str, competitor_name: str, json_output: bool
+) -> None:
+    """Write the scorecard (JSON + markdown) and print/emit the summary. Shared by
+    the default/--llm scoring path and the keyless --verdicts ingest path."""
     json_path = out_dir / "headtohead-scorecard.json"
     md_path = out_dir / "headtohead-scorecard.md"
     json_path.write_text(card.to_json(), encoding="utf-8")
