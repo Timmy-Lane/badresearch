@@ -32,6 +32,52 @@ if sys.platform == "win32":
                 pass
 
 
+def persist_screenshot(
+    conn: Any,
+    note_id: str,
+    screenshot_bytes: bytes | None,
+    assets_dir: pathlib.Path,
+    *,
+    url: str | None = None,
+) -> dict[str, Any] | None:
+    """Persist a crawl4ai/Playwright screenshot to disk + the `assets` table.
+
+    The render rung (`_fetch_async` / `_fetch_visible`) already captures PNG bytes
+    on `WebResult.screenshot`, but until now NOTHING wrote them anywhere — the host
+    model (natively multimodal) could never Read the page as it actually rendered.
+    This is the real persistence path: write `research/assets/<note_id>/<sha>.png`
+    and INSERT one `type='screenshot'` row, returning a manifest dict (or None when
+    there is no screenshot). Failures are swallowed — a missing screenshot never
+    aborts a note save.
+    """
+    if not screenshot_bytes:
+        return None
+    import hashlib
+
+    from bad_research.core.db import insert_asset
+
+    try:
+        assets_dir = pathlib.Path(assets_dir)
+        assets_dir.mkdir(parents=True, exist_ok=True)
+        digest = hashlib.sha256(screenshot_bytes).hexdigest()[:16]
+        filename = f"screenshot-{digest}.png"
+        dest = assets_dir / filename
+        dest.write_bytes(screenshot_bytes)
+        rel = f"research/assets/{note_id}/{filename}"
+        insert_asset(
+            conn,
+            note_id=note_id,
+            filename=rel,
+            type="screenshot",
+            url=url,
+            content_type="image/png",
+            size_bytes=len(screenshot_bytes),
+        )
+        return {"path": rel, "type": "screenshot", "bytes": len(screenshot_bytes)}
+    except Exception:
+        return None
+
+
 def _is_pdf_url(url: str) -> bool:
     """Check if URL likely points to a PDF."""
     from urllib.parse import urlparse

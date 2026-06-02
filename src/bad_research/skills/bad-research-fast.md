@@ -76,6 +76,16 @@ while step < 6 and next_queries and now < deadline:      # (1) hard cap = FAST_M
 **Math queries:** use `execute_python` in ACT, never compute in prose. The domain/URL deltas are
 loop counters, not model claims — the stop is auditable even if the model lies about diminishing returns.
 
+**Read figures (you are natively multimodal):** if a source's substance is in a
+figure/chart/table-image, or in a scanned (text-layerless) PDF, the text layer is empty
+and the fetch path has already saved the rendered pixels as a PNG asset bound to the
+note. Resolve it with `bad assets list --note-id <note-id> --json`, then
+`bad assets path <asset-id>`, and use the `Read` tool on that PNG to transcribe the data
+into the note VERBATIM (the numbers exactly as plotted/printed), citing it as a figure.
+The transcription you write into the note body becomes the claim's `quoted_support`, so
+the figure-derived number is grounded and verifiable like any text claim — never eyeball
+a number you did not Read off the saved image.
+
 ### Reflect/stop prompt (emit once per step — returns ONE JSON object)
 
 After each retrieval step the planner emits this prompt and acts on the returned JSON

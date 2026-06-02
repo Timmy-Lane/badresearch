@@ -68,6 +68,17 @@ ULTRAFAST_TIMEOUT_S (900s wall-clock net).
 
 Math sub-claims: the fetchers use `execute_python`, never compute in prose.
 
+Read figures (the sub-researchers are natively multimodal): if a source's substance is
+in a figure/chart/table-image, or in a scanned (text-layerless) PDF, the text layer is
+empty and the fetch path has already saved the rendered pixels as a PNG asset bound to
+the note. Resolve it with `bad assets list --note-id <note-id> --json`, then
+`bad assets path <asset-id>`, and use the `Read` tool on that PNG to transcribe the data
+into the note VERBATIM (the numbers exactly as plotted/printed), citing it as a figure.
+The transcription written into the note body becomes the claim's `quoted_support`, so the
+figure-derived number is grounded and verifiable like any text claim — never eyeball a
+number that was not Read off the saved image. `Read` is therefore in the fetcher
+`tools_allowed`.
+
 ### 3. SYNTH (leader-only terminal synthesis — Grok seam + Gemini/OpenAI report)
 
 When BROWSE ends you become the **writer**. Reserve ULTRAFAST_RESERVE_SYNTH_FRAC

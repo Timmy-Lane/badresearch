@@ -78,11 +78,20 @@ After the academic sweep, run web searches for context, news, non-academic angle
 
 ### Images, screenshots, and assets
 
+The host model is natively multimodal. When a source's substance lives in a
+figure/chart/table-image or a scanned (text-layerless) PDF, the fetch path saves
+the rendered pixels as a PNG asset bound to the note; resolve it to a real file
+and hand that path to the `Read` tool to transcribe the data.
+
 ```bash
 {hpr} fetch "<url>" --tag <topic> --save-assets -j   # Saves screenshot + top images
-{hpr} assets list --note <note-id> --json            # Assets for a specific note
-{hpr} assets path <note-id> --type screenshot -j     # Get screenshot path (viewable with Read)
+{hpr} assets list --note-id <note-id> --json         # Assets bound to a note (id, type, path)
+{hpr} assets list --type screenshot --json           # Filter by type (screenshot|image|pdf|other)
+{hpr} assets path <asset-id> -j                       # Resolve an asset id -> readable PNG path
 ```
+
+`assets list` reports each asset's integer `id`; `assets path <asset-id>` prints
+the absolute on-disk path (Read it directly).
 
 ### Authenticated crawling
 
