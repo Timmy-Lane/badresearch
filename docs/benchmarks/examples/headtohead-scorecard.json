@@ -1,0 +1,75 @@
+{
+  "benchmark": "head-to-head",
+  "disclaimer": "Competitor reports are pasted by a human, not produced by this tool. Reports are BLINDED (tool markers stripped) before judging. Scoring reuses calibrate.judge: the keyless deterministic RubricJudge (grounding-overlap + citation-presence proxy, NOT semantic entailment) unless run with --llm (host-model LLMJudge). cost_usd/latency_s are operator-supplied metadata and do not feed the categorical verdict. This is the measurement apparatus; the tally below is whatever the real runs produced, not a claimed result.",
+  "bad_entrant": "bad-research",
+  "competitor_entrant": "gemini-deep-research",
+  "blinded": true,
+  "llm_judged": false,
+  "tally": {
+    "win": 1,
+    "tie": 0,
+    "loss": 0
+  },
+  "verdict": "bad-research leads 1-0-0 (W-L-T) over 1 queries, scored by the keyless deterministic RubricJudge.",
+  "axis_breakdown": {
+    "bad-research": {
+      "factual": 0.5,
+      "citation": 0.5,
+      "completeness": 1.0,
+      "source_quality": 0.0,
+      "efficiency": 1.0
+    },
+    "gemini-deep-research": {
+      "factual": 0.5,
+      "citation": 0.0,
+      "completeness": 1.0,
+      "source_quality": 0.0,
+      "efficiency": 1.0
+    }
+  },
+  "queries": [
+    {
+      "id": "h2h_01_causal",
+      "query": "Does regular aerobic exercise causally reduce the risk of clinical depression, or is the association confounded? Weigh the experimental against the observational evidence.",
+      "outcome": "win",
+      "bad_entrant": "bad-research",
+      "competitor_entrant": "gemini-deep-research",
+      "scores": [
+        {
+          "name": "bad-research",
+          "verdict": {
+            "rails": {
+              "factual": "borderline",
+              "citation": "borderline",
+              "completeness": "pass",
+              "source_quality": "fail",
+              "efficiency": "pass"
+            },
+            "pass_rate": 0.6,
+            "passed": false,
+            "rationale": "deterministic offline rubric"
+          },
+          "cost_usd": 0.0,
+          "latency_s": 0.0
+        },
+        {
+          "name": "gemini-deep-research",
+          "verdict": {
+            "rails": {
+              "factual": "borderline",
+              "citation": "fail",
+              "completeness": "pass",
+              "source_quality": "fail",
+              "efficiency": "pass"
+            },
+            "pass_rate": 0.5,
+            "passed": false,
+            "rationale": "deterministic offline rubric"
+          },
+          "cost_usd": 0.0,
+          "latency_s": 0.0
+        }
+      ]
+    }
+  ]
+}
