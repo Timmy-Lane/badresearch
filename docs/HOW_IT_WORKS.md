@@ -97,14 +97,17 @@ runs anywhere. If you install the `[local]` extra, a dense vector lane (a local
 `bge` embedder + **LanceDB** ANN, the pattern LanceDB is built for) is used
 automatically on large corpora, fused with BM25 via RRF.
 
-### Grounding & no-hallucination — cite or don't say it
+### Grounding — cite or don't say it
 *Pattern from: Gemini's grounding & recitation guarantees.* Gemini is known for
 binding generated claims back to retrieved evidence and guarding against verbatim
-recitation. We enforce both deterministically: every report sentence is checked
-against its cited source (exact-match → local NLI → a host-model gate), **uncited
-factual claims are blocked**, and a recitation gate flags any sentence that copies a
-source too closely (a 12-word verbatim run or >50% overlap) — with a carve-out only
-for genuine, attributed direct quotes.
+recitation. Every factual sentence must carry a source citation, and a deterministic
+ship-gate **blocks** any uncited claim. Fabricated quotes are caught for free by a
+byte-identity check; the harder paraphrase-faithfulness cases are judged by the host
+model (an optional `[local]` cross-encoder upgrades this to NLI — keyless, that lane is
+a no-op, and the verifier instead emits a `needs_host_judgment` worklist the host model
+resolves inline). A recitation gate flags any sentence that copies a source too closely
+(a 12-word verbatim run or >50% overlap) — with a carve-out only for genuine, attributed
+direct quotes.
 
 ### Reasoning-effort dial — spend compute where it matters
 *Pattern from: OpenAI's reasoning-effort control.* We expose a `--reasoning-effort`
