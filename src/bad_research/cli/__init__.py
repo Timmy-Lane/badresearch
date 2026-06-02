@@ -91,4 +91,17 @@ app.command("fetch")(fetch_cmd)
 app.command("lint")(lint_cmd)
 app.add_typer(note_app, name="note")
 
+# ── export + grounding sidecars (Road-to-9 levers #7/#8/#9) ───────────────────
+from bad_research.cli.export import export_cmd as _export_cmd
+from bad_research.cli.grounding_surface import (
+    grounding_recall_cmd as _grounding_recall_cmd,
+)
+from bad_research.cli.grounding_surface import (
+    grounding_surface_cmd as _grounding_surface_cmd,
+)
+
+app.command("export")(_export_cmd)
+app.command("grounding-surface")(_grounding_surface_cmd)
+app.command("grounding-recall")(_grounding_recall_cmd)
+
 __all__ = ["app"]
