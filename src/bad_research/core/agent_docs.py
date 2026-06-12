@@ -95,9 +95,9 @@ the absolute on-disk path (Read it directly).
 
 ### Authenticated crawling
 
-Login-gated content (LinkedIn, Twitter, paywalled news) needs a browser profile. Set up once via `{hpr} setup` or `crwl profiles`. Config in `.hyperresearch/config.toml` under `[web]`: `profile = "research"`, `magic = true`. LinkedIn / Twitter / Facebook / Instagram / TikTok auto-use a visible browser to avoid session kills.
+Login-gated content (LinkedIn, Twitter, paywalled news) needs a browser profile. Set one up once via `crwl profiles` (the crawl4ai CLI). Config in `.hyperresearch/config.toml` under `[web]`: `profile = "research"`, `magic = true`. LinkedIn / Twitter / Facebook / Instagram / TikTok auto-use a visible browser to avoid session kills.
 
-If a fetch returns a login wall, tell the user to run `{hpr} setup` and create a login profile.
+If a fetch returns a login wall, tell the user to create a login profile with `crwl profiles`.
 
 ### Curate after every session
 
@@ -107,9 +107,8 @@ Every research session must end with a curation pass:
 {hpr} note list --status draft -j                                        # Find unprocessed notes
 {hpr} note show <id> -j                                                  # Read the content
 {hpr} note update <id> --summary "<specific summary>" --add-tag <t> -j   # Add summary + tags
+{hpr} sync -j                                                            # Re-index edited notes into the DB
 {hpr} lint -j                                                            # Find missing tags / summaries / broken links
-{hpr} repair -j                                                          # Auto-fix broken links, rebuild indexes
-{hpr} status -j                                                          # Overall vault health
 ```
 
 Lifecycle: `draft` → `review` → `evergreen` (or `stale` → `deprecated` → `archive` for outdated material).

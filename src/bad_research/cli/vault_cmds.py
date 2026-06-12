@@ -698,6 +698,72 @@ def lint_cmd(
     _emit_success(data, json_mode=json_output, vault=str(vault.root))
 
 
+# ── sync ────────────────────────────────────────────────────────────────────
+
+def sync_cmd(
+    force: bool = typer.Option(False, "--force", help="Re-index every note, ignoring mtimes"),
+    json_output: bool = typer.Option(False, "--json", "-j", help="Emit JSON"),
+) -> None:
+    """Index hand-written research/notes/*.md into the vault's SQLite DB.
+
+    The files->DB bridge (issue #11): the fetcher subagents and any direct `.md`
+    edits write note files; `sync` reconciles disk -> DB so FTS search, wiki-link
+    resolution, and tag queries see them. Idempotent; `--force` re-indexes
+    everything. Emits {added, updated, deleted, unchanged, errors}.
+    """
+    from bad_research.core.sync import compute_sync_plan, execute_sync
+    from bad_research.core.vault import VaultError
+
+    try:
+        vault = _discover_vault()
+    except VaultError as exc:
+        _emit_error(str(exc), json_mode=json_output, code="NO_VAULT")
+        raise typer.Exit(code=1) from exc
+
+    plan = compute_sync_plan(vault, force=force)
+    result = execute_sync(vault, plan)
+    data = {
+        "added": result.added,
+        "updated": result.updated,
+        "deleted": result.deleted,
+        "unchanged": result.unchanged,
+        "errors": result.errors,
+    }
+    _emit_success(data, json_mode=json_output, vault=str(vault.root))
+
+
+# ── tags ────────────────────────────────────────────────────────────────────
+
+def tags_cmd(
+    json_output: bool = typer.Option(False, "--json", "-j", help="Emit JSON"),
+) -> None:
+    """List the existing tag vocabulary across all notes (tag + usage count).
+
+    The curation pass reuses this vocabulary rather than inventing new tags
+    (issue #16). Reads frontmatter off disk, so it needs no DB sync. Emits
+    {tags: [{tag, count}], count}, ordered by descending usage.
+    """
+    from collections import Counter
+
+    from bad_research.core.vault import VaultError
+
+    try:
+        vault = _discover_vault()
+    except VaultError as exc:
+        _emit_error(str(exc), json_mode=json_output, code="NO_VAULT")
+        raise typer.Exit(code=1) from exc
+
+    counter: Counter[str] = Counter()
+    if vault.notes_dir.is_dir():
+        for md_path in vault.notes_dir.glob("*.md"):
+            fm = _parse_note_frontmatter(md_path)
+            for t in (fm.get("tags") or []):
+                counter[t] += 1
+    tags = [{"tag": t, "count": c} for t, c in counter.most_common()]
+    data = {"tags": tags, "count": len(tags)}
+    _emit_success(data, json_mode=json_output, count=len(tags), vault=str(vault.root))
+
+
 # ── note (subgroup with 'show' subcommand) ────────────────────────────────────
 
 note_app = typer.Typer(
@@ -779,3 +845,163 @@ def note_show_cmd(
         raise typer.Exit(code=1)
 
     _emit_success(data, json_mode=json_output, count=len(notes), vault=str(vault.root))
+
+
+@note_app.command("create")
+def note_create_cmd(
+    title: str = typer.Option(..., "--title", help="Note title (also seeds the id)"),
+    body: str = typer.Option("", "--body", help="Note body markdown"),
+    body_file: str = typer.Option(None, "--body-file", help="Read body from a file instead of --body"),
+    tag: list[str] = typer.Option(None, "--tag", help="Tag (repeatable)"),
+    note_type: str = typer.Option("note", "--type", help="Note type"),
+    status: str = typer.Option("draft", "--status", help="Lifecycle status"),
+    summary: str = typer.Option(None, "--summary", help="One-line note summary"),
+    source: str = typer.Option(None, "--source", help="Source URL/identifier"),
+    json_output: bool = typer.Option(False, "--json", "-j", help="Emit JSON"),
+) -> None:
+    """Create a vault note from explicit title/body (programmatic grounding).
+
+    The non-URL sibling of `bad fetch` (issue #11): write a note whose content the
+    agent already holds (a synthesized note, a transcribed figure, a manual source)
+    with no network fetch. Emits {note_id, path, title, tags, status}.
+    """
+    from bad_research.core.note import write_note
+    from bad_research.core.vault import VaultError
+
+    try:
+        vault = _discover_vault()
+    except VaultError as exc:
+        _emit_error(str(exc), json_mode=json_output, code="NO_VAULT")
+        raise typer.Exit(code=1) from exc
+
+    text = body
+    if body_file:
+        try:
+            text = Path(body_file).read_text(encoding="utf-8")
+        except OSError as exc:
+            _emit_error(f"cannot read --body-file: {exc}", json_mode=json_output,
+                        code="BAD_BODY_FILE")
+            raise typer.Exit(code=1) from exc
+
+    note_path = write_note(
+        vault.notes_dir, title=title, body=text,
+        tags=list(tag) if tag else [], status=status, note_type=note_type,
+        summary=summary, source=source,
+    )
+    data = {
+        "note_id": note_path.stem,
+        "path": str(note_path.relative_to(vault.root)),
+        "title": title,
+        "tags": list(tag) if tag else [],
+        "status": status,
+    }
+    _emit_success(data, json_mode=json_output, vault=str(vault.root))
+
+
+@note_app.command("list")
+def note_list_cmd(
+    status: str = typer.Option(None, "--status", help="Filter by status (draft|review|evergreen|…)"),
+    tag: str = typer.Option(None, "--tag", help="Filter by tag"),
+    note_type: str = typer.Option(None, "--type", help="Filter by type"),
+    json_output: bool = typer.Option(False, "--json", "-j", help="Emit JSON"),
+) -> None:
+    """List vault notes with frontmatter summaries, optionally filtered.
+
+    The curation-pass inventory (issue #16): `note list --status draft` finds
+    unprocessed notes. Reads frontmatter off disk (no DB sync needed). Emits
+    {notes: [{id, title, status, tags, type, summary, path}], count}.
+    """
+    from bad_research.core.vault import VaultError
+
+    try:
+        vault = _discover_vault()
+    except VaultError as exc:
+        _emit_error(str(exc), json_mode=json_output, code="NO_VAULT")
+        raise typer.Exit(code=1) from exc
+
+    out: list[dict[str, Any]] = []
+    if vault.notes_dir.is_dir():
+        for md_path in sorted(vault.notes_dir.glob("*.md")):
+            fm = _parse_note_frontmatter(md_path)
+            n_status = fm.get("status") or "draft"
+            n_tags = fm.get("tags") or []
+            n_type = fm.get("type") or "note"
+            if status and n_status != status:
+                continue
+            if tag and tag not in n_tags:
+                continue
+            if note_type and n_type != note_type:
+                continue
+            out.append({
+                "id": fm.get("id") or md_path.stem,
+                "title": fm.get("title") or md_path.stem,
+                "status": n_status,
+                "tags": n_tags,
+                "type": n_type,
+                "summary": fm.get("summary") or "",
+                "path": str(md_path.relative_to(vault.root)),
+            })
+    data = {"notes": out, "count": len(out)}
+    _emit_success(data, json_mode=json_output, count=len(out), vault=str(vault.root))
+
+
+@note_app.command("update")
+def note_update_cmd(
+    note_id: str = typer.Argument(..., help="Note id (stem of the .md file)"),
+    summary: str = typer.Option(None, "--summary", help="Set the note summary"),
+    add_tag: list[str] = typer.Option(None, "--add-tag", help="Add a tag (repeatable)"),
+    remove_tag: list[str] = typer.Option(None, "--remove-tag", help="Remove a tag (repeatable)"),
+    status: str = typer.Option(None, "--status", help="Set the lifecycle status"),
+    title: str = typer.Option(None, "--title", help="Set the title"),
+    json_output: bool = typer.Option(False, "--json", "-j", help="Emit JSON"),
+) -> None:
+    """Update a note's frontmatter (summary / tags / status / title) in place.
+
+    The curation mutation (issue #11/#16): `note update <id> --summary … --add-tag …`.
+    Only frontmatter changes; the body is preserved verbatim. Exits non-zero if the
+    id is missing.
+    """
+    from bad_research.core.frontmatter import parse_frontmatter, render_note
+    from bad_research.core.vault import VaultError
+
+    try:
+        vault = _discover_vault()
+    except VaultError as exc:
+        _emit_error(str(exc), json_mode=json_output, code="NO_VAULT")
+        raise typer.Exit(code=1) from exc
+
+    note_path: Path | None = None
+    for d in (vault.notes_dir, vault.temp_dir):
+        cand = d / f"{note_id}.md"
+        if cand.exists():
+            note_path = cand
+            break
+    if note_path is None:
+        _emit_error(f"Note '{note_id}' not found", json_mode=json_output, code="NOTE_NOT_FOUND")
+        raise typer.Exit(code=1)
+
+    meta, body = parse_frontmatter(note_path.read_text(encoding="utf-8"))
+    if summary is not None:
+        meta.summary = summary
+    if title is not None:
+        meta.title = title
+    if status is not None:
+        meta.status = status
+    tags = list(meta.tags or [])
+    for t in (add_tag or []):
+        if t not in tags:
+            tags.append(t)
+    for t in (remove_tag or []):
+        if t in tags:
+            tags.remove(t)
+    meta.tags = tags
+
+    note_path.write_text(render_note(meta, body), encoding="utf-8")
+    data = {
+        "note_id": note_id,
+        "summary": meta.summary,
+        "tags": meta.tags,
+        "status": meta.status,
+        "path": str(note_path.relative_to(vault.root)),
+    }
+    _emit_success(data, json_mode=json_output, vault=str(vault.root))
