@@ -446,6 +446,31 @@ def test_note_update_sets_summary_tags_status(tmp_path, monkeypatch):
     assert meta.status == "evergreen"
 
 
+def test_note_update_preserves_non_schema_frontmatter(tmp_path, monkeypatch):
+    # Review HIGH #2: update operates on the raw YAML dict, so a custom (non-NoteMeta)
+    # frontmatter key a human or external tool added survives the round-trip instead
+    # of being silently dropped by NoteMeta(extra="ignore").
+    import yaml
+
+    from bad_research.core.frontmatter import FRONTMATTER_RE
+
+    notes = _init_vault(tmp_path)
+    (notes / "n1.md").write_text(
+        "---\ntitle: One\nid: n1\ntags: [a]\nstatus: draft\n"
+        "custom_field: keep-me\nproject_code: XYZ-42\n---\n\nBody.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    res = runner.invoke(app, ["note", "update", "n1", "--summary", "S", "--add-tag", "b", "--json"])
+    assert res.exit_code == 0, res.stdout
+    fm = yaml.safe_load(FRONTMATTER_RE.match((notes / "n1.md").read_text(encoding="utf-8")).group(1))
+    assert fm["custom_field"] == "keep-me"
+    assert fm["project_code"] == "XYZ-42"
+    assert fm["summary"] == "S"
+    assert set(fm["tags"]) >= {"a", "b"}
+    assert "Body." in (notes / "n1.md").read_text(encoding="utf-8")
+
+
 def test_note_update_missing_id_exits_nonzero(tmp_path, monkeypatch):
     _init_vault(tmp_path)
     monkeypatch.chdir(tmp_path)

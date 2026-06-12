@@ -958,10 +958,13 @@ def note_update_cmd(
     """Update a note's frontmatter (summary / tags / status / title) in place.
 
     The curation mutation (issue #11/#16): `note update <id> --summary … --add-tag …`.
-    Only frontmatter changes; the body is preserved verbatim. Exits non-zero if the
-    id is missing.
+    Only the named frontmatter fields change; the body and any other frontmatter keys
+    are preserved verbatim (the update operates on the raw YAML dict, NOT NoteMeta,
+    so non-schema keys are not silently dropped). Exits non-zero if the id is missing.
     """
-    from bad_research.core.frontmatter import parse_frontmatter, render_note
+    import yaml
+
+    from bad_research.core.frontmatter import FRONTMATTER_RE
     from bad_research.core.vault import VaultError
 
     try:
@@ -980,28 +983,39 @@ def note_update_cmd(
         _emit_error(f"Note '{note_id}' not found", json_mode=json_output, code="NOTE_NOT_FOUND")
         raise typer.Exit(code=1)
 
-    meta, body = parse_frontmatter(note_path.read_text(encoding="utf-8"))
-    if summary is not None:
-        meta.summary = summary
-    if title is not None:
-        meta.title = title
-    if status is not None:
-        meta.status = status
-    tags = list(meta.tags or [])
-    for t in (add_tag or []):
-        if t not in tags:
-            tags.append(t)
-    for t in (remove_tag or []):
-        if t in tags:
-            tags.remove(t)
-    meta.tags = tags
+    raw = note_path.read_text(encoding="utf-8")
+    match = FRONTMATTER_RE.match(raw)
+    if match:
+        fm = yaml.safe_load(match.group(1)) or {}
+        body = raw[match.end():]
+    else:
+        fm, body = {}, raw
+    if not isinstance(fm, dict):
+        _emit_error(f"Note '{note_id}' has malformed frontmatter", json_mode=json_output,
+                    code="BAD_FRONTMATTER")
+        raise typer.Exit(code=1)
 
-    note_path.write_text(render_note(meta, body), encoding="utf-8")
+    if summary is not None:
+        fm["summary"] = summary
+    if title is not None:
+        fm["title"] = title
+    if status is not None:
+        fm["status"] = status
+    # Immutable tag construction: drop removals, then append new tags not present.
+    tags = [t for t in (fm.get("tags") or []) if t not in (remove_tag or [])]
+    tags = tags + [t for t in (add_tag or []) if t not in tags]
+    fm["tags"] = tags
+
+    # FRONTMATTER_RE's trailing `\s*` consumes the blank line after the closing
+    # fence, so `body` has no leading newline; re-add the one-blank-line separator
+    # render_note uses, keeping the on-disk shape consistent with fetch/create.
+    new_yaml = yaml.dump(fm, default_flow_style=False, sort_keys=False, allow_unicode=True)
+    note_path.write_text(f"---\n{new_yaml}---\n\n{body}", encoding="utf-8")
     data = {
         "note_id": note_id,
-        "summary": meta.summary,
-        "tags": meta.tags,
-        "status": meta.status,
+        "summary": fm.get("summary"),
+        "tags": fm["tags"],
+        "status": fm.get("status"),
         "path": str(note_path.relative_to(vault.root)),
     }
     _emit_success(data, json_mode=json_output, vault=str(vault.root))

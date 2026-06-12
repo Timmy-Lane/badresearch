@@ -139,14 +139,16 @@ def is_factual_claim(sentence: str) -> bool:
     low = s.lower()
     if s.endswith("?"):
         return False
-    # Match openers against the chrome-stripped head so a bolded/quoted opener
-    # ("**Bottom line:** …") is recognized the same as a plain one (issue #18).
-    low_open = low.lstrip(_LEADING_CHROME)
-    if any(low_open.startswith(o) for o in _HEDGE_OPENERS):
+    # Hedge/meta openers match the RAW head only (pre-patch behavior): these are
+    # generic stems, so chrome-stripping them would let a block-quoted/bolded
+    # claim ("> This section recorded a 31% rise.") escape the ship-block gate.
+    if any(low.startswith(o) for o in _HEDGE_OPENERS):
         return False
-    if any(low_open.startswith(m) for m in _META_STEMS):
+    if any(low.startswith(m) for m in _META_STEMS):
         return False
-    if _VERDICT_LABEL.match(low_open):
+    # Verdict labels are SPECIFIC enough to chrome-strip safely, so a bolded
+    # "**Bottom line:** …" is recognized like a plain "Bottom line: …" (issue #18).
+    if _VERDICT_LABEL.match(low.lstrip(_LEADING_CHROME)):
         return False
     # Strip citation tokens before scanning for entities (so [[note-id]] isn't an entity).
     bare = re.sub(r"\[\[[^\]]+\]\]|\[\d+\]", "", s)

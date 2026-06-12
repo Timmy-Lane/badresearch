@@ -28,17 +28,18 @@ def test_is_factual_claim_filters_trivia():
     assert is_factual_claim("In general, markets vary.") is False               # hedge-frame opener
 
 
-def test_is_factual_claim_exempts_verdict_and_framing_lines():
+def test_is_factual_claim_exempts_verdict_lines():
     # #18: verdict/summary labels (Bottom line:, Key takeaway:, In short:) are
     # synthesis lines whose grounding lives in the cited body (doctrine:
     # triple-draft.md:140 — "executive-summary topic sentence ... non-factual by
-    # the gate's own classifier"). They must NOT be flagged as uncited-claim.
+    # the gate's own classifier"). They must NOT be flagged as uncited-claim, even
+    # when carrying leading markdown bold chrome.
     assert is_factual_claim("**Bottom line:** Vietnam leads at 64% penetration.") is False
     assert is_factual_claim("Bottom line: adoption grew 12.4% in 2024.") is False
     assert is_factual_claim("Key takeaway: Indonesia trails the region.") is False
     assert is_factual_claim("In short: the market doubled.") is False
-    # framing/transition opener carrying leading markdown bold chrome is also exempt
-    assert is_factual_claim("**This section examines** the 2024 GMV data.") is False
+    # a plain framing opener is non-factual by the classifier (pre-existing stem rule)
+    assert is_factual_claim("This section examines the 2024 GMV data.") is False
 
 
 def test_is_factual_claim_still_flags_real_body_claim_after_exemptions():
@@ -46,6 +47,9 @@ def test_is_factual_claim_still_flags_real_body_claim_after_exemptions():
     # still flags — the verdict carve-out keys on the OPENING label only.
     assert is_factual_claim("Vietnam's GMV grew 64% in 2024.") is True
     assert is_factual_claim("The bottom line of the chart sits at 64%.") is True  # not an opener
+    # Review-hardening: block-level chrome ('>') is NOT stripped for the generic
+    # framing stems, so a block-quoted claim can't hide behind a meta opener.
+    assert is_factual_claim("> This section recorded a 31% rise in 2024.") is True
 
 
 def test_gate_fails_report_with_uncited_factual_claim():
