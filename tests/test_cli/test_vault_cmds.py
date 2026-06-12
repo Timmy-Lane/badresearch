@@ -285,6 +285,47 @@ def test_lint_locus_coverage_flags_missing_locus(tmp_path, monkeypatch):
     assert any("locus-uncovered" in i["message"] for i in out["data"]["issues"])
 
 
+def test_lint_wrapper_report_accepts_wikilink_citations(tmp_path, monkeypatch):
+    # #20(1): the DEFAULT citation_style is "wikilink" ([[note-id]], no Sources
+    # section). A report carrying only wikilinks must NOT warn "has no citation
+    # markers" — the rule has to recognize [[...]] alongside [N]/[^..]/[Source].
+    notes = _init_vault(tmp_path)
+    (notes / "final_report_topic-abc123.md").write_text(
+        "# Report\n\nVietnam led the region at 64% [[src-vn]].\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+    res = runner.invoke(app, ["lint", "--rule", "wrapper-report", "--json"])
+    assert res.exit_code == 0, res.stdout
+    out = json.loads(res.stdout)
+    assert not any(
+        i["rule"] == "wrapper-report" and "no citation markers" in i["message"]
+        for i in out["data"]["issues"]
+    ), out["data"]["issues"]
+
+
+def test_lint_patch_surgery_accepts_canonical_step14_schema(tmp_path, monkeypatch):
+    # #20(2): the step-14 skill mandates the schema
+    # {total_findings, applied, skipped, conflicts, orchestrator_escalated} and
+    # forbids alternate shapes. A spec-conformant patch-log must NOT warn
+    # "lacks 'hunks' or 'patches' key".
+    _init_vault(tmp_path)
+    (tmp_path / "research" / "patch-log.json").write_text(
+        json.dumps({
+            "total_findings": 3, "applied": [{"id": "f1"}],
+            "skipped": [], "conflicts": [], "orchestrator_escalated": [],
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    res = runner.invoke(app, ["lint", "--rule", "patch-surgery", "--json"])
+    assert res.exit_code == 0, res.stdout
+    out = json.loads(res.stdout)
+    assert not any(
+        i["rule"] == "patch-surgery" and "lacks" in i["message"]
+        for i in out["data"]["issues"]
+    ), out["data"]["issues"]
+
+
 def test_lint_patch_surgery_invalid_json_errors(tmp_path, monkeypatch):
     _init_vault(tmp_path)
     (tmp_path / "research" / "patch-log.json").write_text("{not json", encoding="utf-8")
@@ -356,7 +397,105 @@ def test_note_show_finds_note_in_temp_dir(tmp_path, monkeypatch):
 # ── entry points / registration ───────────────────────────────────────────────
 
 def test_all_vault_commands_registered():
-    for cmd in ("init", "vault-tag", "archive-run", "search", "lint"):
+    for cmd in ("init", "vault-tag", "archive-run", "search", "lint", "sync", "tags"):
         res = runner.invoke(app, [cmd, "--help"])
         assert res.exit_code == 0, cmd
-    assert runner.invoke(app, ["note", "show", "--help"]).exit_code == 0
+    for sub in ("show", "create", "list", "update"):
+        assert runner.invoke(app, ["note", sub, "--help"]).exit_code == 0, sub
+
+
+# ── #11/#16: note create/list/update, sync, tags ──────────────────────────────
+
+def test_note_create_writes_file_and_returns_id(tmp_path, monkeypatch):
+    _init_vault(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    res = runner.invoke(app, ["note", "create", "--title", "Mamba SSM",
+                              "--body", "Mamba achieves linear-time sequence modeling.",
+                              "--tag", "ml", "--summary", "Linear-time SSM.", "--json"])
+    assert res.exit_code == 0, res.stdout
+    data = json.loads(res.stdout)["data"]
+    nid = data["note_id"]
+    assert (tmp_path / "research" / "notes" / f"{nid}.md").exists()
+
+
+def test_note_list_returns_notes_and_filters_status(tmp_path, monkeypatch):
+    notes = _init_vault(tmp_path)
+    _write_note(notes, note_id="n1", title="One", tags=["a"])  # status: draft
+    monkeypatch.chdir(tmp_path)
+    res = runner.invoke(app, ["note", "list", "--json"])
+    assert res.exit_code == 0, res.stdout
+    data = json.loads(res.stdout)["data"]
+    assert any(n["id"] == "n1" for n in data["notes"])
+    # status filter matches nothing here
+    res2 = runner.invoke(app, ["note", "list", "--status", "evergreen", "--json"])
+    assert all(n["status"] == "evergreen" for n in json.loads(res2.stdout)["data"]["notes"])
+
+
+def test_note_update_sets_summary_tags_status(tmp_path, monkeypatch):
+    from bad_research.core.frontmatter import parse_frontmatter
+
+    notes = _init_vault(tmp_path)
+    _write_note(notes, note_id="n1", title="One", tags=["a"])
+    monkeypatch.chdir(tmp_path)
+    res = runner.invoke(app, ["note", "update", "n1", "--summary", "A precise summary.",
+                              "--add-tag", "b", "--status", "evergreen", "--json"])
+    assert res.exit_code == 0, res.stdout
+    meta, _ = parse_frontmatter((notes / "n1.md").read_text(encoding="utf-8"))
+    assert meta.summary == "A precise summary."
+    assert set(meta.tags) >= {"a", "b"}
+    assert meta.status == "evergreen"
+
+
+def test_note_update_preserves_non_schema_frontmatter(tmp_path, monkeypatch):
+    # Review HIGH #2: update operates on the raw YAML dict, so a custom (non-NoteMeta)
+    # frontmatter key a human or external tool added survives the round-trip instead
+    # of being silently dropped by NoteMeta(extra="ignore").
+    import yaml
+
+    from bad_research.core.frontmatter import FRONTMATTER_RE
+
+    notes = _init_vault(tmp_path)
+    (notes / "n1.md").write_text(
+        "---\ntitle: One\nid: n1\ntags: [a]\nstatus: draft\n"
+        "custom_field: keep-me\nproject_code: XYZ-42\n---\n\nBody.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    res = runner.invoke(app, ["note", "update", "n1", "--summary", "S", "--add-tag", "b", "--json"])
+    assert res.exit_code == 0, res.stdout
+    fm = yaml.safe_load(FRONTMATTER_RE.match((notes / "n1.md").read_text(encoding="utf-8")).group(1))
+    assert fm["custom_field"] == "keep-me"
+    assert fm["project_code"] == "XYZ-42"
+    assert fm["summary"] == "S"
+    assert set(fm["tags"]) >= {"a", "b"}
+    assert "Body." in (notes / "n1.md").read_text(encoding="utf-8")
+
+
+def test_note_update_missing_id_exits_nonzero(tmp_path, monkeypatch):
+    _init_vault(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    res = runner.invoke(app, ["note", "update", "nope", "--summary", "x", "--json"])
+    assert res.exit_code == 1
+
+
+def test_sync_indexes_disk_notes_into_db(tmp_path, monkeypatch):
+    notes = _init_vault(tmp_path)
+    _write_note(notes, note_id="n1", title="One", tags=["a"], body="Body about Mamba.")
+    monkeypatch.chdir(tmp_path)
+    res = runner.invoke(app, ["sync", "--json"])
+    assert res.exit_code == 0, res.stdout
+    data = json.loads(res.stdout)["data"]
+    assert data["added"] + data["updated"] >= 1
+
+
+def test_tags_returns_vocabulary_with_counts(tmp_path, monkeypatch):
+    notes = _init_vault(tmp_path)
+    _write_note(notes, note_id="n1", title="One", tags=["ml", "ssm"])
+    _write_note(notes, note_id="n2", title="Two", tags=["ml"])
+    monkeypatch.chdir(tmp_path)
+    res = runner.invoke(app, ["tags", "--json"])
+    assert res.exit_code == 0, res.stdout
+    data = json.loads(res.stdout)["data"]
+    by_tag = {t["tag"]: t["count"] for t in data["tags"]}
+    assert by_tag.get("ml") == 2
+    assert "ssm" in by_tag

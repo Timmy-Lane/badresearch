@@ -80,6 +80,8 @@ from bad_research.cli.vault_cmds import (
     lint_cmd,
     note_app,
     search_cmd,
+    sync_cmd,
+    tags_cmd,
     vault_tag_cmd,
 )
 
@@ -88,6 +90,8 @@ app.command("vault-tag")(vault_tag_cmd)
 app.command("archive-run")(archive_run_cmd)
 app.command("search")(search_cmd)
 app.command("fetch")(fetch_cmd)
+app.command("sync")(sync_cmd)
+app.command("tags")(tags_cmd)
 app.command("lint")(lint_cmd)
 app.add_typer(note_app, name="note")
 

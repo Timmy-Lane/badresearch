@@ -516,7 +516,8 @@ def fetch_cmd(
 
 _LINT_RULES: dict[str, str] = {
     "wrapper-report": (
-        "Final report exists and has at least one citation marker ([^…] or [Source …])"
+        "Final report exists and has at least one citation marker "
+        "([[note-id]] wikilink, [N], [^…], or [Source …])"
     ),
     "locus-coverage": (
         "research/loci.json exists and every locus id appears in the final report"
@@ -525,14 +526,24 @@ _LINT_RULES: dict[str, str] = {
         "research/scaffold.md exists and contains a non-empty 'User Prompt' section"
     ),
     "patch-surgery": (
-        "research/patch-log.json is valid JSON with a 'hunks' or 'patches' key "
-        "(or absent on light tier)"
+        "research/patch-log.json is valid JSON with the canonical step-14 schema "
+        "(total_findings + applied/skipped/conflicts/orchestrator_escalated), or the "
+        "legacy hunks/patches shape (or absent on light tier)"
     ),
 }
 
 _ALL_RULES = list(_LINT_RULES)
 
-_CITATION_RE = re.compile(r"\[\^[^\]]+\]|\[Source[^\]]*\]|\[\d+\]", re.IGNORECASE)
+# Recognize every documented citation style. `[[note-id]]` is the DEFAULT
+# (citation_style: "wikilink", decompose.md:162) and MUST match here; [N] inline,
+# [^footnote], and [Source …] are the alternates (issue #20).
+_CITATION_RE = re.compile(
+    r"\[\[[^\]]+\]\]|\[\^[^\]]+\]|\[Source[^\]]*\]|\[\d+\]", re.IGNORECASE
+)
+# Canonical step-14 patch-log keys (patcher.md:53). A spec-conformant log carries
+# these instead of the legacy hunks/patches shape, so the lint must accept either.
+_PATCH_LOG_CANONICAL_KEYS = ("total_findings", "applied", "skipped", "conflicts",
+                             "orchestrator_escalated")
 
 
 def _lint_wrapper_report(research_dir: Path) -> list[dict[str, Any]]:
@@ -618,9 +629,17 @@ def _lint_patch_surgery(research_dir: Path) -> list[dict[str, Any]]:
     except json.JSONDecodeError as exc:
         return [{"severity": "error", "rule": "patch-surgery",
                  "message": f"research/patch-log.json is not valid JSON: {exc}"}]
-    if not isinstance(data, dict) or not (data.get("hunks") or data.get("patches")):
+    # Accept the canonical step-14 schema (total_findings + the four arrays) OR the
+    # legacy hunks/patches shape. Warn only when the log matches NEITHER (issue #20:
+    # the rule used to reject the canonical shape the step-14 skill mandates).
+    is_dict = isinstance(data, dict)
+    has_canonical = is_dict and any(k in data for k in _PATCH_LOG_CANONICAL_KEYS)
+    has_legacy = is_dict and bool(data.get("hunks") or data.get("patches"))
+    if not (has_canonical or has_legacy):
         issues.append({"severity": "warning", "rule": "patch-surgery",
-                       "message": "patch-log.json lacks 'hunks' or 'patches' key"})
+                       "message": "patch-log.json lacks the canonical step-14 keys "
+                                  "(total_findings/applied/skipped/conflicts/"
+                                  "orchestrator_escalated) or a legacy hunks/patches key"})
     return issues
 
 
@@ -677,6 +696,72 @@ def lint_cmd(
         raise typer.Exit(code=1)
 
     _emit_success(data, json_mode=json_output, vault=str(vault.root))
+
+
+# ── sync ────────────────────────────────────────────────────────────────────
+
+def sync_cmd(
+    force: bool = typer.Option(False, "--force", help="Re-index every note, ignoring mtimes"),
+    json_output: bool = typer.Option(False, "--json", "-j", help="Emit JSON"),
+) -> None:
+    """Index hand-written research/notes/*.md into the vault's SQLite DB.
+
+    The files->DB bridge (issue #11): the fetcher subagents and any direct `.md`
+    edits write note files; `sync` reconciles disk -> DB so FTS search, wiki-link
+    resolution, and tag queries see them. Idempotent; `--force` re-indexes
+    everything. Emits {added, updated, deleted, unchanged, errors}.
+    """
+    from bad_research.core.sync import compute_sync_plan, execute_sync
+    from bad_research.core.vault import VaultError
+
+    try:
+        vault = _discover_vault()
+    except VaultError as exc:
+        _emit_error(str(exc), json_mode=json_output, code="NO_VAULT")
+        raise typer.Exit(code=1) from exc
+
+    plan = compute_sync_plan(vault, force=force)
+    result = execute_sync(vault, plan)
+    data = {
+        "added": result.added,
+        "updated": result.updated,
+        "deleted": result.deleted,
+        "unchanged": result.unchanged,
+        "errors": result.errors,
+    }
+    _emit_success(data, json_mode=json_output, vault=str(vault.root))
+
+
+# ── tags ────────────────────────────────────────────────────────────────────
+
+def tags_cmd(
+    json_output: bool = typer.Option(False, "--json", "-j", help="Emit JSON"),
+) -> None:
+    """List the existing tag vocabulary across all notes (tag + usage count).
+
+    The curation pass reuses this vocabulary rather than inventing new tags
+    (issue #16). Reads frontmatter off disk, so it needs no DB sync. Emits
+    {tags: [{tag, count}], count}, ordered by descending usage.
+    """
+    from collections import Counter
+
+    from bad_research.core.vault import VaultError
+
+    try:
+        vault = _discover_vault()
+    except VaultError as exc:
+        _emit_error(str(exc), json_mode=json_output, code="NO_VAULT")
+        raise typer.Exit(code=1) from exc
+
+    counter: Counter[str] = Counter()
+    if vault.notes_dir.is_dir():
+        for md_path in vault.notes_dir.glob("*.md"):
+            fm = _parse_note_frontmatter(md_path)
+            for t in (fm.get("tags") or []):
+                counter[t] += 1
+    tags = [{"tag": t, "count": c} for t, c in counter.most_common()]
+    data = {"tags": tags, "count": len(tags)}
+    _emit_success(data, json_mode=json_output, count=len(tags), vault=str(vault.root))
 
 
 # ── note (subgroup with 'show' subcommand) ────────────────────────────────────
@@ -760,3 +845,177 @@ def note_show_cmd(
         raise typer.Exit(code=1)
 
     _emit_success(data, json_mode=json_output, count=len(notes), vault=str(vault.root))
+
+
+@note_app.command("create")
+def note_create_cmd(
+    title: str = typer.Option(..., "--title", help="Note title (also seeds the id)"),
+    body: str = typer.Option("", "--body", help="Note body markdown"),
+    body_file: str = typer.Option(None, "--body-file", help="Read body from a file instead of --body"),
+    tag: list[str] = typer.Option(None, "--tag", help="Tag (repeatable)"),
+    note_type: str = typer.Option("note", "--type", help="Note type"),
+    status: str = typer.Option("draft", "--status", help="Lifecycle status"),
+    summary: str = typer.Option(None, "--summary", help="One-line note summary"),
+    source: str = typer.Option(None, "--source", help="Source URL/identifier"),
+    json_output: bool = typer.Option(False, "--json", "-j", help="Emit JSON"),
+) -> None:
+    """Create a vault note from explicit title/body (programmatic grounding).
+
+    The non-URL sibling of `bad fetch` (issue #11): write a note whose content the
+    agent already holds (a synthesized note, a transcribed figure, a manual source)
+    with no network fetch. Emits {note_id, path, title, tags, status}.
+    """
+    from bad_research.core.note import write_note
+    from bad_research.core.vault import VaultError
+
+    try:
+        vault = _discover_vault()
+    except VaultError as exc:
+        _emit_error(str(exc), json_mode=json_output, code="NO_VAULT")
+        raise typer.Exit(code=1) from exc
+
+    text = body
+    if body_file:
+        try:
+            text = Path(body_file).read_text(encoding="utf-8")
+        except OSError as exc:
+            _emit_error(f"cannot read --body-file: {exc}", json_mode=json_output,
+                        code="BAD_BODY_FILE")
+            raise typer.Exit(code=1) from exc
+
+    note_path = write_note(
+        vault.notes_dir, title=title, body=text,
+        tags=list(tag) if tag else [], status=status, note_type=note_type,
+        summary=summary, source=source,
+    )
+    data = {
+        "note_id": note_path.stem,
+        "path": str(note_path.relative_to(vault.root)),
+        "title": title,
+        "tags": list(tag) if tag else [],
+        "status": status,
+    }
+    _emit_success(data, json_mode=json_output, vault=str(vault.root))
+
+
+@note_app.command("list")
+def note_list_cmd(
+    status: str = typer.Option(None, "--status", help="Filter by status (draft|review|evergreen|…)"),
+    tag: str = typer.Option(None, "--tag", help="Filter by tag"),
+    note_type: str = typer.Option(None, "--type", help="Filter by type"),
+    json_output: bool = typer.Option(False, "--json", "-j", help="Emit JSON"),
+) -> None:
+    """List vault notes with frontmatter summaries, optionally filtered.
+
+    The curation-pass inventory (issue #16): `note list --status draft` finds
+    unprocessed notes. Reads frontmatter off disk (no DB sync needed). Emits
+    {notes: [{id, title, status, tags, type, summary, path}], count}.
+    """
+    from bad_research.core.vault import VaultError
+
+    try:
+        vault = _discover_vault()
+    except VaultError as exc:
+        _emit_error(str(exc), json_mode=json_output, code="NO_VAULT")
+        raise typer.Exit(code=1) from exc
+
+    out: list[dict[str, Any]] = []
+    if vault.notes_dir.is_dir():
+        for md_path in sorted(vault.notes_dir.glob("*.md")):
+            fm = _parse_note_frontmatter(md_path)
+            n_status = fm.get("status") or "draft"
+            n_tags = fm.get("tags") or []
+            n_type = fm.get("type") or "note"
+            if status and n_status != status:
+                continue
+            if tag and tag not in n_tags:
+                continue
+            if note_type and n_type != note_type:
+                continue
+            out.append({
+                "id": fm.get("id") or md_path.stem,
+                "title": fm.get("title") or md_path.stem,
+                "status": n_status,
+                "tags": n_tags,
+                "type": n_type,
+                "summary": fm.get("summary") or "",
+                "path": str(md_path.relative_to(vault.root)),
+            })
+    data = {"notes": out, "count": len(out)}
+    _emit_success(data, json_mode=json_output, count=len(out), vault=str(vault.root))
+
+
+@note_app.command("update")
+def note_update_cmd(
+    note_id: str = typer.Argument(..., help="Note id (stem of the .md file)"),
+    summary: str = typer.Option(None, "--summary", help="Set the note summary"),
+    add_tag: list[str] = typer.Option(None, "--add-tag", help="Add a tag (repeatable)"),
+    remove_tag: list[str] = typer.Option(None, "--remove-tag", help="Remove a tag (repeatable)"),
+    status: str = typer.Option(None, "--status", help="Set the lifecycle status"),
+    title: str = typer.Option(None, "--title", help="Set the title"),
+    json_output: bool = typer.Option(False, "--json", "-j", help="Emit JSON"),
+) -> None:
+    """Update a note's frontmatter (summary / tags / status / title) in place.
+
+    The curation mutation (issue #11/#16): `note update <id> --summary … --add-tag …`.
+    Only the named frontmatter fields change; the body and any other frontmatter keys
+    are preserved verbatim (the update operates on the raw YAML dict, NOT NoteMeta,
+    so non-schema keys are not silently dropped). Exits non-zero if the id is missing.
+    """
+    import yaml
+
+    from bad_research.core.frontmatter import FRONTMATTER_RE
+    from bad_research.core.vault import VaultError
+
+    try:
+        vault = _discover_vault()
+    except VaultError as exc:
+        _emit_error(str(exc), json_mode=json_output, code="NO_VAULT")
+        raise typer.Exit(code=1) from exc
+
+    note_path: Path | None = None
+    for d in (vault.notes_dir, vault.temp_dir):
+        cand = d / f"{note_id}.md"
+        if cand.exists():
+            note_path = cand
+            break
+    if note_path is None:
+        _emit_error(f"Note '{note_id}' not found", json_mode=json_output, code="NOTE_NOT_FOUND")
+        raise typer.Exit(code=1)
+
+    raw = note_path.read_text(encoding="utf-8")
+    match = FRONTMATTER_RE.match(raw)
+    if match:
+        fm = yaml.safe_load(match.group(1)) or {}
+        body = raw[match.end():]
+    else:
+        fm, body = {}, raw
+    if not isinstance(fm, dict):
+        _emit_error(f"Note '{note_id}' has malformed frontmatter", json_mode=json_output,
+                    code="BAD_FRONTMATTER")
+        raise typer.Exit(code=1)
+
+    if summary is not None:
+        fm["summary"] = summary
+    if title is not None:
+        fm["title"] = title
+    if status is not None:
+        fm["status"] = status
+    # Immutable tag construction: drop removals, then append new tags not present.
+    tags = [t for t in (fm.get("tags") or []) if t not in (remove_tag or [])]
+    tags = tags + [t for t in (add_tag or []) if t not in tags]
+    fm["tags"] = tags
+
+    # FRONTMATTER_RE's trailing `\s*` consumes the blank line after the closing
+    # fence, so `body` has no leading newline; re-add the one-blank-line separator
+    # render_note uses, keeping the on-disk shape consistent with fetch/create.
+    new_yaml = yaml.dump(fm, default_flow_style=False, sort_keys=False, allow_unicode=True)
+    note_path.write_text(f"---\n{new_yaml}---\n\n{body}", encoding="utf-8")
+    data = {
+        "note_id": note_id,
+        "summary": fm.get("summary"),
+        "tags": fm["tags"],
+        "status": fm.get("status"),
+        "path": str(note_path.relative_to(vault.root)),
+    }
+    _emit_success(data, json_mode=json_output, vault=str(vault.root))

@@ -14,6 +14,21 @@ from .render import extract_citations
 _HEDGE_OPENERS = ("in general,", "broadly,", "generally,", "overall,")
 # Meta / framing sentence stems that carry no [N].
 _META_STEMS = ("this report", "this section", "this analysis", "we cover", "the following")
+# Verdict / summary / synthesis labels (issue #18): a "Bottom line:" / "Key
+# takeaway:" / "In short:" line states the report's conclusion — a synthesis of
+# the cited body, not a fresh factual claim. Doctrine (triple-draft.md:140) lists
+# these synthesis/framing lines as "non-factual by the gate's own classifier", so
+# they carry no [N] by design. Matched ONLY when the label is followed by a
+# separator (`:`, dash) so an ordinary sentence that merely contains the words
+# ("The bottom line of the chart sits at 64%.") still flags.
+_VERDICT_LABEL = re.compile(
+    r"^(?:bottom line|key takeaways?|takeaways?|in short|in summary|in sum|"
+    r"net[- ]net|tl;dr)\s*[:\u2014\u2013-]",  # separator: colon, em/en-dash, hyphen
+    re.IGNORECASE,
+)
+# Leading markdown chrome stripped before opener-matching so a bolded / block-quoted
+# opener ("**Bottom line:** …", "> This section …") is recognized like a plain one.
+_LEADING_CHROME = "*_>#- \t"
 _NAMED_ENTITY = re.compile(r"\b[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*\b")
 _NUMBER = re.compile(r"\d")
 _COMPARATIVE = re.compile(
@@ -124,9 +139,16 @@ def is_factual_claim(sentence: str) -> bool:
     low = s.lower()
     if s.endswith("?"):
         return False
+    # Hedge/meta openers match the RAW head only (pre-patch behavior): these are
+    # generic stems, so chrome-stripping them would let a block-quoted/bolded
+    # claim ("> This section recorded a 31% rise.") escape the ship-block gate.
     if any(low.startswith(o) for o in _HEDGE_OPENERS):
         return False
     if any(low.startswith(m) for m in _META_STEMS):
+        return False
+    # Verdict labels are SPECIFIC enough to chrome-strip safely, so a bolded
+    # "**Bottom line:** …" is recognized like a plain "Bottom line: …" (issue #18).
+    if _VERDICT_LABEL.match(low.lstrip(_LEADING_CHROME)):
         return False
     # Strip citation tokens before scanning for entities (so [[note-id]] isn't an entity).
     bare = re.sub(r"\[\[[^\]]+\]\]|\[\d+\]", "", s)
