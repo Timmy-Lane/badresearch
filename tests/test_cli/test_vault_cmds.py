@@ -285,6 +285,47 @@ def test_lint_locus_coverage_flags_missing_locus(tmp_path, monkeypatch):
     assert any("locus-uncovered" in i["message"] for i in out["data"]["issues"])
 
 
+def test_lint_wrapper_report_accepts_wikilink_citations(tmp_path, monkeypatch):
+    # #20(1): the DEFAULT citation_style is "wikilink" ([[note-id]], no Sources
+    # section). A report carrying only wikilinks must NOT warn "has no citation
+    # markers" — the rule has to recognize [[...]] alongside [N]/[^..]/[Source].
+    notes = _init_vault(tmp_path)
+    (notes / "final_report_topic-abc123.md").write_text(
+        "# Report\n\nVietnam led the region at 64% [[src-vn]].\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+    res = runner.invoke(app, ["lint", "--rule", "wrapper-report", "--json"])
+    assert res.exit_code == 0, res.stdout
+    out = json.loads(res.stdout)
+    assert not any(
+        i["rule"] == "wrapper-report" and "no citation markers" in i["message"]
+        for i in out["data"]["issues"]
+    ), out["data"]["issues"]
+
+
+def test_lint_patch_surgery_accepts_canonical_step14_schema(tmp_path, monkeypatch):
+    # #20(2): the step-14 skill mandates the schema
+    # {total_findings, applied, skipped, conflicts, orchestrator_escalated} and
+    # forbids alternate shapes. A spec-conformant patch-log must NOT warn
+    # "lacks 'hunks' or 'patches' key".
+    _init_vault(tmp_path)
+    (tmp_path / "research" / "patch-log.json").write_text(
+        json.dumps({
+            "total_findings": 3, "applied": [{"id": "f1"}],
+            "skipped": [], "conflicts": [], "orchestrator_escalated": [],
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    res = runner.invoke(app, ["lint", "--rule", "patch-surgery", "--json"])
+    assert res.exit_code == 0, res.stdout
+    out = json.loads(res.stdout)
+    assert not any(
+        i["rule"] == "patch-surgery" and "lacks" in i["message"]
+        for i in out["data"]["issues"]
+    ), out["data"]["issues"]
+
+
 def test_lint_patch_surgery_invalid_json_errors(tmp_path, monkeypatch):
     _init_vault(tmp_path)
     (tmp_path / "research" / "patch-log.json").write_text("{not json", encoding="utf-8")

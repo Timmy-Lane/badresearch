@@ -14,6 +14,21 @@ from .render import extract_citations
 _HEDGE_OPENERS = ("in general,", "broadly,", "generally,", "overall,")
 # Meta / framing sentence stems that carry no [N].
 _META_STEMS = ("this report", "this section", "this analysis", "we cover", "the following")
+# Verdict / summary / synthesis labels (issue #18): a "Bottom line:" / "Key
+# takeaway:" / "In short:" line states the report's conclusion — a synthesis of
+# the cited body, not a fresh factual claim. Doctrine (triple-draft.md:140) lists
+# these synthesis/framing lines as "non-factual by the gate's own classifier", so
+# they carry no [N] by design. Matched ONLY when the label is followed by a
+# separator (`:`, dash) so an ordinary sentence that merely contains the words
+# ("The bottom line of the chart sits at 64%.") still flags.
+_VERDICT_LABEL = re.compile(
+    r"^(?:bottom line|key takeaways?|takeaways?|in short|in summary|in sum|"
+    r"net[- ]net|tl;dr)\s*[:\u2014\u2013-]",  # separator: colon, em/en-dash, hyphen
+    re.IGNORECASE,
+)
+# Leading markdown chrome stripped before opener-matching so a bolded / block-quoted
+# opener ("**Bottom line:** …", "> This section …") is recognized like a plain one.
+_LEADING_CHROME = "*_>#- \t"
 _NAMED_ENTITY = re.compile(r"\b[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*\b")
 _NUMBER = re.compile(r"\d")
 _COMPARATIVE = re.compile(
@@ -124,9 +139,14 @@ def is_factual_claim(sentence: str) -> bool:
     low = s.lower()
     if s.endswith("?"):
         return False
-    if any(low.startswith(o) for o in _HEDGE_OPENERS):
+    # Match openers against the chrome-stripped head so a bolded/quoted opener
+    # ("**Bottom line:** …") is recognized the same as a plain one (issue #18).
+    low_open = low.lstrip(_LEADING_CHROME)
+    if any(low_open.startswith(o) for o in _HEDGE_OPENERS):
         return False
-    if any(low.startswith(m) for m in _META_STEMS):
+    if any(low_open.startswith(m) for m in _META_STEMS):
+        return False
+    if _VERDICT_LABEL.match(low_open):
         return False
     # Strip citation tokens before scanning for entities (so [[note-id]] isn't an entity).
     bare = re.sub(r"\[\[[^\]]+\]\]|\[\d+\]", "", s)

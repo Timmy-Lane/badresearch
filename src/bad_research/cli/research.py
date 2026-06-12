@@ -437,6 +437,13 @@ def verify_citations_cmd(
 
 
 # ── uncited-gate (Task 9/12) — deterministic ship-block, $0 ──────────────────
+def _anchor_store_is_empty(store: AnchorStore) -> bool:
+    """True when the store holds no claim anchors — the signal that the vault DB
+    was never populated (a file-based corpus), so the gate should fall back to
+    resolving cites against notes on disk (issue #18)."""
+    return next(iter(store.all()), None) is None
+
+
 def _standalone_store_from_bodies(note_bodies: dict[str, str]) -> AnchorStore:
     """An in-memory AnchorStore seeded from `{note_id: body}` — the standalone
     path (no pre-populated vault, mirrors recitation-gate's --note-bodies). Each
@@ -504,11 +511,28 @@ def _uncited_gate(report_path: str, vault_tag: str, note_bodies_path: str | None
             conn = sqlite3.connect(str(db_path))
         except VaultError:
             conn = sqlite3.connect(":memory:")
+            vault = None
         conn.row_factory = sqlite3.Row
         store = AnchorStore(conn)
         # Auto-init: a vault DB that predates the grounding tables (or a fresh
         # in-memory DB) has no claim_anchors table. init_schema is idempotent.
         store.init_schema()
+
+        # Disk fallback (issue #18): a file-based corpus — notes written directly
+        # to research/notes/*.md by the fetcher subagents with no funnel DB
+        # ingestion — leaves claim_anchors empty, so every `[[note-id]]` would
+        # dangle and the report becomes unshippable regardless of real grounding.
+        # When the anchor table is empty but notes exist on disk, resolve cites
+        # against those note files instead (mirrors _verify_report's note-dir glob).
+        if vault is not None and _anchor_store_is_empty(store):
+            notes_dir = Path(vault.root) / "research" / "notes"
+            if notes_dir.is_dir():
+                disk_bodies = {
+                    f.stem: f.read_text(encoding="utf-8")
+                    for f in sorted(notes_dir.glob("*.md"))
+                }
+                if disk_bodies:
+                    store = _standalone_store_from_bodies(disk_bodies)
 
     findings = no_uncited_claim_gate(report_md, store)
     return [

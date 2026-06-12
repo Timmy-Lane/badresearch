@@ -516,7 +516,8 @@ def fetch_cmd(
 
 _LINT_RULES: dict[str, str] = {
     "wrapper-report": (
-        "Final report exists and has at least one citation marker ([^…] or [Source …])"
+        "Final report exists and has at least one citation marker "
+        "([[note-id]] wikilink, [N], [^…], or [Source …])"
     ),
     "locus-coverage": (
         "research/loci.json exists and every locus id appears in the final report"
@@ -525,14 +526,24 @@ _LINT_RULES: dict[str, str] = {
         "research/scaffold.md exists and contains a non-empty 'User Prompt' section"
     ),
     "patch-surgery": (
-        "research/patch-log.json is valid JSON with a 'hunks' or 'patches' key "
-        "(or absent on light tier)"
+        "research/patch-log.json is valid JSON with the canonical step-14 schema "
+        "(total_findings + applied/skipped/conflicts/orchestrator_escalated), or the "
+        "legacy hunks/patches shape (or absent on light tier)"
     ),
 }
 
 _ALL_RULES = list(_LINT_RULES)
 
-_CITATION_RE = re.compile(r"\[\^[^\]]+\]|\[Source[^\]]*\]|\[\d+\]", re.IGNORECASE)
+# Recognize every documented citation style. `[[note-id]]` is the DEFAULT
+# (citation_style: "wikilink", decompose.md:162) and MUST match here; [N] inline,
+# [^footnote], and [Source …] are the alternates (issue #20).
+_CITATION_RE = re.compile(
+    r"\[\[[^\]]+\]\]|\[\^[^\]]+\]|\[Source[^\]]*\]|\[\d+\]", re.IGNORECASE
+)
+# Canonical step-14 patch-log keys (patcher.md:53). A spec-conformant log carries
+# these instead of the legacy hunks/patches shape, so the lint must accept either.
+_PATCH_LOG_CANONICAL_KEYS = ("total_findings", "applied", "skipped", "conflicts",
+                             "orchestrator_escalated")
 
 
 def _lint_wrapper_report(research_dir: Path) -> list[dict[str, Any]]:
@@ -618,9 +629,17 @@ def _lint_patch_surgery(research_dir: Path) -> list[dict[str, Any]]:
     except json.JSONDecodeError as exc:
         return [{"severity": "error", "rule": "patch-surgery",
                  "message": f"research/patch-log.json is not valid JSON: {exc}"}]
-    if not isinstance(data, dict) or not (data.get("hunks") or data.get("patches")):
+    # Accept the canonical step-14 schema (total_findings + the four arrays) OR the
+    # legacy hunks/patches shape. Warn only when the log matches NEITHER (issue #20:
+    # the rule used to reject the canonical shape the step-14 skill mandates).
+    is_dict = isinstance(data, dict)
+    has_canonical = is_dict and any(k in data for k in _PATCH_LOG_CANONICAL_KEYS)
+    has_legacy = is_dict and bool(data.get("hunks") or data.get("patches"))
+    if not (has_canonical or has_legacy):
         issues.append({"severity": "warning", "rule": "patch-surgery",
-                       "message": "patch-log.json lacks 'hunks' or 'patches' key"})
+                       "message": "patch-log.json lacks the canonical step-14 keys "
+                                  "(total_findings/applied/skipped/conflicts/"
+                                  "orchestrator_escalated) or a legacy hunks/patches key"})
     return issues
 
 

@@ -110,3 +110,39 @@ def test_genuine_prose_lift_still_flags_when_url_exemption_added():
     findings = recitation_findings(report, {"note-1": src})
     assert len(findings) == 1
     assert findings[0].failure_mode == "recitation"
+
+
+# ── #19: density-branch min-sentence floor + curly-quote exemption ────────────
+
+def test_one_token_sentence_does_not_flag_density():
+    # #19(1): a 1-token "sentence" whose single word appears in a source body used
+    # to flag as `major` with "longest run 1 words" — the >50% density branch is
+    # meaningless for 1–3-word sentences. Floored now: it must NOT flag.
+    src = "In 2019 Vietnam led the region's exports by a wide margin across all sectors."
+    report = "Vietnam.\n"  # 1 token; "vietnam" is verbatim in src -> run 1, density 1.0
+    assert recitation_findings(report, {"note-1": src}) == []
+
+
+def test_list_number_fragment_does_not_flag_density():
+    # #19(1): bare ordinal fragments like `**1.` tokenize to a single digit token
+    # and used to trip the density branch ("longest run 1 words").
+    src = "Table 1 ranks 5 leading exporters; row 1 is Vietnam and row 2 is Thailand."
+    report = "**1.\n**2.\n**3.\n"
+    assert recitation_findings(report, {"note-1": src}) == []
+
+
+def test_six_word_density_still_flags_after_floor():
+    # Guard: the floor must NOT regress the pinned legitimate 6-word density case
+    # (mirrors test_high_overlap_short_sentence_flags) — 6 tokens >= the floor.
+    src = "Quantum supremacy was claimed by Google in two thousand nineteen exactly."
+    report = "Quantum supremacy was claimed by Google [1]."
+    assert len(recitation_findings(report, {"note-1": src})) == 1
+
+
+def test_curly_quoted_span_with_cite_is_exempt():
+    # #19(2): an attributed direct quote inside CURLY “…” quotation adjacent to its
+    # citation is exempt, exactly like the straight-quote case — the exemption must
+    # not depend on straight-vs-curly quote glyphs.
+    src = "The author wrote that the result was completely unexpected and frankly impossible."
+    report = "“the result was completely unexpected and frankly impossible” the author wrote [1]."
+    assert recitation_findings(report, {"note-1": src}) == []

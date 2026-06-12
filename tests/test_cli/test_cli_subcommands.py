@@ -227,6 +227,50 @@ def test_uncited_gate_missing_db_is_clean_zero_anchors_not_traceback(tmp_path, m
     assert json.loads(res.stdout)["uncited"] == []
 
 
+def _make_vault_with_note(tmp_path, note_id: str, body: str) -> None:
+    """A minimal on-disk vault: `.hyperresearch` marker + a research/notes/<id>.md
+    file (no DB ingestion, so claim_anchors stays empty) — the file-based corpus
+    shape of issue #18."""
+    (tmp_path / ".hyperresearch").mkdir(exist_ok=True)
+    notes_dir = tmp_path / "research" / "notes"
+    notes_dir.mkdir(parents=True, exist_ok=True)
+    (notes_dir / f"{note_id}.md").write_text(
+        f"---\nid: {note_id}\ntitle: {note_id}\n---\n{body}\n", encoding="utf-8"
+    )
+
+
+def test_uncited_gate_vault_disk_fallback_resolves_wikilinks(tmp_path, monkeypatch):
+    # #18: a file-based corpus (notes on disk, claim_anchors empty) must resolve
+    # [[note-id]] cites against research/notes/<id>.md instead of dangling them all.
+    monkeypatch.chdir(tmp_path)
+    _make_vault_with_note(tmp_path, "src-vn", "Vietnam reached 64% penetration in 2024.")
+    report = tmp_path / "r.md"
+    report.write_text(
+        "Vietnam led the region at 64% penetration [[src-vn]].\n", encoding="utf-8"
+    )
+    res = runner.invoke(app, ["uncited-gate", "--report", str(report),
+                              "--vault-tag", "x", "--json"])
+    assert res.exception is None, res.exception
+    assert res.exit_code == 0, res.stdout + (res.stderr or "")
+    assert json.loads(res.stdout)["uncited"] == []
+
+
+def test_uncited_gate_vault_disk_fallback_still_dangles_unknown_id(tmp_path, monkeypatch):
+    # Guard: the disk fallback is not a blanket pass — a [[note-id]] with no
+    # matching file on disk still dangles (the gate stays a real ship-block).
+    monkeypatch.chdir(tmp_path)
+    _make_vault_with_note(tmp_path, "src-vn", "Vietnam reached 64% penetration in 2024.")
+    report = tmp_path / "r.md"
+    report.write_text(
+        "Indonesia led at 71% penetration [[no-such-note]].\n", encoding="utf-8"
+    )
+    res = runner.invoke(app, ["uncited-gate", "--report", str(report),
+                              "--vault-tag", "x", "--json"])
+    assert res.exit_code == 1
+    uncited = json.loads(res.stdout)["uncited"]
+    assert any(u["reason"] == "dangling-cite" for u in uncited)
+
+
 def test_verify_citations_standalone_keyless_no_vault_degrades(tmp_path, monkeypatch):
     # Standalone keyless, NO vault: _verify_report must mirror _uncited_gate —
     # catch VaultError and fall back to an empty in-memory store rather than

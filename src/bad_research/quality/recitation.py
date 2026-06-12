@@ -14,6 +14,16 @@ from bad_research.grounding.gate import Finding, split_sentences, strip_sources_
 # dossier 16 §5.1 — IDEA defaults; tune on real reports (dossier §11 honest gap).
 RECITATION_MAX_NGRAM = 12     # a verbatim run > 12 words = copying
 RECITATION_MAX_OVERLAP = 0.50  # >50% of a sentence's tokens are one contiguous source run
+# Minimum sentence length (in word tokens) for the percentage-overlap branch to
+# apply (issue #19): the >50%-of-sentence test degenerates on 1-to-3-word sentences
+# -- a single shared word ("Vietnam.", a bare ordinal "1.") is trivially >50% and
+# fired spurious "longest run 1 words" majors. Sentences below this floor are
+# judged ONLY by the absolute long-run branch (`too_long`). 4 is the smallest
+# floor that removes the 1-to-3-word degenerate while preserving the pinned
+# legitimate 6-word density case (test_high_overlap_short_sentence_flags); the
+# issue suggested >=8, but that would regress that pinned case, so we floor by
+# SENTENCE length (the issue's own diagnosis) rather than by run length.
+RECITATION_MIN_DENSE_SENT = 4
 
 _WORD = re.compile(r"[\w']+", re.UNICODE)
 _CITE_TOKEN = re.compile(r"\[\[[^\]]+\]\]|\[\d+\]")
@@ -22,7 +32,10 @@ _CITE_TOKEN = re.compile(r"\[\[[^\]]+\]\]|\[\d+\]")
 # sentence carries a [N] citation — i.e. it IS an attributed direct quote. The
 # exemption is per-RUN, not per-sentence: a sentence that copies a source verbatim
 # OUTSIDE its quotes cannot launder the copy by appending an unrelated "quote" [1].
-_QUOTED_SPAN = re.compile(r'"[^"]+"')
+# Both straight ASCII ("...") and curly/typographic (“...”) double quotes — reports
+# rendered through a markdown/typography pass emit curly quotes, and the exemption
+# must not depend on the glyph (issue #19).
+_QUOTED_SPAN = re.compile(r'"[^"]+"|“[^”]+”')
 
 # A-9 carve-out (sibling to the attributed-quote rule): reference / metadata lines
 # inherently repeat source strings (a URL, a title, a citation-list entry) and are
@@ -121,7 +134,13 @@ def recitation_findings(report_md: str, note_bodies: dict[str, str]) -> list[Fin
         for bw in body_words.values():
             run = longest_common_contiguous_run(toks, bw)
             too_long = len(run) > RECITATION_MAX_NGRAM
-            too_dense = len(run) / len(toks) > RECITATION_MAX_OVERLAP
+            # Density branch only applies once the sentence is long enough to make a
+            # >50% measurement meaningful (issue #19) — below the floor a single
+            # shared word is trivially >50%. The absolute long-run branch is unfloored.
+            too_dense = (
+                len(toks) >= RECITATION_MIN_DENSE_SENT
+                and len(run) / len(toks) > RECITATION_MAX_OVERLAP
+            )
             if (too_long or too_dense) and not _run_is_attributed_quote(run, sent):
                 findings.append(
                     Finding(
