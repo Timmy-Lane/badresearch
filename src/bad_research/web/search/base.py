@@ -14,10 +14,34 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
 from bad_research.web.base import SearchQuery, WebResult, recency_cutoff_date
+
+
+def usable_result_url(url: str) -> bool:
+    """False for SERP result rows that can never be fetched as a real source, so the
+    parser drops them BEFORE they reach the fetch ladder (issue #14):
+
+      * host-less URLs — e.g. Startpage's click-tracking redirect
+        `https:///clev?event=StartpageResultClick&...`, whose `urlsplit` netloc is
+        empty (the fetcher's SSRF guard would otherwise raise "refusing URL with no
+        host", and pre-fix that aborted the whole read wave); and
+      * Startpage `/clev` redirect wrappers (host present but the target is an opaque
+        encrypted payload, not a fetchable page).
+    """
+    if not url or not url.strip():
+        return False
+    try:
+        s = urlsplit(url.strip())
+    except ValueError:
+        return False
+    if not s.netloc:
+        return False
+    # Startpage `/clev` redirect wrapper (opaque encrypted target, not a page).
+    return not (s.path.startswith("/clev") or "StartpageResultClick" in (s.query or ""))
 
 
 def with_after_operator(query: str, recency_days: int | None) -> str:
@@ -82,7 +106,7 @@ class WebSearchToolProvider:
         rows: list[WebResult] = []
         for i, x in enumerate(raw or [], start=1):
             url = x.get("url") or x.get("href") or ""
-            if not url:
+            if not usable_result_url(url):
                 continue
             rows.append(
                 WebResult(
@@ -184,7 +208,7 @@ class DdgsProvider:
         out: list[WebResult] = []
         for i, x in enumerate(rows or [], start=1):
             url = x.get("href") or x.get("url") or ""
-            if not url:
+            if not usable_result_url(url):
                 continue
             out.append(
                 WebResult(url=url, title=x.get("title", ""),
@@ -244,7 +268,7 @@ class SearxngProvider:
         out: list[WebResult] = []
         for i, x in enumerate(data.get("results", []) or [], start=1):
             url = x.get("url") or ""
-            if not url:
+            if not usable_result_url(url):
                 continue
             out.append(WebResult(
                 url=url, title=x.get("title", ""), content=x.get("content", ""),

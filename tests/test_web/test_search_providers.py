@@ -6,7 +6,6 @@ import json
 from unittest.mock import MagicMock, patch
 
 import httpx
-import pytest
 import respx
 
 from bad_research.web.base import SearchQuery, WebResult
@@ -89,6 +88,34 @@ def test_ddgs_maps_results():
     fake_ddgs.return_value.text.assert_called_once()
     _, kwargs = fake_ddgs.return_value.text.call_args
     assert kwargs.get("max_results") == 10
+
+
+def test_ddgs_skips_startpage_redirect_and_hostless_urls():
+    # #14: a Startpage click-tracking redirect (`https:///clev?event=...`, empty
+    # host) and any host-less SERP row must be dropped in the parser, BEFORE they
+    # reach the fetch ladder (where the SSRF guard would refuse "no host"). The
+    # good rows survive.
+    fake_rows = [
+        {"title": "Good", "href": "https://good.example/a", "body": "ok"},
+        {"title": "Junk", "href": "https:///clev?event=StartpageResultClick&sc=abc", "body": ""},
+        {"title": "Hostless", "href": "https:///nope", "body": ""},
+        {"title": "Wrapped", "href": "https://www.startpage.com/clev?event=StartpageResultClick", "body": ""},
+    ]
+    fake_ddgs = MagicMock()
+    fake_ddgs.return_value.text.return_value = fake_rows
+    with patch("bad_research.web.search.base.DDGS", fake_ddgs):
+        rows = DdgsProvider().search_ex(SearchQuery(query="rrf", max_results=10))
+    assert [r.url for r in rows] == ["https://good.example/a"]
+
+
+def test_websearch_parse_links_skips_hostless_redirect():
+    # Same guard on the host WebSearch lane's link parser.
+    links = [
+        {"title": "Good", "url": "https://good.example/a"},
+        {"title": "Junk", "url": "https:///clev?event=StartpageResultClick&sc=abc"},
+    ]
+    rows = WebSearchToolProvider().parse_links(links)
+    assert [r.url for r in rows] == ["https://good.example/a"]
 
 
 def test_ddgs_swallows_provider_errors_to_empty():
