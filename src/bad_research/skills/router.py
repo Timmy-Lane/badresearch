@@ -90,6 +90,23 @@ def _explicit_breadth_modality(decomp: dict[str, Any]) -> bool:
     return isinstance(explicit, str) and explicit in R.BREADTH_MODALITIES
 
 
+def _explicit_light_tier(decomp: dict[str, Any]) -> bool:
+    """Whether the decompose step EXPLICITLY declared `pipeline_tier == "light"`.
+
+    Symmetric to `_pipeline_tier_floor_full`: where an explicit `"full"` is a FLOOR
+    (never demote below it), an explicit `"light"` is the model's judgment that the
+    query wants the cheap route — so a mechanical atomic-item COUNT alone must not
+    override it into `full`. This is the signal the router was ignoring: a structured,
+    `pipeline_tier="light"` survey with >6 atomic items (sub_questions + entities) was
+    force-`full`-ed purely on count, making the cheaper tier unreachable for exactly
+    the multi-entity surveys it was designed for (issue #15). The HARD full triggers
+    (time_periods, argumentative, contradiction terms, multi-domain) are untouched and
+    still escalate regardless — only the breadth-only count trigger is relaxed, and
+    only when contestedness is below the floor. A missing pipeline_tier returns False
+    (preserves the depth-favouring default for every fixture that omits the field)."""
+    return decomp.get("pipeline_tier") == "light"
+
+
 def _pipeline_tier_floor_full(decomp: dict[str, Any]) -> bool:
     """Whether the decompose step explicitly declared `pipeline_tier == "full"`.
 
@@ -160,7 +177,14 @@ def _breadth_forces_full(decomp: dict[str, Any]) -> bool:
     over-demotion bug.)"""
     n = _atomic_count(decomp)
     contested = contestedness_score(decomp) >= R.CONTESTEDNESS_FULL_FLOOR
-    if _explicit_breadth_modality(decomp) and not contested:
+    # The raised survey ceiling applies when the decompose step EXPLICITLY signalled a
+    # broad-but-shallow query — via a breadth `modality` OR an explicit
+    # `pipeline_tier == "light"` — and contestedness is below the floor. Both are
+    # explicit model judgments; a mere lexical "best X" inference earns neither (it
+    # falls through to the depth-favouring deep ceiling). issue #15 adds the
+    # pipeline_tier=="light" arm so a model-declared light survey is not force-`full`-ed
+    # on atomic count alone.
+    if (_explicit_breadth_modality(decomp) or _explicit_light_tier(decomp)) and not contested:
         # EXPLICITLY-declared broad-but-shallow curation: breadth alone does not
         # buy adversarial depth, so the raised survey ceiling applies.
         return n > R.ROUTER_SURVEY_MAX_ATOMIC
@@ -208,11 +232,15 @@ def route_reason(decomp: dict[str, Any]) -> str:
     if route == "full":
         triggers = _full_triggers(decomp)
         return "full: " + ("; ".join(triggers) if triggers else "complex query")
-    # FAST: call out when an EXPLICIT broad-curation modality spared a high-breadth
-    # query from full (the B-5 gate) so the rationale line is auditable.
-    if _explicit_breadth_modality(decomp) and n > R.ROUTER_LIGHT_MAX_ATOMIC:
-        return (f"fast: {n} atomic item(s) but explicit {modality} modality / low "
-                f"contestedness — breadth alone does not force full (B-5)")
+    # FAST: call out when an EXPLICIT broad-curation signal spared a high-breadth
+    # query from full (the B-5 / issue-#15 gate) so the rationale line is auditable.
+    if n > R.ROUTER_LIGHT_MAX_ATOMIC:
+        if _explicit_breadth_modality(decomp):
+            return (f"fast: {n} atomic item(s) but explicit {modality} modality / low "
+                    f"contestedness — breadth alone does not force full (B-5)")
+        if _explicit_light_tier(decomp):
+            return (f"fast: {n} atomic item(s) but explicit pipeline_tier=light / low "
+                    f"contestedness — breadth alone does not force full (issue #15)")
     return f"fast: {n} atomic item(s), no full-tier trigger"
 
 

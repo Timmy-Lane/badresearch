@@ -14,10 +14,27 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
 from bad_research.web.base import SearchQuery, WebResult, recency_cutoff_date
+
+
+def _is_fetchable_url(url: str) -> bool:
+    """True only for an absolute http(s) URL that carries a host. SERP scrapers
+    (notably Startpage via ddgs) sometimes emit click-tracking redirect URLs with
+    an EMPTY host — `https:///clev?event=StartpageResultClick&...`. Such a URL is
+    non-empty (so a bare `if not url` skip misses it) yet has no host, so it trips
+    the SSRF guard ("refusing URL with no host") downstream and wastes a read slot.
+    Drop it at parse time so it never reaches the fetch ladder (issue #14)."""
+    if not url:
+        return False
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return False
+    return parts.scheme in ("http", "https") and bool(parts.hostname)
 
 
 def with_after_operator(query: str, recency_days: int | None) -> str:
@@ -184,8 +201,8 @@ class DdgsProvider:
         out: list[WebResult] = []
         for i, x in enumerate(rows or [], start=1):
             url = x.get("href") or x.get("url") or ""
-            if not url:
-                continue
+            if not _is_fetchable_url(url):
+                continue  # empty / host-less (e.g. Startpage redirect-tracking) URL — issue #14
             out.append(
                 WebResult(url=url, title=x.get("title", ""),
                           content=x.get("body", ""),
@@ -244,8 +261,8 @@ class SearxngProvider:
         out: list[WebResult] = []
         for i, x in enumerate(data.get("results", []) or [], start=1):
             url = x.get("url") or ""
-            if not url:
-                continue
+            if not _is_fetchable_url(url):
+                continue  # empty / host-less URL — issue #14
             out.append(WebResult(
                 url=url, title=x.get("title", ""), content=x.get("content", ""),
                 metadata={"rank": i, "source": "searxng",

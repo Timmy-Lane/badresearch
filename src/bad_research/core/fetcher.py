@@ -238,7 +238,7 @@ def fetch_and_save(
         raise RuntimeError(
             f"Redirected to login page ({result.title}). "
             "Your browser profile session may have expired. "
-            "Run 'bad setup' and create a new login profile."
+            "Create a crawl4ai login profile (`crwl profiles`) and set it in .hyperresearch/config.toml."
         )
 
     # Detect junk pages — captcha, error pages, binary garbage, empty content

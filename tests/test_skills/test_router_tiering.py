@@ -168,6 +168,42 @@ def test_pipeline_tier_light_imposes_no_fast_floor():
     assert classify_route(d) == "fast"
 
 
+def test_explicit_light_survey_not_force_fulled_on_breadth():
+    # issue #15: a structured, EXPLICIT pipeline_tier="light" survey with >6 atomic
+    # items (14 sub_qs + 13 entities = 27) must NOT be force-`full`-ed on count alone.
+    # The model declared it light; only a HARD trigger (time_periods/argumentative/
+    # contradiction/multi-domain) escalates — none here. 27 < ROUTER_SURVEY_MAX_ATOMIC.
+    d = _decomp(
+        sub_questions=[f"sub-question {i}" for i in range(14)],
+        entities=[f"entity-{i}" for i in range(13)],
+        response_format="structured",
+        contradiction_terms=[],
+        domains=["tech"],
+        pipeline_tier="light",
+    )
+    assert _atomic_count_helper(d) == 27
+    assert classify_route(d) == "fast"
+
+
+def test_explicit_light_does_not_override_hard_full_triggers():
+    # the relaxation is breadth-only: an explicit light tier must NOT demote a query
+    # that carries a HARD full trigger (here: contradiction terms / source tension).
+    d = _decomp(
+        sub_questions=[f"sub-question {i}" for i in range(14)],
+        entities=[f"entity-{i}" for i in range(13)],
+        response_format="structured",
+        contradiction_terms=["disputed estimate"],
+        domains=["tech"],
+        pipeline_tier="light",
+    )
+    assert classify_route(d) == "full"
+
+
+def _atomic_count_helper(d):
+    from bad_research.skills.router import _atomic_count
+    return _atomic_count(d)
+
+
 # ── E: route_reason reflects the new logic ────────────────────────────────────
 
 def test_route_reason_mentions_pipeline_tier_floor():
