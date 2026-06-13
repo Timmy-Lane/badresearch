@@ -100,6 +100,25 @@ def test_source_label_and_bare_url_and_reflist_lines_exempt():
     assert recitation_findings(report, {"note-1": src}) == []
 
 
+def test_short_run_does_not_flag_density_branch():
+    # issue #19: a 1-2 word run that is >50% of a tiny sentence is not recitation.
+    # "**Bottom line:** cut." (run "cut", 1 word) and "First reason" (a 2-word run)
+    # were flagged as `major` with "longest run 1/2 words" — noise. The density
+    # branch now requires a substantive run, so these no longer fire.
+    src = "The committee said the program should be cut and the first reason was cost."
+    report = "**Bottom line:** cut.\n\nFirst reason was decisive [1]."
+    assert recitation_findings(report, {"note-1": src}) == []
+
+
+def test_curly_quoted_attributed_run_is_exempt():
+    # issue #19: the attributed-direct-quote carve-out must recognise curly quotes
+    # ("...") too, not only straight ("..."). A verbatim run inside a curly-quoted,
+    # cited span is an attributed quote and is exempt.
+    src = "The minister said we will proceed regardless of the consequences this year."
+    report = '“we will proceed regardless of the consequences” the minister said [1].'
+    assert recitation_findings(report, {"note-1": src}) == []
+
+
 def test_genuine_prose_lift_still_flags_when_url_exemption_added():
     # The exemption is a sibling carve-out, NOT a blanket pass: a prose sentence
     # (not a URL/reference line) that lifts a source verbatim must STILL flag.

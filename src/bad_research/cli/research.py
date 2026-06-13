@@ -359,12 +359,10 @@ def _verify_report(
     import sqlite3
     from dataclasses import asdict, is_dataclass
 
-    from bad_research.config import BadResearchConfig
     from bad_research.core.vault import Vault, VaultError
     from bad_research.grounding.anchors import AnchorStore
     from bad_research.grounding.verifier import CitationVerifier, default_nli
 
-    cfg = BadResearchConfig.load()
     report_md = Path(report_path).read_text(encoding="utf-8")
 
     # Standalone-safe (mirrors _uncited_gate): a missing vault degrades to an
@@ -390,23 +388,16 @@ def _verify_report(
     store.init_schema()
 
     from bad_research.grounding.verifier import LineSpanJudge, nli_available
-    from bad_research.llm.base import LLMProvider, get_llm_provider
 
-    # Keyless by design (audit 2026-06-01, row 7): the host model does the semantic
-    # judging — we do NOT require an API key in this CLI. Try to wire a host provider
-    # (so the Tier-C batched judge runs when one is available); if none is wired (no
-    # key), degrade gracefully instead of crashing: run Tier-A byte-identity + the
-    # keyless Tier-B lexical/numeric-negation router (LineSpanJudge), and the verifier
-    # emits the NEUTRAL band as a `needs_host_judgment` worklist the orchestrator (host
-    # model) judges inline (the 11.5 / fast / ultrafast skills already apply dispositions
-    # by hand). When [local] is installed, the real cross-encoder lane is used regardless.
-    llm: LLMProvider | None
-    try:
-        llm = get_llm_provider("anthropic", config=cfg)
-    except (RuntimeError, ImportError):
-        llm = None
-    nli = default_nli(llm=llm) if (llm is not None or nli_available()) else LineSpanJudge(None)
-    verifier = CitationVerifier(nli=nli, llm=llm, effort=effort)
+    # Keyless BY DESIGN (project directive — the host model does inference): this CLI
+    # NEVER constructs an API-key'd provider and NEVER reads ANTHROPIC_API_KEY. Tier-A
+    # byte-identity + the keyless Tier-B lexical/numeric-negation router (LineSpanJudge)
+    # run deterministically; the verifier emits the NEUTRAL band as a
+    # `needs_host_judgment` worklist the orchestrator (host model) judges inline (the
+    # 11.5 / fast / ultrafast skills apply those dispositions by hand). When the
+    # [local] cross-encoder extra is installed, that lane is used instead — still no key.
+    nli = default_nli(llm=None) if nli_available() else LineSpanJudge(None)
+    verifier = CitationVerifier(nli=nli, llm=None, effort=effort)
     result = verifier.verify(report_md, store, note_bodies)
     findings = getattr(result, "findings", result)
     out = []
@@ -473,6 +464,38 @@ def _standalone_store_from_bodies(note_bodies: dict[str, str]) -> AnchorStore:
     return store
 
 
+def _seed_anchors_from_notes_dir(store: AnchorStore, notes_dir: Path) -> int:
+    """Register a verified `[[note-id]]` anchor for each research/notes/<id>.md file
+    that the store does not already cover. Returns the number of anchors added.
+
+    This is the file-based-corpus fallback for the uncited-gate (issue #18): a run
+    that wrote its sources straight to disk (no funnel DB ingestion) has no
+    claim_anchors rows, so a `[[note-id]]` wiki-link to a real note file would
+    otherwise read as a dangling-cite. DB anchors remain authoritative — a note id
+    already present in the store is left untouched; only genuinely-missing ones are
+    seeded (anchor_id == the note id, the whole body as quoted_support, verified=1,
+    mirroring _standalone_store_from_bodies' wiki anchor)."""
+    from bad_research.grounding.anchors import ClaimAnchor
+
+    if not notes_dir.is_dir():
+        return 0
+    added = 0
+    for f in sorted(notes_dir.glob("*.md")):
+        note_id = f.stem
+        if store.get(note_id) is not None:
+            continue  # DB anchor is authoritative — never overwrite a populated row.
+        try:
+            body = f.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        store.upsert(ClaimAnchor(
+            note_id=note_id, char_start=0, char_end=len(body),
+            claim="", quoted_support=body, verified=1, anchor_id=note_id,
+        ))
+        added += 1
+    return added
+
+
 def _uncited_gate(report_path: str, vault_tag: str, note_bodies_path: str | None) -> list[dict[str, Any]]:
     """Run the deterministic no-uncited-claim gate over the report.
 
@@ -497,11 +520,13 @@ def _uncited_gate(report_path: str, vault_tag: str, note_bodies_path: str | None
         # sentence reads as uncited, which is the honest answer with no sources).
         from bad_research.core.vault import Vault, VaultError
 
+        notes_dir: Path | None = None
         try:
             vault = Vault.discover()
             db_path = Path(vault.root) / ".bad-research" / "anchors.db"
             db_path.parent.mkdir(parents=True, exist_ok=True)
             conn = sqlite3.connect(str(db_path))
+            notes_dir = Path(vault.research_dir) / "notes"
         except VaultError:
             conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row
@@ -509,6 +534,15 @@ def _uncited_gate(report_path: str, vault_tag: str, note_bodies_path: str | None
         # Auto-init: a vault DB that predates the grounding tables (or a fresh
         # in-memory DB) has no claim_anchors table. init_schema is idempotent.
         store.init_schema()
+        # File-based fallback (issue #18): a corpus written directly to
+        # research/notes/*.md (no funnel DB ingestion) has no claim_anchors rows, so
+        # every `[[note-id]]` wiki-link would read as a dangling-cite and the gate —
+        # a ship-block — would fail any honest file-based run. Seed a verified anchor
+        # for each note file on disk that the DB does NOT already cover, so a cite
+        # whose id matches a real notes/<id>.md resolves. DB anchors stay
+        # authoritative (we only fill the gaps, never overwrite a populated row).
+        if notes_dir is not None:
+            _seed_anchors_from_notes_dir(store, notes_dir)
 
     findings = no_uncited_claim_gate(report_md, store)
     return [
@@ -549,42 +583,28 @@ def grade_report_cmd(
     """Grade a report on the 5 axes + emit patcher-shaped findings (Stage 12.5).
 
     --corpus is a JSON file: a list of {note_id, url, text} dicts (the
-    evidence-digest the report had access to). Returns {passed, scores, overall,
-    findings:[{failure_mode, severity, location, recommendation}]} for the grader
-    loop to feed the patcher. The verdict's findings join critic-findings-grader.json.
+    evidence-digest the report had access to). Returns {status:"keyless-skip",
+    passed:null, scores, overall, findings} — the orchestrator (host model) grades
+    inline via the step-12.5 grader skill, which branches on passed==null.
     """
-    from bad_research.config import BadResearchConfig
-    from bad_research.llm.base import get_llm_provider
-    from bad_research.quality.grader import Grader
-
-    cfg = BadResearchConfig.load()
-    report_md = Path(report).read_text(encoding="utf-8")
-    corpus_rows = json.loads(Path(corpus).read_text(encoding="utf-8"))
-    # Keyless degrade (audit 2026-06-01, row 7): grade-report is an LLM-judge loop with
-    # no deterministic fallback. If no host provider is wired (no key), don't crash —
-    # emit a benign keyless-skip verdict so the grader loop proceeds on its round-1
-    # critic-findings aggregation, and the orchestrator (host model) grades inline.
-    try:
-        provider = get_llm_provider("anthropic", config=cfg)
-    except (RuntimeError, ImportError):
-        typer.echo(json.dumps({
-            "status": "keyless-skip",
-            "passed": None,
-            "scores": {},
-            "overall": None,
-            "findings": [],
-            "note": (
-                "No host provider wired into the CLI; this is a keyless run. Grade "
-                "inline via the host model (step 12.5 grader skill) and/or rely on the "
-                "round-1 critic-findings aggregation."
-            ),
-        }))
-        return
-    grader = Grader(provider=provider)
-    # the query is embedded in the report's H1; the grader reads the report directly.
-    query = report_md.splitlines()[0].lstrip("# ").strip() if report_md else ""
-    verdict = grader.grade(query, report_md, corpus_rows)
-    typer.echo(json.dumps(verdict.to_dict(), default=str))
+    # Keyless BY DESIGN (project directive — the host model does inference): grade-report
+    # is an LLM-judge loop with no deterministic fallback, so it NEVER constructs an
+    # API-key'd provider and NEVER reads ANTHROPIC_API_KEY. It emits the keyless-skip
+    # verdict; the orchestrator grades inline via the step-12.5 grader skill (which
+    # branches on passed==null and must NOT fall through to an empty-findings patcher
+    # spawn), and/or the run relies on the round-1 critic-findings aggregation.
+    typer.echo(json.dumps({
+        "status": "keyless-skip",
+        "passed": None,
+        "scores": {},
+        "overall": None,
+        "findings": [],
+        "note": (
+            "Keyless run (host does inference): grade inline via the host model "
+            "(step 12.5 grader skill) and/or rely on the round-1 critic-findings "
+            "aggregation. No API-key'd grader runs in this CLI."
+        ),
+    }))
 
 
 # ── recitation-gate (Stage 16) — verbatim-copy detector, $0 deterministic ─────

@@ -14,6 +14,13 @@ from .render import extract_citations
 _HEDGE_OPENERS = ("in general,", "broadly,", "generally,", "overall,")
 # Meta / framing sentence stems that carry no [N].
 _META_STEMS = ("this report", "this section", "this analysis", "we cover", "the following")
+# A leading bold label on a verdict/summary line (`**Bottom line:**`, `**Key
+# takeaway:**`, `**Verdict:**`). Stripped before classification so the label's
+# capitalised words ("Bottom", "Line") don't read as a non-initial named entity and
+# falsely flag an otherwise-trivial line ("**Bottom line:** cut.") as a factual claim
+# (issue #18). A verdict line that DOES carry a real claim still flags on the residual
+# text ("**Bottom line:** Vietnam exported 7M tonnes" keeps its number).
+_LEADING_BOLD_LABEL = re.compile(r"^\s*\*\*[^*]+\*\*[:.]?\s*")
 _NAMED_ENTITY = re.compile(r"\b[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*\b")
 _NUMBER = re.compile(r"\d")
 _COMPARATIVE = re.compile(
@@ -120,8 +127,12 @@ def is_factual_claim(sentence: str) -> bool:
     """A non-trivial factual claim: has a number, named entity, comparative/
     superlative, or causal/temporal assertion -- and is NOT a question, a
     meta-sentence, or a hedge-frame opener (dossier §5.1)."""
-    s = sentence.strip()
+    # Strip a leading bold label (`**Bottom line:**` …) so it neither injects a
+    # phantom sentence-initial entity nor hides the real opener (issue #18).
+    s = _LEADING_BOLD_LABEL.sub("", sentence.strip(), count=1).strip()
     low = s.lower()
+    if not s:
+        return False
     if s.endswith("?"):
         return False
     if any(low.startswith(o) for o in _HEDGE_OPENERS):

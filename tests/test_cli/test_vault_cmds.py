@@ -295,6 +295,63 @@ def test_lint_patch_surgery_invalid_json_errors(tmp_path, monkeypatch):
     assert any(i["severity"] == "error" for i in out["data"]["issues"])
 
 
+def test_lint_wrapper_report_accepts_wikilink_citations(tmp_path, monkeypatch):
+    # issue #20: [[note-id]] is the DEFAULT citation_style; a report carrying only
+    # wikilinks (no [N]) must NOT warn "has no citation markers".
+    notes = _init_vault(tmp_path)
+    (notes / "final_report_topic-abc123.md").write_text(
+        "# Report\n\nVietnam led the export market in 2023 [[vietnam-rice]].\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    res = runner.invoke(app, ["lint", "--rule", "wrapper-report", "--json"])
+    assert res.exit_code == 0, res.stdout
+    out = json.loads(res.stdout)
+    assert not any(
+        "no citation markers" in i["message"] for i in out["data"]["issues"]
+    ), out["data"]["issues"]
+
+
+def test_lint_patch_surgery_accepts_canonical_schema(tmp_path, monkeypatch):
+    # issue #20: the step-14 skill mandates {total_findings, applied, skipped,
+    # conflicts, orchestrator_escalated} and forbids alternate schemas — the lint
+    # rule must accept that shape, not only legacy hunks/patches.
+    _init_vault(tmp_path)
+    (tmp_path / "research" / "patch-log.json").write_text(
+        json.dumps({"total_findings": 3, "applied": 2, "skipped": 1,
+                    "conflicts": 0, "orchestrator_escalated": 0}),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    res = runner.invoke(app, ["lint", "--rule", "patch-surgery", "--json"])
+    assert res.exit_code == 0, res.stdout
+    out = json.loads(res.stdout)
+    assert not any(
+        "lacks" in i["message"] for i in out["data"]["issues"]
+    ), out["data"]["issues"]
+
+
+def test_uncited_gate_resolves_file_based_wikilinks(tmp_path, monkeypatch):
+    # issue #18: a corpus written straight to research/notes/*.md (no DB ingestion)
+    # must not make every [[note-id]] a dangling-cite ship-block. The gate seeds
+    # verified anchors from the notes dir, so a cite to a real note file resolves.
+    notes = _init_vault(tmp_path)
+    _write_note(notes, note_id="vietnam-rice", title="Vietnam rice", tags=["t"],
+                body="Vietnam exported 7 million tonnes of rice in 2023.")
+    report = tmp_path / "report.md"
+    report.write_text(
+        "# Report\n\nVietnam exported 7 million tonnes of rice in 2023 [[vietnam-rice]].\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    res = runner.invoke(
+        app, ["uncited-gate", "--report", str(report), "--vault-tag", "t", "--json"]
+    )
+    out = json.loads(res.stdout)
+    assert not any(u["reason"] == "dangling-cite" for u in out["uncited"]), out["uncited"]
+    assert res.exit_code == 0, out
+
+
 # ── note show ─────────────────────────────────────────────────────────────────
 
 def test_note_show_single_id(tmp_path, monkeypatch):
@@ -359,4 +416,71 @@ def test_all_vault_commands_registered():
     for cmd in ("init", "vault-tag", "archive-run", "search", "lint"):
         res = runner.invoke(app, [cmd, "--help"])
         assert res.exit_code == 0, cmd
-    assert runner.invoke(app, ["note", "show", "--help"]).exit_code == 0
+    for sub in ("show", "new", "update"):
+        assert runner.invoke(app, ["note", sub, "--help"]).exit_code == 0, sub
+
+
+# ── note new / note update (issue #11/#16: programmatic grounding + curation) ───
+
+def test_note_new_creates_note_with_frontmatter(tmp_path, monkeypatch):
+    _init_vault(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    res = runner.invoke(app, [
+        "note", "new", "Vietnam Rice 2023",
+        "--tag", "rice", "--type", "interim",
+        "--body", "Vietnam exported 7 million tonnes of rice.",
+        "--summary", "rice exports", "--json",
+    ])
+    assert res.exit_code == 0, res.stdout
+    out = json.loads(res.stdout)
+    nid = out["data"]["note_id"]
+    assert nid == "vietnam-rice-2023"
+    # round-trips through note show
+    show = runner.invoke(app, ["note", "show", nid, "--json"])
+    note = json.loads(show.stdout)["data"]["notes"][0]
+    assert "Vietnam exported 7 million tonnes" in note["body"]
+    assert note["tags"] == ["rice"]
+    assert note["type"] == "interim"
+
+
+def test_note_new_body_file(tmp_path, monkeypatch):
+    _init_vault(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "body.md").write_text("Body loaded from a file.", encoding="utf-8")
+    res = runner.invoke(app, [
+        "note", "new", "From File", "--tag", "t",
+        "--body-file", str(tmp_path / "body.md"), "--json",
+    ])
+    assert res.exit_code == 0, res.stdout
+    nid = json.loads(res.stdout)["data"]["note_id"]
+    show = runner.invoke(app, ["note", "show", nid, "--json"])
+    assert "Body loaded from a file." in json.loads(show.stdout)["data"]["notes"][0]["body"]
+
+
+def test_note_update_patches_frontmatter_keeps_body(tmp_path, monkeypatch):
+    notes = _init_vault(tmp_path)
+    _write_note(notes, note_id="src-a", title="Alpha", tags=["t"], body="Original body kept.")
+    monkeypatch.chdir(tmp_path)
+    res = runner.invoke(app, [
+        "note", "update", "src-a",
+        "--summary", "a tight summary", "--add-tag", "extra",
+        "--status", "review", "--json",
+    ])
+    assert res.exit_code == 0, res.stdout
+    out = json.loads(res.stdout)["data"]
+    assert out["status"] == "review"
+    assert set(out["tags"]) == {"t", "extra"}
+    assert out["summary"] == "a tight summary"
+    # body untouched
+    show = runner.invoke(app, ["note", "show", "src-a", "--json"])
+    note = json.loads(show.stdout)["data"]["notes"][0]
+    assert "Original body kept." in note["body"]
+    assert note["status"] == "review"
+
+
+def test_note_update_missing_note_exits_nonzero(tmp_path, monkeypatch):
+    _init_vault(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    res = runner.invoke(app, ["note", "update", "ghost", "--status", "review", "--json"])
+    assert res.exit_code == 1
+    assert json.loads(res.stdout)["error_code"] == "NOTE_NOT_FOUND"

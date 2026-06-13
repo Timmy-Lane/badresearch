@@ -28,6 +28,15 @@ def test_is_factual_claim_filters_trivia():
     assert is_factual_claim("In general, markets vary.") is False               # hedge-frame opener
 
 
+def test_is_factual_claim_ignores_leading_bold_label():
+    # issue #18: a `**Bottom line:**`-prefixed verdict line carrying no real claim is
+    # NOT a factual claim — the bold label's capitalised words must not read as a
+    # named entity. A label-prefixed line that DOES carry a claim still flags.
+    assert is_factual_claim("**Bottom line:** cut.") is False
+    assert is_factual_claim("**Key takeaway:** proceed.") is False
+    assert is_factual_claim("**Bottom line:** Vietnam exported 7 million tonnes.") is True
+
+
 def test_gate_fails_report_with_uncited_factual_claim():
     store = _store_with([])
     report = "Southeast Asian GMV grew 12.4% in 2024.\n"  # hard number, no [N]

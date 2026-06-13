@@ -10,20 +10,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-import pytest
-
 from bad_research.config import BadResearchConfig
-from bad_research.llm.base import LLMProvider
 from bad_research.retrieval.rerank import ClaudeCodeReranker
-
-
-def _patch_anthropic(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
-    import anthropic
-
-    client = MagicMock()
-    monkeypatch.setattr(anthropic, "Anthropic", MagicMock(return_value=client))
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    return client
 
 
 def test_build_embedder_is_none_keyless_default():
@@ -56,9 +44,11 @@ def test_build_engine_constructs_fts_only_engine(tmp_path):
     assert (tmp_path / ".bad-research").is_dir()
 
 
-def test_verify_report_builds_real_llm_provider(monkeypatch, tmp_path):
-    """anthropic stays a CORE dep: the verify-citations LLM builder runs for real."""
-    _patch_anthropic(monkeypatch)
+def test_verify_report_is_always_keyless(monkeypatch, tmp_path):
+    """Project directive — verify-citations is ALWAYS keyless: _verify_report passes
+    llm=None to the CitationVerifier and NEVER constructs an API-key'd provider, even
+    with ANTHROPIC_API_KEY set. The host model does the Tier-C judging inline."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
 
     import bad_research.cli.research as research
     import bad_research.config as config_mod
@@ -81,9 +71,13 @@ def test_verify_report_builds_real_llm_provider(monkeypatch, tmp_path):
         def verify(self, report_md, store, note_bodies):
             return SimpleNamespace(findings=[])
 
+    def _boom(*a, **k):
+        raise AssertionError("keyless: _verify_report must NOT construct an LLM provider")
+
     monkeypatch.setattr(nli_mod, "CrossEncoderNLI", _FakeNLI)
     monkeypatch.setattr(verifier_mod, "CitationVerifier", _FakeVerifier)
     monkeypatch.setattr(anchors_mod, "AnchorStore", lambda conn: MagicMock())
+    monkeypatch.setattr("bad_research.llm.base.get_llm_provider", _boom)
 
     vault = SimpleNamespace(root=tmp_path)
     monkeypatch.setattr(vault_mod.Vault, "discover", staticmethod(lambda: vault))
@@ -94,5 +88,4 @@ def test_verify_report_builds_real_llm_provider(monkeypatch, tmp_path):
 
     out = research._verify_report(str(report), vault_tag="t")
     assert out == []
-    assert isinstance(built["llm"], LLMProvider)
-    assert built["llm"].name == "anthropic"
+    assert built["llm"] is None  # always keyless — no provider ever passed

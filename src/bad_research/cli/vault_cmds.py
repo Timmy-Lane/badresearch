@@ -516,7 +516,8 @@ def fetch_cmd(
 
 _LINT_RULES: dict[str, str] = {
     "wrapper-report": (
-        "Final report exists and has at least one citation marker ([^…] or [Source …])"
+        "Final report exists and has at least one citation marker "
+        "([[note-id]] wikilink, [^…], [Source …], or [N])"
     ),
     "locus-coverage": (
         "research/loci.json exists and every locus id appears in the final report"
@@ -525,14 +526,25 @@ _LINT_RULES: dict[str, str] = {
         "research/scaffold.md exists and contains a non-empty 'User Prompt' section"
     ),
     "patch-surgery": (
-        "research/patch-log.json is valid JSON with a 'hunks' or 'patches' key "
-        "(or absent on light tier)"
+        "research/patch-log.json is valid JSON with the canonical patch-log keys "
+        "(total_findings / applied / skipped / conflicts / orchestrator_escalated; "
+        "legacy hunks/patches also accepted) (or absent on light tier)"
     ),
 }
 
 _ALL_RULES = list(_LINT_RULES)
 
-_CITATION_RE = re.compile(r"\[\^[^\]]+\]|\[Source[^\]]*\]|\[\d+\]", re.IGNORECASE)
+# Citation markers the wrapper-report rule recognises. `[[note-id]]` wikilink is the
+# DOCUMENTED DEFAULT citation_style (bad-research-1-decompose §citation_style), so it
+# MUST count — a report carrying only wikilinks is cited, not uncited (issue #20).
+_CITATION_RE = re.compile(r"\[\[[^\]]+\]\]|\[\^[^\]]+\]|\[Source[^\]]*\]|\[\d+\]", re.IGNORECASE)
+
+# The canonical patch-log schema the step-14 patcher skill mandates (and forbids
+# inventing alternates for). The lint rule must accept this shape, not only the
+# legacy hunks/patches keys (issue #20).
+_PATCH_LOG_CANONICAL_KEYS = frozenset(
+    {"total_findings", "applied", "skipped", "conflicts", "orchestrator_escalated"}
+)
 
 
 def _lint_wrapper_report(research_dir: Path) -> list[dict[str, Any]]:
@@ -618,9 +630,13 @@ def _lint_patch_surgery(research_dir: Path) -> list[dict[str, Any]]:
     except json.JSONDecodeError as exc:
         return [{"severity": "error", "rule": "patch-surgery",
                  "message": f"research/patch-log.json is not valid JSON: {exc}"}]
-    if not isinstance(data, dict) or not (data.get("hunks") or data.get("patches")):
+    has_canonical = isinstance(data, dict) and bool(_PATCH_LOG_CANONICAL_KEYS & data.keys())
+    has_legacy = isinstance(data, dict) and bool(data.get("hunks") or data.get("patches"))
+    if not (has_canonical or has_legacy):
         issues.append({"severity": "warning", "rule": "patch-surgery",
-                       "message": "patch-log.json lacks 'hunks' or 'patches' key"})
+                       "message": ("patch-log.json lacks the canonical patch-log keys "
+                                   "(total_findings/applied/skipped/conflicts/"
+                                   "orchestrator_escalated) or legacy hunks/patches")})
     return issues
 
 
@@ -760,3 +776,124 @@ def note_show_cmd(
         raise typer.Exit(code=1)
 
     _emit_success(data, json_mode=json_output, count=len(notes), vault=str(vault.root))
+
+
+@note_app.command("new")
+def note_new_cmd(
+    title: str = typer.Argument(..., help="Note title"),
+    tag: list[str] = typer.Option(None, "--tag", "--add-tag", help="Tag(s) to attach (repeatable)"),
+    note_type: str = typer.Option("note", "--type", help="Note type (e.g. interim, source-analysis)"),
+    body: str = typer.Option("", "--body", help="Inline note body markdown"),
+    body_file: str = typer.Option(None, "--body-file", help="Read the body from this file ('-' = stdin)"),
+    note_id: str = typer.Option(None, "--id", help="Explicit note id (default: slug of the title)"),
+    summary: str = typer.Option(None, "--summary", help="One-line summary for the frontmatter"),
+    status: str = typer.Option("draft", "--status", help="Lifecycle status (draft|review|evergreen|...)"),
+    source: str = typer.Option(None, "--source", help="Source URL recorded in frontmatter"),
+    json_output: bool = typer.Option(False, "--json", "-j", help="Emit JSON"),
+) -> None:
+    """Create a new vault note (markdown + frontmatter) under research/notes/.
+
+    The programmatic counterpart to `bad fetch` (which grounds a URL) — used by the
+    depth-investigator / source-analyst subagents to persist interim and
+    source-analysis notes. Returns the canonical Envelope with
+    `data` = {note_id, path, title, type, status}.
+    """
+    import sys
+
+    from bad_research.core.note import write_note
+    from bad_research.core.vault import VaultError
+
+    try:
+        vault = _discover_vault()
+    except VaultError as exc:
+        _emit_error(str(exc), json_mode=json_output, code="NO_VAULT")
+        raise typer.Exit(code=1) from exc
+
+    note_body = body
+    if body_file:
+        try:
+            note_body = sys.stdin.read() if body_file == "-" else Path(body_file).read_text(encoding="utf-8")
+        except OSError as exc:
+            _emit_error(f"cannot read --body-file {body_file!r}: {exc}",
+                        json_mode=json_output, code="BODY_FILE_ERROR")
+            raise typer.Exit(code=1) from exc
+
+    path = write_note(
+        vault.notes_dir, title, note_body,
+        note_id=note_id, tags=list(tag or []), status=status,
+        note_type=note_type, source=source, summary=summary,
+    )
+    data = {
+        "note_id": path.stem,
+        "path": str(path.relative_to(vault.root)),
+        "title": title,
+        "type": note_type,
+        "status": status,
+    }
+    _emit_success(data, json_mode=json_output, vault=str(vault.root))
+
+
+@note_app.command("update")
+def note_update_cmd(
+    note_id: str = typer.Argument(..., help="Note id (stem of the .md file)"),
+    summary: str = typer.Option(None, "--summary", help="Set/replace the one-line summary"),
+    add_tag: list[str] = typer.Option(None, "--add-tag", "--tag", help="Tag(s) to add (repeatable; deduped)"),
+    status: str = typer.Option(None, "--status", help="Set the lifecycle status"),
+    json_output: bool = typer.Option(False, "--json", "-j", help="Emit JSON"),
+) -> None:
+    """Patch a note's frontmatter in place (summary / tags / status).
+
+    Reads research/notes/<id>.md (or research/temp/<id>.md), updates only the
+    fields passed, and rewrites the file with its body untouched — the curation
+    counterpart used by the per-session curation pass and the source-analyst.
+    Returns `data` = {note_id, path, summary, status, tags}.
+    """
+    from bad_research.core.frontmatter import render_note
+    from bad_research.core.note import read_note
+    from bad_research.core.vault import VaultError
+
+    try:
+        vault = _discover_vault()
+    except VaultError as exc:
+        _emit_error(str(exc), json_mode=json_output, code="NO_VAULT")
+        raise typer.Exit(code=1) from exc
+
+    note_path: Path | None = None
+    for d in (vault.notes_dir, vault.temp_dir):
+        candidate = d / f"{note_id}.md"
+        if candidate.exists():
+            note_path = candidate
+            break
+    if note_path is None:
+        _emit_error(f"Note '{note_id}' not found", json_mode=json_output, code="NOTE_NOT_FOUND")
+        raise typer.Exit(code=1)
+
+    note = read_note(note_path, vault.root)
+    meta = note.meta
+    if summary is not None:
+        meta.summary = summary
+    if status is not None:
+        from bad_research.models.note import NoteStatus
+        try:
+            meta.status = NoteStatus(status)
+        except ValueError as exc:
+            valid = ", ".join(s.value for s in NoteStatus)
+            _emit_error(f"invalid status {status!r} (valid: {valid})",
+                        json_mode=json_output, code="INVALID_STATUS")
+            raise typer.Exit(code=1) from exc
+    if add_tag:
+        existing = list(meta.tags or [])
+        for t in add_tag:
+            if t not in existing:
+                existing.append(t)
+        meta.tags = existing
+
+    note_path.write_text(render_note(meta, note.body), encoding="utf-8")
+    data = {
+        "note_id": meta.id or note_id,
+        "path": str(note_path.relative_to(vault.root)),
+        "summary": meta.summary,
+        "status": meta.status,
+        "tags": meta.tags or [],
+    }
+    _emit_success(data, json_mode=json_output, vault=str(vault.root))

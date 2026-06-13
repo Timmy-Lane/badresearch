@@ -1,7 +1,7 @@
 """Crawl4AI web provider — free, open-source, local headless browser, returns clean markdown.
 
 Supports authenticated crawling via crawl4ai browser profiles:
-  1. Run `crwl profiles` or `hyperresearch setup` to create a profile and log in
+  1. Run `crwl profiles` to create a profile and log in
   2. Set `profile = "profile-name"` in .hyperresearch/config.toml
   3. All fetches now use your authenticated session (cookies, localStorage, etc.)
 """

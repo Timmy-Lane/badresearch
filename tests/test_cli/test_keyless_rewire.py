@@ -44,6 +44,35 @@ def test_recitation_gate_flags_verbatim_copy(tmp_path: Path):
 # ── the keyless rewire (Task 7) ──────────────────────────────────────────────
 
 
+def test_grounding_cli_never_constructs_a_provider(monkeypatch, tmp_path):
+    """Project directive — verify-citations + grade-report are ALWAYS keyless: they
+    must NEVER construct an API-key'd LLM provider, even with ANTHROPIC_API_KEY set.
+    Poison get_llm_provider so any attempt raises; both commands must still succeed."""
+    def _boom(*a, **k):
+        raise AssertionError("get_llm_provider must NOT be called on the keyless grounding path")
+
+    monkeypatch.setattr("bad_research.llm.base.get_llm_provider", _boom)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-should-be-ignored")
+
+    report = tmp_path / "rep.md"
+    report.write_text("# Q\n\nVietnam exported 7 million tonnes in 2023 [[v]].\n", encoding="utf-8")
+    corpus = tmp_path / "corpus.json"
+    corpus.write_text(
+        json.dumps([{"note_id": "v", "url": "", "text": "Vietnam exported 7 million tonnes in 2023."}]),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    v = runner.invoke(app, ["verify-citations", "--report", str(report), "--vault-tag", "t", "--json"])
+    assert v.exit_code == 0, v.stdout
+
+    g = runner.invoke(app, ["grade-report", "--report", str(report), "--corpus", str(corpus), "--json"])
+    assert g.exit_code == 0, g.stdout
+    out = json.loads(g.stdout)
+    assert out["status"] == "keyless-skip"
+    assert out["passed"] is None
+
+
 def test_build_providers_returns_keyless_providers():
     cfg = type("C", (), {"searxng_endpoint": "", "effort": "medium"})()
     provs = RESEARCH._build_providers(cfg)

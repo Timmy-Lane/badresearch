@@ -100,6 +100,23 @@ def test_ddgs_swallows_provider_errors_to_empty():
     assert rows == []
 
 
+def test_ddgs_drops_empty_host_redirect_urls():
+    # issue #14: Startpage emits click-tracking redirect URLs with an EMPTY host
+    # (https:///clev?event=StartpageResultClick&...). They are non-empty strings, so
+    # a bare `if not url` skip misses them; they then trip the SSRF "no host" guard
+    # downstream. Drop them at parse time so a good result survives alongside.
+    fake_rows = [
+        {"title": "tracking", "href": "https:///clev?event=StartpageResultClick&sc=x"},
+        {"title": "good", "href": "https://real.example.com/page", "body": "ok"},
+        {"title": "relative", "href": "/local/path"},
+    ]
+    fake_ddgs = MagicMock()
+    fake_ddgs.return_value.text.return_value = fake_rows
+    with patch("bad_research.web.search.base.DDGS", fake_ddgs):
+        rows = DdgsProvider().search_ex(SearchQuery(query="rrf", max_results=10))
+    assert [r.url for r in rows] == ["https://real.example.com/page"]
+
+
 def test_searxng_provider_attrs():
     p = SearxngProvider()
     assert p.name == "searxng"

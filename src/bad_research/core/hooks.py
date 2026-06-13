@@ -2807,8 +2807,8 @@ Rules when the query names a period:
 ## Error handling
 
 If you get AUTH_REQUIRED or "Redirected to login page":
-- Tell the parent agent: "Auth expired for this site. User needs to run
-  'hyperresearch setup' and re-create their login profile."
+- Tell the parent agent: "Auth expired for this site. User needs to re-create
+  their crawl4ai login profile (`crwl profiles`) and set it in .hyperresearch/config.toml."
 - Do NOT retry — the session is dead.
 
 Note: LinkedIn, Twitter, Facebook, Instagram, and TikTok automatically use a
@@ -2846,8 +2846,8 @@ If you're fetching a seed source directly from the parent agent's URL list
 
 For each URL the parent agent gave you:
 
-1. Check if it's already fetched:
-   `PYTHONIOENCODING=utf-8 {hpr_path} sources check "<url>" -j`
+1. Check if it's already fetched (dedup — a prior fetch records the URL in the note):
+   `PYTHONIOENCODING=utf-8 {hpr_path} search "<url>" -j`
 
 2. If not already fetched, fetch it:
    `PYTHONIOENCODING=utf-8 {hpr_path} fetch "<url>" --tag <topic> -j`
@@ -2941,7 +2941,7 @@ those primaries gives the pipeline higher-authority sources to cite.
    - If you have a direct URL from the citation, fetch it with the
      hyperresearch CLI (same commands as Phase 1):
      ```
-     PYTHONIOENCODING=utf-8 {hpr_path} sources check "<url>" -j
+     PYTHONIOENCODING=utf-8 {hpr_path} search "<url>" -j   # dedup: already fetched?
      PYTHONIOENCODING=utf-8 {hpr_path} fetch "<url>" --tag <topic> --suggested-by <note-id-that-cited-it> --suggested-by-reason "cited as primary source" -j
      ```
    - If you only have author + title (no URL), use WebSearch to locate it:
