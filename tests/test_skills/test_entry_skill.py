@@ -34,3 +34,17 @@ def test_entry_skill_bootstrap_uses_bad_not_bare_hyperresearch(skills_dir):
     # the bootstrap names the real commands via `bad`
     assert "bad archive-run" in body
     assert "bad vault-tag" in body
+
+
+def test_entry_skill_documents_unknown_skill_read_fallback(skills_dir):
+    # The step skills are installed mid-session by `bad install --steps-only`; the host's
+    # Skill registry is loaded at session start, so `Skill(skill: "bad-research-0.5-clarify")`
+    # can return "Unknown skill" on the install run. The entry skill MUST document the
+    # read-the-file recovery path so the orchestrator doesn't abort the pipeline.
+    body = (skills_dir / "bad-research.md").read_text()
+    low = body.lower()
+    assert "unknown skill" in low, "entry skill must name the `Unknown skill` failure mode"
+    # the recovery: Read the installed SKILL.md directly
+    assert ".claude/skills/bad-research-" in body
+    assert "skill.md" in low
+    assert "read" in low
