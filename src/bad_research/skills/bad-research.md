@@ -188,6 +188,22 @@ Before you invoke any step skill, do this:
 
    **CLI path.** Use `bad` for every command below. If a bare `bad …` call fails with "command not found" / exit 127 (common on a `uv tool` / global install where the binary is installed but not on PATH), use the absolute CLI path documented at the top of this project's CLAUDE.md (`**CLI path: `…`**`) for every command in this skill — the installer resolves and templates it there. Only if no such path exists, tell the user to run `pip install bad-research`. If both files already exist, both commands no-op cheaply — safe to run unconditionally.
 
+   - **Capability probe (run AFTER the vault/step-skills check, BEFORE step 1).** The two checks above only catch "binary not on PATH". They do NOT catch a **present-but-slim** build — a binary that resolves and runs but ships an older/reduced command surface (a `uv tool` install that wins PATH while exposing only `search` + `note show`, for instance, missing `fetch`/`assets`/`note new`/`note update`/`sources`). Under `set -e`, the first downstream step that shells out to a missing subcommand HARD-FAILS the whole run at the first source. Detect the surface up front and record it:
+
+     ```bash
+     bad doctor -j                                  # exists on EVERY build — confirms the binary runs
+     bad fetch --help  >/dev/null 2>&1 && echo fetch_ok  || echo fetch_missing
+     bad assets --help >/dev/null 2>&1 && echo assets_ok || echo assets_missing
+     ```
+
+     Write the result to `research/cli-caps.json` so every downstream step + subagent can read it without re-probing:
+
+     ```json
+     { "fetch": true, "assets": true, "note_new": true, "note_update": true, "sources": true }
+     ```
+
+     Set each field from its `--help` exit (e.g. `note_new`/`note_update` from `bad note new --help` / `bad note update --help`, `sources` from `bad sources --help`). **A slim build lacking `fetch` MUST DEGRADE to native fetch — it must NEVER abort.** When `fetch`/`assets` (or the note/sources subcommands) are absent, do NOT claim the engine bootstrapped on the full path: set this run to the **file-based fallback path** — native `WebFetch`/`WebSearch` for retrieval and direct note writes (a `Write` to `research/notes/<id>.md` carrying the engine frontmatter, which `bad search`'s auto-sync then indexes) in place of `bad fetch` / `bad note new` / `bad note update` — and tell downstream steps to **read `research/cli-caps.json`** and branch on it. Each step/agent that shells out to one of these subcommands gates on this file (or re-probes `bad <cmd> --help` itself) and takes its native fallback when the capability is absent. When every field is `true`, the run proceeds on the full CLI path exactly as before — no behavior change.
+
 0.5. **Archive any prior run's artifacts.** Run `bad archive-run --json`. If a previous `/hyperresearch` session left a scaffold, loci.json, comparisons.md, critic-findings, patch-log, polish-log, prompt-decomposition, or any `research/temp/*` scratch, this moves the whole set into `research/runs/archive-<prev-tag>-<UTC-timestamp>/` so the new run starts from a clean slate without losing the prior run's audit trail. Final reports (`research/notes/final_report_<tag>.md`) and canonical query files (`research/query-<tag>.md`) are already namespaced and stay in place. The command no-ops cheaply on a fresh vault — safe to run unconditionally. **Caveat:** this protects sequential runs only. Two `/hyperresearch` invocations that overlap in time still race on the new files they both write; if you need true parallel runs, namespace per-run artifacts under `research/runs/<vault_tag>/` instead.
 
 1. **Resolve the canonical research query.** Order of precedence:
@@ -268,6 +284,16 @@ step skills per the mode table above. For `fast`, invoke
 `Skill(skill: "bad-research-fast")` then run the slim citation-grounding pass and
 slim critic before step 15 polish + step 16 gate. After each step's exit criterion is met, mark its todo complete and move to
 the next.
+
+### Reporting engine bugs
+
+When you hit an engine/CLI defect during a run — a missing or broken subcommand, a
+crash, a slim-build capability gap — that bug belongs in **this engine's own issue
+tracker**, NOT in whatever consuming/downstream project happens to be driving the run.
+File a fresh issue against the engine repo describing the build and the failing command;
+do not rely on a cross-org `gh issue transfer` to relocate it from a downstream repo
+(transfers across organizations are unreliable and lose the report). Keep the bug where
+the fix lives.
 
 ---
 
